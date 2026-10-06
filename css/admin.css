@@ -50,3 +50,7 @@
   .side { position: fixed; left: -240px; z-index: 60; transition: left .2s; width: 230px; } .side.open { left: 0; }
   .hamburger { display: inline-flex; } .content { padding: 14px 12px 60px; } .top { padding: 8px 12px; } .kv, .form-grid { grid-template-columns: 1fr; }
 }
+
+.tpl-group { display: flex; align-items: center; gap: 8px; margin: 16px 0 6px; padding: 5px 8px; font-size: 13px; background: #eef3fa; border-left: 3px solid var(--primary); border-radius: 4px; }
+.tpl-item { margin: 2px 0 2px 18px; padding: 8px 10px; border-left: 2px solid var(--line); border-radius: 0 8px 8px 0; cursor: pointer; }
+.tpl-item:hover { background: #f4f7fb; } .tpl-item.on { background: var(--primary-l); border-left-color: var(--primary); }

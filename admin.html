@@ -211,16 +211,16 @@
     <div class="card">
       <label class="f">分項工程</label><select v-model="tplSw"><optgroup v-for="g in swGroups" :key="g.tender.id" :label="g.tender.code + ' ' + g.tender.name"><option v-for="s in g.subs" :key="s.id" :value="s.id">{{ g.tender.code }}｜{{ s.no }}、{{ s.name }}</option></optgroup></select>
       <div class="row mt"><button class="btn primary sm" @click="newTpl('self')">＋ 自主檢查表</button><button class="btn sm" @click="newTpl('spot')">＋ 抽查紀錄表</button></div>
-      <h4 class="mt mb">自主檢查表（廠商） {{ tplList('self').length }}</h4>
-      <div class="list-item" v-for="t in tplList('self')" :key="t.id" style="cursor:pointer" :style="selTplId===t.id?'background:var(--primary-l);padding:8px;border-radius:8px':''" @click="pickTpl(t)"><b>表{{ t.code }} {{ t.name }}</b><div class="muted small">{{ t.items.length }} 項・<span class="star">★{{ t.items.filter(i=>i.hold).length }}</span>・v{{ t.version }}</div></div>
-      <h4 class="mt mb">抽查紀錄表（監造） {{ tplList('spot').length }}</h4>
-      <div class="list-item" v-for="t in tplList('spot')" :key="t.id" style="cursor:pointer" :style="selTplId===t.id?'background:var(--primary-l);padding:8px;border-radius:8px':''" @click="pickTpl(t)"><b>{{ t.name }}</b><div class="muted small">{{ t.items.length }} 項・<span class="star">★{{ t.items.filter(i=>i.hold).length }}</span>・v{{ t.version }}</div></div>
+      <h4 class="tpl-group">自主檢查表（廠商）<span class="chip">{{ tplList('self').length }}</span></h4>
+      <div class="tpl-item" v-for="t in tplList('self')" :key="t.id" :class="{on: selTplId===t.id}" @click="pickTpl(t)"><b>表{{ t.code }} {{ t.name }}</b><div class="muted small">{{ t.items.length }} 項・<span class="star">★{{ t.items.filter(i=>i.hold).length }}</span>・v{{ t.version }}</div></div>
+      <h4 class="tpl-group">抽查紀錄表（監造）<span class="chip">{{ tplList('spot').length }}</span></h4>
+      <div class="tpl-item" v-for="t in tplList('spot')" :key="t.id" :class="{on: selTplId===t.id}" @click="pickTpl(t)"><b>{{ t.name }}</b><div class="muted small">{{ t.items.length }} 項・<span class="star">★{{ t.items.filter(i=>i.hold).length }}</span>・v{{ t.version }}</div></div>
       <div class="muted small mt" v-if="!tplList('self').length && !tplList('spot').length">此分項尚未設定範本</div>
     </div>
     <div class="card" v-if="edit">
       <div class="row wrap"><h2 class="grow">{{ edit.kind==='self'?'表'+edit.code+' ':'' }}{{ edit.name }} <span class="chip" :class="edit.kind==='self'?'blue':'warn'">{{ edit.kind==='self'?'自主檢查表':'抽查紀錄表' }}</span> <span class="chip ok">v{{ edit.version }} 已發布</span></h2></div>
       <div class="muted small mt">來源：{{ edit.source || '—' }}</div>
-      <div class="row wrap mt"><button class="btn" @click="exportXlsx">匯出 Excel</button><button class="btn" @click="exportCsv">匯出 CSV</button><button class="btn" @click="previewOn=true">預覽表單</button><button class="btn" v-if="edit.kind==='spot'" @click="syncFromSelf">從自主檢查表同步項目</button><span class="grow"></span><button class="btn primary" @click="saveEdit">{{ editUsed>0?'另存為 v'+(edit.version+1):'儲存' }}</button></div>
+      <div class="row wrap mt"><button class="btn" @click="exportXlsx">匯出 Excel</button><button class="btn" @click="exportCsv">匯出 CSV</button><button class="btn" @click="previewOn=true">預覽表單</button><button class="btn" v-if="edit.kind==='spot'" @click="syncFromSelf">從自主檢查表同步項目</button><span class="grow"></span><button class="btn danger" @click="delTpl">刪除此表單</button><button class="btn primary" @click="saveEdit">{{ editUsed>0?'另存為 v'+(edit.version+1):'儲存' }}</button></div>
       <div class="alert warn mt" v-if="editUsed>0">此版本已有 {{ editUsed }} 張紀錄使用，修改後將另存新版本；已填寫的表單保留 v{{ edit.version }} 內容。</div>
       <div class="tabs mt"><a :class="{on:tplTab==='items'}" @click="tplTab='items'">檢查項目</a><a :class="{on:tplTab==='head'}" @click="tplTab='head'">表頭與簽認欄</a><a :class="{on:tplTab==='defect'}" @click="tplTab='defect'">缺失複查設定</a><a :class="{on:tplTab==='ver'}" @click="tplTab='ver'">版本紀錄</a></div>
 

@@ -168,6 +168,16 @@ createApp({
       const t = { id: Q.uid('TP-'), tenderId: swById(tplSw.value).tenderId, subworkId: tplSw.value, kind, code, name: kind === 'self' ? '新自主檢查表' : '新抽查記錄表', version: 1, status: 'published', source: '', items: [Q.I(1, 'pre', '新檢查項目', '')], used: 0 };
       await Q.put('templates', t); await load(); pickTpl(d.templates.find(x => x.id === t.id));
     }
+    async function delTpl() {
+      const t = edit.value, vers = d.templates.filter(x => x.code === t.code && x.subworkId === t.subworkId && x.kind === t.kind && (x.id === t.id || x.id.replace(/-v\d+$/, '') === t.id.replace(/-v\d+$/, '')));
+      const used = vers.reduce((n, v) => n + usedCount(v), 0);
+      if (used > 0) return toast(`此表單已有 ${used} 張填寫紀錄，不可刪除（刪除會讓紀錄失去版本內容）`, true);
+      if (!confirm(`確定刪除「${t.name}」${vers.length > 1 ? `（含 ${vers.length} 個版本）` : ''}？此動作無法復原。`)) return;
+      for (const v of vers) await Q.del('templates', v.id);
+      selTplId.value = null; edit.value = null; await load();
+      const l = tplList('self')[0] || tplList('spot')[0]; if (l) pickTpl(l);
+      toast('已刪除表單範本');
+    }
     function download(name, text, type) {
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + text], { type: type || 'text/csv;charset=utf-8' })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     }
@@ -283,7 +293,7 @@ createApp({
       progTender, progFilter, progRows, progCount, holdTab, holdTabs, holdCount, holdList, holdByDate, selReqId, selReq, calView, sched, reqChips, lockedAfter, hoursBefore, doSchedule, doReject, doStart,
       showSC, showSP, itemsOf, judgeText, valuesText, spotItem, defCls, defText, defTab, defList, defAct,
       selTenderId, selTender, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, tenderForm, swForm, saveTender, saveSw, moveSw, delSw, newTender,
-      tplSw, swGroups, selTplId, tplTab, edit, previewOn, fieldIdx, tplList, tplHistory, pickTpl, editUsed, editStages, TYPES, holdN, addItem, delItem, moveItem, addField, onType, saveEdit, syncFromSelf, newTpl, exportCsv, exportXlsx,
+      tplSw, swGroups, selTplId, tplTab, edit, previewOn, fieldIdx, tplList, tplHistory, pickTpl, editUsed, editStages, TYPES, holdN, addItem, delItem, moveItem, addField, onType, saveEdit, delTpl, syncFromSelf, newTpl, exportCsv, exportXlsx,
       imp, validate, onFile, sampleCsv, loadSample, downloadSample, impOk, doImport, impReset, download,
       docForm, userForm, saveDoc, saveUser, delRow, saveParams, resetDemo, navItems, titles, todayStr
     };
