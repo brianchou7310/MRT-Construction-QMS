@@ -220,7 +220,7 @@
     <div class="card" v-if="edit">
       <div class="row wrap"><h2 class="grow">{{ edit.kind==='self'?'表'+edit.code+' ':'' }}{{ edit.name }} <span class="chip" :class="edit.kind==='self'?'blue':'warn'">{{ edit.kind==='self'?'自主檢查表':'抽查紀錄表' }}</span> <span class="chip ok">v{{ edit.version }} 已發布</span></h2></div>
       <div class="muted small mt">來源：{{ edit.source || '—' }}</div>
-      <div class="row wrap mt"><button class="btn" @click="exportCsv">匯出 CSV</button><button class="btn" @click="previewOn=true">預覽表單</button><button class="btn" v-if="edit.kind==='spot'" @click="syncFromSelf">從自主檢查表同步項目</button><span class="grow"></span><button class="btn primary" @click="saveEdit">{{ editUsed>0?'另存為 v'+(edit.version+1):'儲存' }}</button></div>
+      <div class="row wrap mt"><button class="btn" @click="exportXlsx">匯出 Excel</button><button class="btn" @click="exportCsv">匯出 CSV</button><button class="btn" @click="previewOn=true">預覽表單</button><button class="btn" v-if="edit.kind==='spot'" @click="syncFromSelf">從自主檢查表同步項目</button><span class="grow"></span><button class="btn primary" @click="saveEdit">{{ editUsed>0?'另存為 v'+(edit.version+1):'儲存' }}</button></div>
       <div class="alert warn mt" v-if="editUsed>0">此版本已有 {{ editUsed }} 張紀錄使用，修改後將另存新版本；已填寫的表單保留 v{{ edit.version }} 內容。</div>
       <div class="tabs mt"><a :class="{on:tplTab==='items'}" @click="tplTab='items'">檢查項目</a><a :class="{on:tplTab==='head'}" @click="tplTab='head'">表頭與簽認欄</a><a :class="{on:tplTab==='defect'}" @click="tplTab='defect'">缺失複查設定</a><a :class="{on:tplTab==='ver'}" @click="tplTab='ver'">版本紀錄</a></div>
 
@@ -260,14 +260,14 @@
 
 <!-- ================= 範本匯入 ================= -->
 <template v-if="page==='import'">
-  <div class="page-head"><div><h1>範本匯入</h1><div class="muted">以 CSV（可由 Excel「另存為 CSV UTF-8」產生）批次建立自主檢查表範本</div></div><button class="btn" @click="download('範本匯入樣本.csv', sampleCsv())">下載標準匯入樣本（.csv）</button></div>
+  <div class="page-head"><div><h1>範本匯入</h1><div class="muted">上傳 Excel（.xlsx／.xls，可含多個工作表）或 CSV，批次建立自主檢查表範本</div></div><div class="row"><button class="btn" @click="downloadSample">下載標準匯入樣本（.xlsx）</button><button class="btn" @click="download('範本匯入樣本.csv', sampleCsv())">.csv</button></div></div>
   <div class="card mb"><div class="steps"><template v-for="(s,i) in ['下載樣本','上傳檔案','預覽與驗證','確認匯入']"><div class="st" :class="{on: imp.step===i+1, done: imp.step>i+1}"><i>{{ imp.step>i+1?'✓':i+1 }}</i>{{ s }}</div><div class="ln" v-if="i<3"></div></template></div></div>
   <div class="card" v-if="imp.step<=2">
-    <div class="row wrap mb"><input type="file" accept=".csv,text/csv,text/plain" @change="onFile"><button class="btn" @click="imp.text=sampleCsv(); imp.step=2">載入樣本內容</button></div>
-    <label class="f">或直接貼上 CSV 內容（欄位：{{ ['範本名稱','階段','項次','檢查項目','檢查標準','判定類型','停留點','必填','引用文件編號'].join('、') }}）</label>
+    <div class="row wrap mb"><input type="file" accept=".xlsx,.xls,.csv,text/csv" @change="onFile"><button class="btn" @click="loadSample">載入樣本內容</button></div>
+    <label class="f">或直接貼上 CSV 內容（上傳 Excel 時免貼）（欄位：{{ ['範本名稱','階段','項次','檢查項目','檢查標準','判定類型','停留點','必填','引用文件編號'].join('、') }}）</label>
     <textarea rows="10" v-model="imp.text" @input="imp.step=2"></textarea>
     <div class="alert ng mt" v-if="imp.err">{{ imp.err }}</div>
-    <div class="row mt"><span class="grow"></span><button class="btn primary" :disabled="!imp.text.trim()" @click="validate">預覽與驗證 ›</button></div>
+    <div class="row mt"><span class="grow"></span><button class="btn primary" :disabled="!imp.text.trim() && !imp.sheets.length" @click="validate">預覽與驗證 ›</button></div>
   </div>
   <div class="cols2" v-if="imp.step===3">
     <div class="card"><h3>解析結果（{{ imp.groups.length }} 個範本）</h3>
@@ -277,8 +277,8 @@
       <select class="mt" v-if="imp.mode==='new'" v-model="imp.targetSw"><option v-for="s in d.subworks" :value="s.id">{{ tenderById(s.tenderId).code }}｜{{ s.no }}、{{ s.name }}</option></select>
       <select class="mt" v-else v-model="imp.existing"><option value="">選擇既有範本…</option><option v-for="t in d.templates.filter(t=>t.status==='published' && t.kind==='self')" :value="t.id">表{{ t.code }} {{ t.name }}</option></select>
     </div>
-    <div class="card" v-if="imp.groups[imp.selGroup]"><h3>預覽：{{ imp.groups[imp.selGroup].name }}</h3><div class="tbl-scroll"><table class="table"><thead><tr><th>CSV列</th><th>階段</th><th>檢查項目</th><th>檢查標準</th><th>類型</th><th>停留點</th><th>必填</th><th>引用文件</th><th>驗證結果</th></tr></thead><tbody>
-      <tr v-for="r in imp.groups[imp.selGroup].rows" :class="{err: r.errs.length}"><td>{{ r.line }}</td><td>{{ r.raw[r.idx['階段']] }}</td><td>{{ r.name }}</td><td class="pre">{{ r.std }}</td><td>{{ r.raw[r.idx['判定類型']] }}</td><td>{{ r.hold?'Y':'N' }}</td><td>{{ r.photo?'Y':'N' }}</td><td>{{ r.ref }}</td>
+    <div class="card" v-if="imp.groups[imp.selGroup]"><h3>預覽：{{ imp.groups[imp.selGroup].name }}</h3><div class="tbl-scroll"><table class="table"><thead><tr><th>工作表／列</th><th>階段</th><th>檢查項目</th><th>檢查標準</th><th>類型</th><th>停留點</th><th>必填</th><th>引用文件</th><th>驗證結果</th></tr></thead><tbody>
+      <tr v-for="r in imp.groups[imp.selGroup].rows" :class="{err: r.errs.length}"><td class="nowrap">{{ r.sheet }}！{{ r.line }}</td><td>{{ r.raw[r.idx['階段']] }}</td><td>{{ r.name }}</td><td class="pre">{{ r.std }}</td><td>{{ r.raw[r.idx['判定類型']] }}</td><td>{{ r.hold?'Y':'N' }}</td><td>{{ r.photo?'Y':'N' }}</td><td>{{ r.ref }}</td>
         <td><span class="chip ok" v-if="!r.errs.length">通過</span><div v-else style="color:var(--ng)" class="small"><b>錯誤</b><div v-for="e in r.errs">{{ e }}</div></div></td></tr></tbody></table></div>
       <div class="row mt"><span class="grow">可匯入 <b>{{ impOk.length }}</b> 個範本，<b style="color:var(--ng)">{{ imp.groups.length-impOk.length }}</b> 個有錯誤將略過</span><button class="btn" @click="impReset">重新上傳</button><button class="btn primary" :disabled="!impOk.length || (imp.mode==='version' && !imp.existing)" @click="doImport">匯入 {{ impOk.length }} 個通過的範本</button></div></div>
   </div>
@@ -357,6 +357,7 @@
 <div class="toast" :class="{ng: toastNg}" v-if="toastMsg">{{ toastMsg }}</div>
 </div>
 <script src="lib/vue.global.prod.js"></script>
+<script src="lib/xlsx.full.min.js"></script>
 <script src="js/db.js"></script>
 <script src="js/admin.js"></script>
 </body>

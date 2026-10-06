@@ -177,7 +177,7 @@ createApp({
     }
 
     /* ---------- CSV 匯入 ---------- */
-    const imp = reactive({ step: 1, text: '', fileName: '', groups: [], selGroup: 0, mode: 'new', targetSw: 'S671-5', existing: '', err: '', done: 0 });
+    const imp = reactive({ step: 1, text: '', fileName: '', groups: [], selGroup: 0, mode: 'new', targetSw: 'S671-5', existing: '', err: '', done: 0, sheets: [] });
     function parseCsv(text) {
       const rows = []; let row = [], cell = '', q = false;
       for (let i = 0; i < text.length; i++) {
@@ -190,26 +190,54 @@ createApp({
     }
     const RT = { 選項: 'option', 數值: 'number', 照片: 'photo', 文字: 'text', 連結表單: 'linked' }, SR = { 施工前: 'pre', 施工中: 'during', 施工後: 'post' };
     function validate() {
-      imp.err = ''; const rows = parseCsv(imp.text.replace(/^﻿/, ''));
-      if (rows.length < 2) { imp.err = '沒有資料列，請貼上或上傳 CSV'; return; }
-      const head = rows[0].map(x => x.trim()); const miss = CSV_HEAD.filter(h => !head.includes(h));
-      if (miss.length) { imp.err = '缺少欄位：' + miss.join('、'); return; }
-      const idx = Object.fromEntries(CSV_HEAD.map(h => [h, head.indexOf(h)])); const groups = {};
-      rows.slice(1).forEach((r, k) => {
-        const g = (r[idx['範本名稱']] || '').trim() || '（未命名）', errs = [];
-        const stage = SR[(r[idx['階段']] || '').trim()], type = RT[(r[idx['判定類型']] || '').trim()], ref = (r[idx['引用文件編號']] || '').trim();
-        if (!stage) errs.push('階段須為 施工前／施工中／施工後');
-        if (!type) errs.push('判定類型「' + (r[idx['判定類型']] || '') + '」不在代碼表內（選項／數值／照片／文字／連結表單）');
-        if (!(r[idx['檢查項目']] || '').trim()) errs.push('檢查項目不可空白');
-        if (ref && !d.docs.find(x => x.code === ref)) errs.push('引用文件編號「' + ref + '」不存在於參考文件庫');
-        (groups[g] = groups[g] || { name: g, rows: [] }).rows.push({ line: k + 2, stage, type, name: (r[idx['檢查項目']] || '').trim(), std: r[idx['檢查標準']] || '', hold: /^y/i.test((r[idx['停留點']] || '').trim()), photo: /^y/i.test((r[idx['必填']] || '').trim()), ref, raw: r, idx, errs });
+      imp.err = '';
+      const sheets = imp.sheets.length ? imp.sheets : [{ name: '貼上內容', rows: parseCsv(imp.text.replace(/^﻿/, '')) }];
+      const groups = {}; let usable = 0, lastMiss = '';
+      sheets.forEach(sh => {
+        const rows = sh.rows.filter(r => r.some(x => String(x).trim() !== ''));
+        if (rows.length < 2) return;
+        const head = rows[0].map(x => String(x).trim()), miss = CSV_HEAD.filter(h => !head.includes(h));
+        if (miss.length) { lastMiss = `工作表「${sh.name}」缺少欄位：` + miss.join('、'); return; }
+        usable++;
+        const idx = Object.fromEntries(CSV_HEAD.map(h => [h, head.indexOf(h)])), cell = (r, h) => String(r[idx[h]] == null ? '' : r[idx[h]]).trim();
+        rows.slice(1).forEach((r, k) => {
+          const g = cell(r, '範本名稱') || '（未命名）', errs = [];
+          const stage = SR[cell(r, '階段')], type = RT[cell(r, '判定類型')], ref = cell(r, '引用文件編號');
+          if (!stage) errs.push('階段須為 施工前／施工中／施工後');
+          if (!type) errs.push('判定類型「' + cell(r, '判定類型') + '」不在代碼表內（選項／數值／照片／文字／連結表單）');
+          if (!cell(r, '檢查項目')) errs.push('檢查項目不可空白');
+          if (ref && !d.docs.find(x => x.code === ref)) errs.push('引用文件編號「' + ref + '」不存在於參考文件庫');
+          (groups[g] = groups[g] || { name: g, rows: [] }).rows.push({ line: k + 2, sheet: sh.name, stage, type, name: cell(r, '檢查項目'), std: String(r[idx['檢查標準']] == null ? '' : r[idx['檢查標準']]), hold: /^y/i.test(cell(r, '停留點')), photo: /^y/i.test(cell(r, '必填')), ref, raw: r, idx, errs });
+        });
       });
+      if (!usable) { imp.err = lastMiss || '沒有資料列，請上傳 Excel／CSV 或貼上內容'; return; }
       imp.groups = Object.values(groups).map(g => Object.assign(g, { bad: g.rows.filter(r => r.errs.length).length })); imp.selGroup = 0; imp.step = 3;
     }
-    function onFile(e) { const f = e.target.files[0]; if (!f) return; imp.fileName = f.name; const rd = new FileReader(); rd.onload = () => { imp.text = rd.result; imp.step = 2; }; rd.readAsText(f, 'utf-8'); }
-    function sampleCsv() {
-      const rows = [CSV_HEAD, ['表5-6 鋼筋籠自主檢查表', '施工前', 1, '施工圖', '是否核准', '選項', 'Y', 'Y', 'CF671-PL-0032'], ['表5-6 鋼筋籠自主檢查表', '施工中', 2, '焊條使用是否符合要求', '使用 AWS D1.4 E8016', '選項', 'N', 'N', ''], ['表5-6 鋼筋籠自主檢查表', '施工中', 3, '鋼筋剪力筋是否依設計數量安放', '依施工圖標示', 'Y/N', 'N', 'N', ''], ['表5-6 鋼筋籠自主檢查表', '施工中', 4, '鋼筋籠端板是否牢固', '端板厚度 6mm', '數值', 'N', 'N', 'CF671-DW-9999'], ['表5-6 鋼筋籠自主檢查表', '施工後', 5, '場地清理', '是否清理完成', '選項', 'N', 'N', '']];
-      return rows.map(r => r.map(csvCell).join(',')).join('\r\n');
+    function onFile(e) {
+      const f = e.target.files[0]; if (!f) return; imp.fileName = f.name; imp.err = ''; imp.sheets = []; imp.text = '';
+      const rd = new FileReader();
+      if (/\.xlsx?$/i.test(f.name)) {
+        if (!window.XLSX) { imp.err = 'Excel 函式庫未載入'; return; }
+        rd.onload = () => {
+          try {
+            const wb = XLSX.read(rd.result, { type: 'array' });
+            imp.sheets = wb.SheetNames.map(n => ({ name: n, rows: XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, defval: '' }) }));
+            imp.step = 2; validate();
+          } catch (ex) { imp.err = '無法讀取 Excel：' + ex.message; }
+        };
+        rd.readAsArrayBuffer(f);
+      } else { rd.onload = () => { imp.text = rd.result; imp.step = 2; }; rd.readAsText(f, 'utf-8'); }
+    }
+    const SAMPLE_ROWS = () => [CSV_HEAD, ['表5-6 鋼筋籠自主檢查表', '施工前', 1, '施工圖', '是否核准', '選項', 'Y', 'Y', 'CF671-PL-0032'], ['表5-6 鋼筋籠自主檢查表', '施工中', 2, '焊條使用是否符合要求', '使用 AWS D1.4 E8016', '選項', 'N', 'N', ''], ['表5-6 鋼筋籠自主檢查表', '施工中', 3, '鋼筋剪力筋是否依設計數量安放', '依施工圖標示', 'Y/N', 'N', 'N', ''], ['表5-6 鋼筋籠自主檢查表', '施工中', 4, '鋼筋籠端板是否牢固', '端板厚度 6mm', '數值', 'N', 'N', 'CF671-DW-9999'], ['表5-6 鋼筋籠自主檢查表', '施工後', 5, '場地清理', '是否清理完成', '選項', 'N', 'N', '']];
+    function sampleCsv() { return SAMPLE_ROWS().map(r => r.map(csvCell).join(',')).join('\r\n'); }
+    function loadSample() { imp.fileName = '範本匯入樣本.xlsx'; imp.sheets = [{ name: '範本', rows: SAMPLE_ROWS() }]; imp.step = 2; validate(); }
+    function writeXlsx(name, rows, sheetName) {
+      const ws = XLSX.utils.aoa_to_sheet(rows); ws['!cols'] = CSV_HEAD.map((h, i) => ({ wch: [26, 8, 6, 28, 36, 10, 8, 6, 16][i] }));
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, sheetName || '範本'); XLSX.writeFile(wb, name);
+    }
+    function downloadSample() { writeXlsx('範本匯入樣本.xlsx', SAMPLE_ROWS()); }
+    function exportXlsx() {
+      const t = edit.value; writeXlsx(`${t.code}_${t.name}.xlsx`, [CSV_HEAD].concat(t.items.map(i => [t.name, Q.STAGES[i.stage], i.no, i.name, i.std, TYPES[i.type] || '選項', i.hold ? 'Y' : 'N', i.photo ? 'Y' : 'N', i.ref || ''])), t.code);
     }
     const impOk = computed(() => imp.groups.filter(g => !g.bad));
     async function doImport() {
@@ -226,7 +254,7 @@ createApp({
       }
       await load(); imp.step = 4; imp.done = n;
     }
-    function impReset() { Object.assign(imp, { step: 1, text: '', fileName: '', groups: [], err: '' }); }
+    function impReset() { Object.assign(imp, { step: 1, text: '', fileName: '', groups: [], err: '', sheets: [] }); }
 
     /* ---------- 其他 ---------- */
     const docForm = ref(null), userForm = ref(null);
@@ -253,8 +281,8 @@ createApp({
       progTender, progFilter, progRows, progCount, holdTab, holdTabs, holdCount, holdList, holdByDate, selReqId, selReq, calView, sched, reqChips, lockedAfter, hoursBefore, doSchedule, doReject, doStart,
       showSC, showSP, itemsOf, judgeText, valuesText, spotItem, defCls, defText, defTab, defList, defAct,
       selTenderId, selTender, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, tenderForm, swForm, saveTender, saveSw, moveSw, delSw, newTender,
-      tplSw, selTplId, tplTab, edit, previewOn, fieldIdx, tplList, tplHistory, pickTpl, editUsed, editStages, TYPES, holdN, addItem, delItem, moveItem, addField, onType, saveEdit, syncFromSelf, newTpl, exportCsv,
-      imp, validate, onFile, sampleCsv, impOk, doImport, impReset, download,
+      tplSw, selTplId, tplTab, edit, previewOn, fieldIdx, tplList, tplHistory, pickTpl, editUsed, editStages, TYPES, holdN, addItem, delItem, moveItem, addField, onType, saveEdit, syncFromSelf, newTpl, exportCsv, exportXlsx,
+      imp, validate, onFile, sampleCsv, loadSample, downloadSample, impOk, doImport, impReset, download,
       docForm, userForm, saveDoc, saveUser, delRow, saveParams, resetDemo, navItems, titles, todayStr
     };
   }
