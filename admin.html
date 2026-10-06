@@ -209,7 +209,7 @@
   <div class="page-head"><div><h1>表單範本</h1><div class="muted">自主檢查表（廠商）與抽查紀錄表（監造）。已使用的範本修改後會另存新版本。</div></div></div>
   <div class="cols2">
     <div class="card">
-      <label class="f">分項工程</label><select v-model="tplSw"><option v-for="s in d.subworks" :value="s.id">{{ tenderById(s.tenderId).code }}｜{{ s.no }}、{{ s.name }}</option></select>
+      <label class="f">分項工程</label><select v-model="tplSw"><optgroup v-for="g in swGroups" :key="g.tender.id" :label="g.tender.code + ' ' + g.tender.name"><option v-for="s in g.subs" :key="s.id" :value="s.id">{{ g.tender.code }}｜{{ s.no }}、{{ s.name }}</option></optgroup></select>
       <div class="row mt"><button class="btn primary sm" @click="newTpl('self')">＋ 自主檢查表</button><button class="btn sm" @click="newTpl('spot')">＋ 抽查紀錄表</button></div>
       <h4 class="mt mb">自主檢查表（廠商） {{ tplList('self').length }}</h4>
       <div class="list-item" v-for="t in tplList('self')" :key="t.id" style="cursor:pointer" :style="selTplId===t.id?'background:var(--primary-l);padding:8px;border-radius:8px':''" @click="pickTpl(t)"><b>表{{ t.code }} {{ t.name }}</b><div class="muted small">{{ t.items.length }} 項・<span class="star">★{{ t.items.filter(i=>i.hold).length }}</span>・v{{ t.version }}</div></div>
@@ -274,7 +274,7 @@
       <div class="list-item" v-for="(g,i) in imp.groups" :key="g.name" style="cursor:pointer" :style="imp.selGroup===i?'background:var(--primary-l);padding:8px;border-radius:8px':''" @click="imp.selGroup=i"><b>{{ g.name }}</b><div><span class="chip" :class="g.bad?'ng':'ok'">{{ g.bad?g.bad+' 列錯誤':g.rows.length+' 列通過' }}</span></div></div>
       <h4 class="mt mb">匯入方式</h4>
       <label><input type="radio" value="new" v-model="imp.mode"> 建立新範本</label><br><label><input type="radio" value="version" v-model="imp.mode"> 匯入為既有範本的新版本</label>
-      <select class="mt" v-if="imp.mode==='new'" v-model="imp.targetSw"><option v-for="s in d.subworks" :value="s.id">{{ tenderById(s.tenderId).code }}｜{{ s.no }}、{{ s.name }}</option></select>
+      <select class="mt" v-if="imp.mode==='new'" v-model="imp.targetSw"><optgroup v-for="g in swGroups" :key="g.tender.id" :label="g.tender.code + ' ' + g.tender.name"><option v-for="s in g.subs" :key="s.id" :value="s.id">{{ g.tender.code }}｜{{ s.no }}、{{ s.name }}</option></optgroup></select>
       <select class="mt" v-else v-model="imp.existing"><option value="">選擇既有範本…</option><option v-for="t in d.templates.filter(t=>t.status==='published' && t.kind==='self')" :value="t.id">表{{ t.code }} {{ t.name }}</option></select>
     </div>
     <div class="card" v-if="imp.groups[imp.selGroup]"><h3>預覽：{{ imp.groups[imp.selGroup].name }}</h3><div class="tbl-scroll"><table class="table"><thead><tr><th>工作表／列</th><th>階段</th><th>檢查項目</th><th>檢查標準</th><th>類型</th><th>停留點</th><th>必填</th><th>引用文件</th><th>驗證結果</th></tr></thead><tbody>
