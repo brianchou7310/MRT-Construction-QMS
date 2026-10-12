@@ -17,7 +17,7 @@
   <nav class="rail">
     <div class="logo"><img src="images/logo.png" alt="捷運工程局"></div>
     <button v-for="n in navItems" :key="n[0]" :class="{on: navActive===n[0]}" @click="nav(n[0])">
-      <span class="ic">{{ {todo:'☰',checks:'✓',holds:'☆',docs:'▤',me:'●'}[n[0]] }}</span><span>{{ n[1] }}</span><b class="badge" v-if="n[2]">{{ n[2] }}</b></button>
+      <span class="ic">{{ {todo:'☰',checks:'✓',spots:'✎',holds:'☆',docs:'▤',me:'●'}[n[0]] }}</span><span>{{ n[1] }}</span><b class="badge" v-if="n[2]">{{ n[2] }}</b></button>
   </nav>
 
   <main class="page">

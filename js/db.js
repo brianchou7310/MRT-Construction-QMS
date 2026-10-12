@@ -163,8 +163,8 @@
       { id: 'U1', name: '系統管理員', role: '系統管理員', org: '第二區工程處', email: 'admin@example.com' },
       { id: 'U2', name: '示範品管', role: '廠商品管人員', org: '大陸工程股份有限公司', email: 'qc@contractor.example.com' },
       { id: 'U3', name: '示範工地主任', role: '工地授權代表', org: '大陸工程股份有限公司', email: 'lead@contractor.example.com' },
-      { id: 'U4', name: '示範監造', role: '監造現場工程師', org: '監造工務所', email: 'sv@supervisor.example.com' },
-      { id: 'U5', name: '示範工務所主任', role: '監造工務所主任', org: '監造工務所', email: 'chief@supervisor.example.com' }
+      { id: 'U4', name: '示範工務所同仁', role: '捷運局工務所同仁', org: '捷運局工務所', email: 'sv@supervisor.example.com' },
+      { id: 'U5', name: '示範工務所主任', role: '捷運局工務所主任', org: '捷運局工務所', email: 'chief@supervisor.example.com' }
     );
     out.meta.push(clone(DEFAULT_PARAMS), { id: 'counter', req: 3, sc: 2, defect: 5, spot: 1 });
 
@@ -195,7 +195,7 @@
       std: '壁體垂直方向偏差 25mm\n其他方向 75mm\n鋼筋籠頂高程 EL 122.9m', values: { dv: 18, do: 40, el: 122.91 },
       notices: [{ at: A, text: '廠商送出會驗申請（附照片 3 張）', level: 'info' }, { at: A, text: 'Email 已寄送監造人員（2 位）', level: 'info' }]
     });
-    const mkReq = (id, title, loc, applied, sched, status, sw) => ({ id, tenderId: 'T671', tenderCode: 'CF671', scId: '', itemNo: 0, title, subworkName: sw || '連續壁工程', checkName: '', location: loc, unit: '', appliedAt: applied, replyDue: applied + 8 * H, scheduledAt: sched, applicant: '大陸工程 品管人員', status, shortNotice: false, shortReason: '', inspector: status === 'pending' ? '' : '示範監造', photoCount: 2, std: '依施工圖及規範', values: {}, notices: [{ at: applied, text: '廠商送出會驗申請', level: 'info' }, { at: applied, text: 'Email 已寄送監造人員（2 位）', level: 'info' }] });
+    const mkReq = (id, title, loc, applied, sched, status, sw) => ({ id, tenderId: 'T671', tenderCode: 'CF671', scId: '', itemNo: 0, title, subworkName: sw || '連續壁工程', checkName: '', location: loc, unit: '', appliedAt: applied, replyDue: applied + 8 * H, scheduledAt: sched, applicant: '大陸工程 品管人員', status, shortNotice: false, shortReason: '', inspector: status === 'pending' ? '' : '示範工務所同仁', photoCount: 2, std: '依施工圖及規範', values: {}, notices: [{ at: applied, text: '廠商送出會驗申請', level: 'info' }, { at: applied, text: 'Email 已寄送監造人員（2 位）', level: 'info' }] });
     out.requests.push(
       mkReq('HP-CF671-1005-001', '混凝土澆注', 'Y01站 導溝 G05~G08', now - 3 * H, atDay(1, 8, 30), 'pending', '導溝工程'),
       mkReq('HP-CF671-1005-002', '護耳置放位置、間隔', '鋼筋籠加工場 P14', now - H, atDay(1, 14, 0), 'pending', '鋼筋籠工程'),
@@ -244,7 +244,15 @@
       delete sp.measures; delete sp.judge; delete sp.photos; await put('spotChecks', sp);
     }
   }
-  const ready = open().then(() => seed(false)).then(() => migrateSpots()).then(() => tickOverdue());
+  // 舊版角色名稱「監造…」改為「捷運局工務所…」
+  async function migrateRoles() {
+    const R = { '監造現場工程師': '捷運局工務所同仁', '監造工務所主任': '捷運局工務所主任' };
+    for (const u of await all('users')) {
+      if (R[u.role] || u.org === '監造工務所' || u.name === '示範監造') { u.role = R[u.role] || u.role; if (u.org === '監造工務所') u.org = '捷運局工務所'; if (u.name === '示範監造') u.name = '示範工務所同仁'; await put('users', u); }
+    }
+    for (const r of await all('requests')) if (r.inspector === '示範監造') { r.inspector = '示範工務所同仁'; await put('requests', r); }
+  }
+  const ready = open().then(() => seed(false)).then(() => migrateRoles()).then(() => migrateSpots()).then(() => tickOverdue());
 
   async function getParams() { return Object.assign({}, DEFAULT_PARAMS, await get('meta', 'params') || {}); }
   async function counter(name) {

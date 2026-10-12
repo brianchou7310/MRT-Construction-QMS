@@ -26,7 +26,7 @@ createApp({
     const swById = id => d.subworks.find(s => s.id === id) || {};
     const tenderFilter = ref('all');
     const ft = arr => tenderFilter.value === 'all' ? arr : arr.filter(x => x.tenderId === tenderFilter.value);
-    const supervisors = computed(() => d.users.filter(u => /監造/.test(u.role)));
+    const supervisors = computed(() => d.users.filter(u => /工務所/.test(u.role)));
     const reqCls = r => ({ pending: 'warn', scheduled: 'blue', inspecting: 'blue', passed: 'ok', failed: 'ng', rejected: 'ng' }[r.status]);
     const rel = ts => Q.relTime(ts, now.value);
     const openReqs = computed(() => ft(d.requests).filter(r => r.status === 'pending').sort((a, b) => a.replyDue - b.replyDue));
