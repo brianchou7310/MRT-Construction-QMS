@@ -49,10 +49,10 @@
 
     <div class="content">
 
-<!-- ================= 品管總覽 ================= -->
+<!-- ================= 查驗總覽 ================= -->
 <template v-if="page==='dashboard'">
   <div class="page-head">
-    <div><h1>品管總覽</h1><div class="muted">CF670A 區段標工程，含 CF671 土建標、CF624H 水環標｜{{ todayStr() }}</div></div>
+    <div><h1>查驗總覽</h1><div class="muted">CF670A 區段標工程，含 CF671 土建標、CF624H 水環標｜{{ todayStr() }}</div></div>
     <div class="seg"><button :class="{on: tenderFilter==='all'}" @click="tenderFilter='all'">全部標別</button><button v-for="t in d.tenders" :key="t.id" :class="{on: tenderFilter===t.id}" @click="tenderFilter=t.id">{{ t.name }}</button></div>
   </div>
   <div class="kpis">
@@ -79,7 +79,7 @@
           </tbody></table></div>
       </div>
       <div class="card">
-        <div class="row wrap"><div class="grow"><h3>分項工程品管進度</h3><div class="muted small">依各標分項工程；已設定檢查表範本者才能於現場填寫</div></div>
+        <div class="row wrap"><div class="grow"><h3>分項工程查驗進度</h3><div class="muted small">依各標分項工程；已設定檢查表範本者才能於現場填寫</div></div>
           <div class="seg"><button v-for="t in d.tenders" :key="t.id" :class="{on: progTender===t.id}" @click="progTender=t.id">{{ t.name }}</button></div></div>
         <div class="pills mt"><button v-for="s in ['施工中','未開始','已完成','全部']" :key="s" :class="{on: progFilter===s}" @click="progFilter=s">{{ s }} {{ progCount(s) }}</button></div>
         <div class="tbl-scroll mt"><table class="table">

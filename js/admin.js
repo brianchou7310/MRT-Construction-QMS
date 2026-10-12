@@ -42,7 +42,7 @@ createApp({
     const tplOf = id => d.templates.find(t => t.id === id);
     const usedCount = t => d.selfChecks.filter(s => s.templateId === t.id).length + d.spotChecks.filter(s => s.templateId === t.id).length;
 
-    /* ---------- 品管總覽：分項進度 ---------- */
+    /* ---------- 查驗總覽：分項進度 ---------- */
     const progTender = ref('T671'), progFilter = ref('施工中');
     const progRows = computed(() => d.subworks.filter(s => s.tenderId === progTender.value).sort((a, b) => a.order - b.order).map(s => {
       const selfT = d.templates.filter(t => t.subworkId === s.id && t.kind === 'self' && t.status === 'published');
@@ -331,7 +331,7 @@ createApp({
       await Q.put('meta', Object.assign({ id: 'params' }, p)); toast('參數已儲存');
     }
     async function resetDemo() { if (!confirm('將清除所有資料並還原示範資料，確定？')) return; await Q.seed(true); await load(); toast('已還原示範資料'); }
-    const navItems = [['dashboard', '品管總覽'], ['g', '品管作業'], ['holds', '停留點會驗', 'badge'], ['selfchecks', '自主檢查紀錄'], ['spots', '抽查紀錄'], ['defects', '缺失追蹤', 'dbadge'], ['g', '基本資料'], ['projects', '標案與分項工程'], ['templates', '表單範本'], ['import', '範本匯入'], ['docs', '參考文件'], ['g', '系統'], ['users', '帳號與權限'], ['params', '參數設定']];
+    const navItems = [['dashboard', '查驗總覽'], ['g', '查驗作業'], ['holds', '停留點會驗', 'badge'], ['selfchecks', '自主檢查紀錄'], ['spots', '抽查紀錄'], ['defects', '缺失追蹤', 'dbadge'], ['g', '基本資料'], ['projects', '標案與分項工程'], ['templates', '表單範本'], ['import', '範本匯入'], ['docs', '參考文件'], ['g', '系統'], ['users', '帳號與權限'], ['params', '參數設定']];
     // 側邊選單：分組可收合（狀態記在 localStorage）
     const navTree = (() => { const t = []; navItems.forEach(n => { if (n[0] === 'g') t.push({ group: n[1], items: [] }); else if (t.length) t[t.length - 1].items.push(n); else t.push({ link: n }); }); return t; })();
     const collapsed = reactive((() => { try { return JSON.parse(localStorage.getItem('qms-nav-collapsed') || '{}'); } catch (e) { return {}; } })());
