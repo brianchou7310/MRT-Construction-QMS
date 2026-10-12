@@ -26,7 +26,7 @@
 <div class="split" v-if="view==='todo' || view==='holds'">
   <section class="list-col">
     <header class="hdr">
-      <div class="grow"><div class="small sub">{{ todayLabel }}・第二區工程處 監造工務所・{{ me.title }}</div><h1>{{ view==='todo' ? '今日待辦' : '停留點會驗' }}</h1></div>
+      <div class="grow"><div class="small sub">{{ todayLabel }}・第二區工程處・{{ me.title }}</div><h1>{{ view==='todo' ? '今日待辦' : '停留點會驗' }}</h1></div>
       <select v-model="tenderSel" class="sel-tender"><option value="all">CF670A 區段標</option><option v-for="t in d.tenders" :value="t.id">{{ t.code }}</option></select>
       <button class="btn" @click="qrForm={code:''}">▦ 掃描單元 QR Code</button>
     </header>
@@ -53,7 +53,7 @@
       </template>
       <template v-if="todoTab==='spot'">
         <div class="tcard" v-for="s in draftSpots" :key="s.id"><div class="row"><div class="grow"><div class="star t">★{{ s.title }}</div><div class="muted small">{{ s.location }}｜{{ s.id }}</div></div><span class="chip warn">填寫中</span></div><button class="btn primary block" @click="openSpot(s.id)">繼續抽查紀錄</button></div>
-        <div class="empty" v-if="!draftSpots.length">沒有進行中的抽查。<br>到「會驗」分頁，由監造「開始會驗」即會建立抽查紀錄。</div>
+        <div class="empty" v-if="!draftSpots.length">沒有進行中的抽查。<br>到「會驗」分頁，由工務所同仁「開始會驗」即會建立抽查紀錄。</div>
       </template>
       <template v-if="todoTab==='defect'">
         <div class="tcard" v-for="x in openDefects" :key="x.id"><div class="row"><div class="grow"><div class="t">{{ x.title }}</div><div class="muted small">{{ x.location }}｜{{ x.source }}</div></div><span class="chip" :class="defCls(x)">{{ defText(x) }}</span></div>
@@ -116,7 +116,7 @@
     <div class="prog"><div class="small">已判定 <b>{{ judged }} / {{ total }}</b></div><div class="bar light"><i :style="{width: judged/Math.max(1,total)*100+'%'}"></i></div></div>
     <button class="btn sm" @click="printForm">列印</button>
   </header>
-  <div class="alert gray" v-if="readonly" style="margin:8px 12px">{{ cur.status==='signed' ? '本表已簽認完成，內容已鎖定（雜湊 '+(cur.hash||'').slice(0,12)+'…）' : '監造身分僅能檢視自主檢查表' }}</div>
+  <div class="alert gray" v-if="readonly" style="margin:8px 12px">{{ cur.status==='signed' ? '本表已簽認完成，內容已鎖定（雜湊 '+(cur.hash||'').slice(0,12)+'…）' : '工務所同仁身分僅能檢視自主檢查表' }}</div>
   <div class="fbody">
     <div class="stab"><button v-for="s in stageTabs" :key="s[0]" :class="{on: stageTab===s[0]}" @click="s[0]==='sum' ? stageTab='sum' : setStage(s[0])">{{ s[1] }}<small>{{ s[0]==='sum' ? judged+'/'+total : stageStat(s[0]) }}</small></button></div>
 
@@ -191,7 +191,7 @@
 <!-- ============ 抽查紀錄清單 ============ -->
 <div class="plain" v-if="view==='spots'">
   <header class="hdr"><div class="grow"><div class="small sub">{{ me.title }}・{{ me.org }}</div><h1>抽查紀錄</h1></div><button class="btn" v-if="isSup" @click="openSpotNew">＋ 新增隨機抽查</button></header>
-  <div class="alert gray" v-if="!isSup" style="margin:12px 14px 0">抽查紀錄由監造人員填寫；目前為「廠商」身分，僅供檢視。可到「我的」切換身分。</div>
+  <div class="alert gray" v-if="!isSup" style="margin:12px 14px 0">抽查紀錄由捷運局工務所同仁填寫；目前為「廠商」身分，僅供檢視。可到「我的」切換身分。</div>
   <div class="grid-cards">
     <div class="tcard" v-for="x in spList" :key="x.id" @click="openSpot(x.id)">
       <div class="row"><div class="grow"><div class="t">{{ x.templateName }} <span class="small muted">v{{ x.templateVer }}</span></div><div class="muted small">{{ x.location }}｜{{ Q.fmtD(x.date||x.createdAt) }}</div></div><span class="chip" :class="x.status==='signed'?'ok':'warn'">{{ x.status==='signed'?'已簽認':'填寫中' }}</span></div>
@@ -199,7 +199,7 @@
       <div class="bar"><i :style="{width: spProgress(x).n/Math.max(1,spProgress(x).total)*100+'%'}"></i></div><div class="small muted">已抽查 {{ spProgress(x).n }} / {{ spProgress(x).total }}</div>
     </div>
   </div>
-  <div class="empty" v-if="!spList.length">尚無抽查紀錄。<br>監造可於「待辦」開始會驗，或按「新增隨機抽查」。</div>
+  <div class="empty" v-if="!spList.length">尚無抽查紀錄。<br>工務所同仁可於「待辦」開始會驗，或按「新增隨機抽查」。</div>
 </div>
 
 <!-- ============ 抽查紀錄表單 ============ -->
@@ -211,7 +211,7 @@
     <div class="prog"><div class="small">已抽查 <b>{{ spJudged }} / {{ spTotal }}</b></div><div class="bar light"><i :style="{width: spJudged/Math.max(1,spTotal)*100+'%'}"></i></div></div>
     <button class="btn sm" @click="printForm">列印</button>
   </header>
-  <div class="alert gray" v-if="!spEditable" style="margin:8px 12px">{{ sp.status==='signed' ? '本表已簽認完成，內容已鎖定（雜湊 '+(sp.hash||'').slice(0,12)+'…）' : '抽查紀錄由監造人員填寫；目前為廠商身分，僅供檢視' }}</div>
+  <div class="alert gray" v-if="!spEditable" style="margin:8px 12px">{{ sp.status==='signed' ? '本表已簽認完成，內容已鎖定（雜湊 '+(sp.hash||'').slice(0,12)+'…）' : '抽查紀錄由捷運局工務所同仁填寫；目前為廠商身分，僅供檢視' }}</div>
   <div class="fbody">
     <div class="stab"><button v-for="s in stageTabs" :key="s[0]" :class="{on: spStage===s[0]}" @click="s[0]==='sum' ? spStage='sum' : spSetStage(s[0])">{{ s[1] }}<small>{{ s[0]==='sum' ? spJudged+'/'+spTotal : spStageStat(s[0]) }}</small></button></div>
     <div class="fgrid">
@@ -280,8 +280,8 @@
 <div class="plain" v-if="view==='docs'"><header class="hdr"><div class="grow"><h1>參考文件</h1></div></header>
   <div class="grid-cards"><div class="tcard" v-for="x in d.docs" :key="x.id" @click="docShow=x.code"><div class="t">{{ x.name }}</div><div class="muted small">{{ x.code }}</div><div class="small">{{ x.note }}</div></div></div></div>
 <div class="plain" v-if="view==='me'"><header class="hdr"><div class="grow"><h1>我的</h1></div></header>
-  <div class="card" style="max-width:520px"><h4>目前身分</h4><div class="pills"><button :class="{on: role==='contractor'}" @click="role='contractor'">廠商品管人員</button><button :class="{on: role==='supervisor'}" @click="role='supervisor'">監造現場工程師</button></div>
-    <div class="small muted mt">{{ me.name }}｜{{ me.org }}。廠商：填自主檢查表、申請會驗；監造：回覆排定、開始會驗、填抽查紀錄表。</div>
+  <div class="card" style="max-width:520px"><h4>目前身分</h4><div class="pills"><button :class="{on: role==='contractor'}" @click="role='contractor'">廠商品管人員</button><button :class="{on: role==='supervisor'}" @click="role='supervisor'">捷運局工務所同仁</button></div>
+    <div class="small muted mt">{{ me.name }}｜{{ me.org }}。廠商：填自主檢查表、申請會驗；工務所同仁：回覆排定、開始會驗、填抽查紀錄表。</div>
     <hr><div class="row wrap"><button class="btn" @click="clearSigs">清除已存簽名</button><button class="btn danger" @click="resetDemo">還原示範資料</button><a class="btn" href="admin.html" target="_blank">開啟後台管理</a></div></div></div>
 
   </main>
@@ -289,14 +289,19 @@
 
 <!-- ============ 彈窗 ============ -->
 <div class="modal-bg" v-if="newForm" @click.self="newForm=null"><div class="modal"><h3>新增自主檢查</h3>
-  <label class="f">表單</label><select v-model="newForm.templateId"><option v-for="t in selfTpls" :value="t.id">{{ d.tenders.find(x=>x.id===t.tenderId).code }}｜表{{ t.code }} {{ t.name }}（{{ t.items.length }} 項）</option></select>
-  <label class="f mt">單元編號（可由 QR Code 掃描）</label><input type="text" v-model="newForm.unit" placeholder="例：P13"><label class="f mt">檢查位置（選填）</label><input type="text" v-model="newForm.location" placeholder="預設：Y01站 單元 P13">
+  <label class="f">① 標號</label><select v-model="newForm.tenderId" @change="cascade(newForm, 'self', 'tender')"><option v-for="t in tenderOpts()" :value="t.id">{{ t.name }}</option></select>
+  <label class="f mt">② 工項（分項工程）</label><select v-model="newForm.subworkId" @change="cascade(newForm, 'self', 'sw')"><option v-for="s in swOpts(newForm.tenderId, 'self')" :value="s.id">{{ s.no }}、{{ s.name }}</option></select>
+  <label class="f mt">③ 表單</label><select v-model="newForm.templateId"><option v-for="t in tplOpts(newForm.subworkId, 'self')" :value="t.id">表{{ t.code }} {{ t.name }}（{{ t.items.length }} 項）</option></select>
+  <div class="alert warn mt" v-if="!newForm.templateId">此標號尚無可用的表單，請先到後台「表單範本」建立。</div>
+  <label class="f mt">單元編號（可由 QR Code 掃描）</label><input type="text" v-model="newForm.unit" placeholder="例：P13"><label class="f mt">檢查位置（選填）</label><input type="text" v-model="newForm.location">
   <div class="foot"><button class="btn" @click="newForm=null">取消</button><button class="btn primary" @click="createSc">建立並開始</button></div></div></div>
 <div class="modal-bg" v-if="spNew" @click.self="spNew=null"><div class="modal"><h3>新增隨機抽查</h3>
-  <label class="f">抽查記錄表</label><select v-model="spNew.templateId"><option v-for="t in spTpls" :value="t.id">{{ d.tenders.find(x=>x.id===t.tenderId).code }}｜{{ t.name }}（{{ t.items.length }} 項）</option></select>
+  <label class="f">① 標號</label><select v-model="spNew.tenderId" @change="cascade(spNew, 'spot', 'tender')"><option v-for="t in tenderOpts()" :value="t.id">{{ t.name }}</option></select>
+  <label class="f mt">② 工項（分項工程）</label><select v-model="spNew.subworkId" @change="cascade(spNew, 'spot', 'sw')"><option v-for="s in swOpts(spNew.tenderId, 'spot')" :value="s.id">{{ s.no }}、{{ s.name }}</option></select>
+  <label class="f mt">③ 抽查記錄表</label><select v-model="spNew.templateId"><option v-for="t in tplOpts(spNew.subworkId, 'spot')" :value="t.id">{{ t.name }}（{{ t.items.length }} 項）</option></select>
+  <div class="alert warn mt" v-if="!spNew.templateId">此標號尚無可用的表單，請先到後台「表單範本」建立。</div>
   <label class="f mt">單元編號（可由 QR Code 掃描）</label><input type="text" v-model="spNew.unit" placeholder="例：P12"><label class="f mt">抽查位置（選填）</label><input type="text" v-model="spNew.location">
-  <div class="mt small muted">系統會自動帶入同單元最近一份廠商自主檢查表作為「廠商自檢」對照；未抽查的項目簽認時自動填 ╱。</div>
-  <div class="foot"><button class="btn" @click="spNew=null">取消</button><button class="btn primary" @click="createSpot">建立並開始</button></div></div></div>
+  <div class="mt small muted">系統會自動帶入同單元最近一份廠商自主檢查表作為「廠商自檢」對照；未抽查的項目簽認時自動填 ╱。</div><div class="foot"><button class="btn" @click="spNew=null">取消</button><button class="btn primary" @click="createSpot">建立並開始</button></div></div></div>
 <div class="modal-bg" v-if="qrForm" @click.self="qrForm=null"><div class="modal"><h3>掃描單元 QR Code</h3><div class="alert info mb">示範環境以輸入單元編號代替鏡頭掃描（例：P12 會開啟進行中的自主檢查表）。</div>
   <input type="text" v-model="qrForm.code" placeholder="單元編號，例 P12" @keyup.enter="scanQr"><div class="foot"><button class="btn" @click="qrForm=null">取消</button><button class="btn primary" @click="scanQr">確認</button></div></div></div>
 <div class="modal-bg" v-if="applyForm" @click.self="applyForm=null"><div class="modal"><h3>申請停留點會驗</h3>

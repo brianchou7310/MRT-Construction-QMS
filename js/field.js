@@ -10,7 +10,7 @@ createApp({
     const role = ref((() => { try { return localStorage.getItem('qms-role') || 'contractor'; } catch (e) { return 'contractor'; } })());
     const isSup = computed(() => role.value === 'supervisor');
     watch(role, v => { try { localStorage.setItem('qms-role', v); } catch (e) { /* ignore */ } });
-    const me = computed(() => isSup.value ? { name: '示範監造', org: '監造工務所', title: '監造現場工程師' } : { name: '示範品管', org: '大陸工程股份有限公司', title: '廠商品管人員' });
+    const me = computed(() => isSup.value ? { name: '示範工務所同仁', org: '捷運局工務所', title: '捷運局工務所同仁' } : { name: '示範品管', org: '大陸工程股份有限公司', title: '廠商品管人員' });
     const wide = ref(window.matchMedia('(min-width: 900px)').matches);
     window.matchMedia('(min-width: 900px)').addEventListener('change', e => { wide.value = e.matches; });
     const toastMsg = ref(''), toastNg = ref(false); let tt;
@@ -91,10 +91,21 @@ createApp({
     const scList = computed(() => d.selfChecks.filter(inTender).sort((a, b) => b.updatedAt - a.updatedAt));
     const scProgress = sc => { const t = tplOf(sc.templateId); return { n: Object.values(sc.answers).filter(a => a.judge).length, total: t ? t.items.length : 0 }; };
     const newForm = ref(null), qrForm = ref(null);
-    const selfTpls = computed(() => d.templates.filter(t => t.kind === 'self' && t.status === 'published').sort((a, b) => b.items.length - a.items.length));
-    function openNew(unit) { newForm.value = { templateId: (selfTpls.value[0] || {}).id, unit: unit || '', location: '' }; }
+    // 新增表單的三層選擇：標號 → 工項(分項工程) → 表單
+    const byOrder = (a, b) => (a.order == null ? 1e9 : a.order) - (b.order == null ? 1e9 : b.order);
+    const tplOpts = (sid, kind) => d.templates.filter(t => t.subworkId === sid && t.kind === kind && t.status === 'published').sort((a, b) => byOrder(a, b) || b.items.length - a.items.length);
+    const swOpts = (tid, kind) => d.subworks.filter(s => s.tenderId === tid && tplOpts(s.id, kind).length).sort(byOrder);
+    const tenderOpts = () => d.tenders.slice().sort((a, b) => a.code.localeCompare(b.code));
+    function cascade(f, kind, from) {
+      if (from === 'tender') f.subworkId = (swOpts(f.tenderId, kind)[0] || {}).id || '';
+      if (from !== 'tpl') f.templateId = (tplOpts(f.subworkId, kind)[0] || {}).id || '';
+    }
+    function newFormInit(kind, unit) {
+      const ts = tenderOpts().filter(x => swOpts(x.id, kind).length), t = ts.find(x => x.id === tenderSel.value) || ts[0] || tenderOpts()[0] || {}; const f = { tenderId: t.id || '', subworkId: '', templateId: '', unit: unit || '', location: '' }; cascade(f, kind, 'tender'); return f;
+    }
+    function openNew(unit) { newForm.value = newFormInit('self', unit); }
     async function createSc() {
-      const f = newForm.value; if (!f.unit.trim()) return toast('請輸入單元編號', true); if (!f.templateId) return toast('請選擇表單', true);
+      const f = newForm.value; if (!f.unit.trim()) return toast('請輸入單元編號', true); if (!f.tenderId || !f.subworkId || !f.templateId) return toast('請依序選擇標號、工項、表單', true);
       const sc = await Q.newSelfCheck({ templateId: f.templateId, unit: f.unit.trim().toUpperCase(), location: f.location.trim() }); newForm.value = null; await load(); openSc(sc.id);
     }
     function scanQr() {
@@ -139,7 +150,7 @@ createApp({
     function setStage(st) { stageTab.value = st; const l = Q.stageItems(curTpl.value, st); const f = l.find(i => !ans(i.no).judge) || l[0]; if (f) itemNo.value = f.no; }
     function step(dir) { const its = curTpl.value.items, i = its.findIndex(x => x.no === itemNo.value) + dir; if (i >= 0 && i < its.length) gotoItem(its[i]); }
     function setJudge(it, j) {
-      if (readonly.value) return toast(isSup.value ? '監造身分僅能檢視自主檢查表' : '表單已簽認，不可修改', true);
+      if (readonly.value) return toast(isSup.value ? '工務所同仁身分僅能檢視自主檢查表' : '表單已簽認，不可修改', true);
       const lk = lockOf(it); if (lk) return toast('項目已鎖定：' + lk, true);
       if (!['none', 'failed'].includes(hstate(it))) return toast('已申請會驗，判定不可更改', true);
       const a = ensure(it.no);
@@ -206,7 +217,6 @@ createApp({
     const spSugg = it => Q.suggest(it, spA(it.no).values);
     const spArea = computed(() => { const l = Number(sp.value && sp.value.calc.length), dp = Number(sp.value && sp.value.calc.depth); return l && dp ? (l * dp).toFixed(2) : ''; });
     const spLocked = computed(() => spReq.value ? lockedAfter(spReq.value) : []);
-    const spTpls = computed(() => d.templates.filter(t => t.kind === 'spot' && t.status === 'published').sort((a, b) => b.items.length - a.items.length));
     const spList = computed(() => d.spotChecks.filter(x => tenderSel.value === 'all' || x.tenderId === tenderSel.value).sort((a, b) => b.createdAt - a.createdAt));
     const spProgress = x => ({ n: Object.values(x.answers || {}).filter(a => a.judge).length, total: Object.keys(x.answers || {}).length });
     let spTimer = null;
@@ -237,9 +247,9 @@ createApp({
       Q.autoNa(sp.value); await spFlush(); openSign('spot', sp.value.id);
     }
     async function leaveSpot() { await spFlush(); sp.value = null; view.value = 'spots'; await load(); }
-    function openSpotNew() { spNew.value = { templateId: (spTpls.value[0] || {}).id, unit: '', location: '' }; }
+    function openSpotNew() { spNew.value = newFormInit('spot'); }
     async function createSpot() {
-      const f = spNew.value; if (!f.templateId) return toast('請選擇抽查表', true); if (!f.unit.trim()) return toast('請輸入單元編號', true);
+      const f = spNew.value; if (!f.tenderId || !f.subworkId || !f.templateId) return toast('請依序選擇標號、工項、表單', true); if (!f.unit.trim()) return toast('請輸入單元編號', true);
       const rec = await Q.newSpotCheck({ templateId: f.templateId, unit: f.unit.trim().toUpperCase(), location: f.location.trim() }); spNew.value = null; await load(); openSpot(rec.id);
     }
 
@@ -248,7 +258,7 @@ createApp({
     let drawn = ref(false), drawing = false, lastPt = null;
     const signers = computed(() => !signCtx.value ? [] : signCtx.value.kind === 'self'
       ? [{ key: 'site', title: '現場工程師（檢查人員）', org: '示範品管・大陸工程股份有限公司', name: '示範品管' }, { key: 'rep', title: '工地授權代表或其授權主管', org: '示範工地主任・大陸工程股份有限公司', name: '示範工地主任' }]
-      : [{ key: 'insp', title: '監造工務所（抽查人員）', org: '示範監造・監造工務所', name: '示範監造' }, { key: 'att', title: '施工廠商隨同人員', org: '示範品管・大陸工程股份有限公司', name: '示範品管' }]);
+      : [{ key: 'insp', title: '監造工務所（抽查人員）', org: '示範工務所同仁・捷運局工務所', name: '示範工務所同仁' }, { key: 'att', title: '施工廠商隨同人員', org: '示範品管・大陸工程股份有限公司', name: '示範品管' }]);
     const signRec = computed(() => signCtx.value && (signCtx.value.kind === 'self' ? signCtx.value.rec : signCtx.value.rec));
     const signIdx = ref(0);
     const curSigner = computed(() => signers.value[signIdx.value]);
@@ -313,11 +323,11 @@ createApp({
     return {
       Q, d, loaded, now, view, todoTab, tenderSel, role, isSup, me, wide, toastMsg, toastNg, toast, tplOf, rel, hh, todayLabel, reqCls,
       todoReqs, lockedCards, draftSpots, openDefects, todoCount, holdFilter, holdsList, selReqId, selReq, sched, selectReq, reqChips, reqPhotos, lockedAfter, doSchedule, doReject, doStart,
-      scList, scProgress, newForm, qrForm, selfTpls, openNew, createSc, scanQr,
+      scList, scProgress, newForm, qrForm, tenderOpts, swOpts, tplOpts, cascade, openNew, createSc, scanQr,
       cur, curTpl, stageTab, itemNo, saveMsg, docShow, linkShow, applyForm, readonly, stageList, curItem, shownItems, judged, total, stageStat, stageDone, ans, ensure, lockOf, hstate, hreq, itemEditable, sugg, itemIcon,
       flush, queueSave, openSc, gotoItem, setStage, step, setJudge, addPhoto, addDemoPhoto, delPhoto, useSuggest, markLinked, confirmQr, canApply, openApply, applyShort, applyHours, submitApply, holdText,
       summary, holdItems, attachCodes, canSubmit, goSign, finishStage, stageTabs, stageNext, leaveForm,
-      sp, spStage, spItemNo, spSaveMsg, spNew, spTpl, spReq, spSc, spEditable, spStageList, spCurItem, spShown, spA, spJudged, spTotal, spSummary, spStageStat, spSelfVals, spSugg, spArea, spLocked, spTpls, spList, spProgress, spSave, spFlush, openSpot, spGoto, spSetStage, spJudge, spUseSuggest, spPhoto, spDemoPhoto, spDelPhoto, spGoSign, leaveSpot, openSpotNew, createSpot,
+      sp, spStage, spItemNo, spSaveMsg, spNew, spTpl, spReq, spSc, spEditable, spStageList, spCurItem, spShown, spA, spJudged, spTotal, spSummary, spStageStat, spSelfVals, spSugg, spArea, spLocked, spList, spProgress, spSave, spFlush, openSpot, spGoto, spSetStage, spJudge, spUseSuggest, spPhoto, spDemoPhoto, spDelPhoto, spGoSign, leaveSpot, openSpotNew, createSpot,
       signCtx, signHash, signAgree, canvasEl, drawn, signers, signIdx, curSigner, signSummary, sDown, sMove, sUp, clearSign, applySaved, saveSig, confirmSign, cancelSign,
       defCls, defText, defAct, resetDemo, clearSigs, navItems, nav, navActive, printForm
     };
