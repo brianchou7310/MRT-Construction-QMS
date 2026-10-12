@@ -212,15 +212,15 @@
       <label class="f">分項工程</label><select v-model="tplSw"><optgroup v-for="g in swGroups" :key="g.tender.id" :label="g.tender.code + ' ' + g.tender.name"><option v-for="s in g.subs" :key="s.id" :value="s.id">{{ g.tender.code }}｜{{ s.no }}、{{ s.name }}</option></optgroup></select>
       <div class="row mt"><button class="btn primary sm" @click="newTpl('self')">＋ 自主檢查表</button><button class="btn sm" @click="newTpl('spot')">＋ 抽查紀錄表</button></div>
       <h4 class="tpl-group">自主檢查表（廠商）<span class="chip">{{ tplList('self').length }}</span></h4>
-      <div class="tpl-item" v-for="t in tplList('self')" :key="t.id" :class="{on: selTplId===t.id}" @click="pickTpl(t)"><b>表{{ t.code }} {{ t.name }}</b><div class="muted small">{{ t.items.length }} 項・<span class="star">★{{ t.items.filter(i=>i.hold).length }}</span>・v{{ t.version }}</div></div>
+      <div class="tpl-item" v-for="t in tplList('self')" :key="t.id" :class="{on: selTplId===t.id, dragging: dragId===t.id, over: dragOver===t.id && dragId!==t.id}" draggable="true" @dragstart="onDragStart($event,t)" @dragend="onDragEnd" @dragover.prevent="dragOver=t.id" @dragleave="dragOver===t.id && (dragOver=null)" @drop.prevent="onDrop('self',t)" @click="pickTpl(t)" title="拖曳可調整順序"><span class="grip">⋮⋮</span><div class="tpl-body"><b>表{{ t.code }} {{ t.name }}</b><div class="muted small">{{ t.items.length }} 項・<span class="star">★{{ t.items.filter(i=>i.hold).length }}</span>・v{{ t.version }}</div></div></div>
       <h4 class="tpl-group">抽查紀錄表（監造）<span class="chip">{{ tplList('spot').length }}</span></h4>
-      <div class="tpl-item" v-for="t in tplList('spot')" :key="t.id" :class="{on: selTplId===t.id}" @click="pickTpl(t)"><b>{{ t.name }}</b><div class="muted small">{{ t.items.length }} 項・<span class="star">★{{ t.items.filter(i=>i.hold).length }}</span>・v{{ t.version }}</div></div>
+      <div class="tpl-item" v-for="t in tplList('spot')" :key="t.id" :class="{on: selTplId===t.id, dragging: dragId===t.id, over: dragOver===t.id && dragId!==t.id}" draggable="true" @dragstart="onDragStart($event,t)" @dragend="onDragEnd" @dragover.prevent="dragOver=t.id" @dragleave="dragOver===t.id && (dragOver=null)" @drop.prevent="onDrop('spot',t)" @click="pickTpl(t)" title="拖曳可調整順序"><span class="grip">⋮⋮</span><div class="tpl-body"><b>{{ t.name }}</b><div class="muted small">{{ t.items.length }} 項・<span class="star">★{{ t.items.filter(i=>i.hold).length }}</span>・v{{ t.version }}</div></div></div>
       <div class="muted small mt" v-if="!tplList('self').length && !tplList('spot').length">此分項尚未設定範本</div>
     </div>
     <div class="card" v-if="edit">
       <div class="row wrap"><h2 class="grow">{{ edit.kind==='self'?'表'+edit.code+' ':'' }}{{ edit.name }} <span class="chip" :class="edit.kind==='self'?'blue':'warn'">{{ edit.kind==='self'?'自主檢查表':'抽查紀錄表' }}</span> <span class="chip ok">v{{ edit.version }} 已發布</span></h2></div>
       <div class="muted small mt">來源：{{ edit.source || '—' }}</div>
-      <div class="row wrap mt"><button class="btn" @click="exportXlsx">匯出 Excel</button><button class="btn" @click="exportCsv">匯出 CSV</button><button class="btn" @click="previewOn=true">預覽表單</button><button class="btn" v-if="edit.kind==='spot'" @click="syncFromSelf">從自主檢查表同步項目</button><span class="grow"></span><button class="btn danger" @click="delTpl">刪除此表單</button><button class="btn primary" @click="saveEdit">{{ editUsed>0?'另存為 v'+(edit.version+1):'儲存' }}</button></div>
+      <div class="row wrap mt"><button class="btn" @click="exportXlsx">匯出 Excel</button><button class="btn" @click="exportCsv">匯出 CSV</button><button class="btn" @click="openItemImp">匯入檢查項目</button><button class="btn" @click="previewOn=true">預覽表單</button><button class="btn" v-if="edit.kind==='spot'" @click="syncFromSelf">從自主檢查表同步項目</button><span class="grow"></span><button class="btn danger" @click="delTpl">刪除此表單</button><button class="btn primary" @click="saveEdit">{{ editUsed>0?'另存為 v'+(edit.version+1):'儲存' }}</button></div>
       <div class="alert warn mt" v-if="editUsed>0">此版本已有 {{ editUsed }} 張紀錄使用，修改後將另存新版本；已填寫的表單保留 v{{ edit.version }} 內容。</div>
       <div class="tabs mt"><a :class="{on:tplTab==='items'}" @click="tplTab='items'">檢查項目</a><a :class="{on:tplTab==='head'}" @click="tplTab='head'">表頭與簽認欄</a><a :class="{on:tplTab==='defect'}" @click="tplTab='defect'">缺失複查設定</a><a :class="{on:tplTab==='ver'}" @click="tplTab='ver'">版本紀錄</a></div>
 
@@ -332,6 +332,21 @@
   <div class="tbl-scroll"><table class="table"><thead><tr><th>代碼</th><th>名稱</th><th>單位</th><th>下限（≥）</th><th>上限（≤）</th><th></th></tr></thead><tbody>
     <tr v-for="(f,i) in edit.items[fieldIdx].fields" :key="i"><td><input type="text" v-model="f.key"></td><td><input type="text" v-model="f.label"></td><td><input type="text" v-model="f.unit"></td><td><input type="number" step="any" v-model="f.min"></td><td><input type="number" step="any" v-model="f.max"></td><td><button class="btn sm danger" @click="edit.items[fieldIdx].fields.splice(i,1)">刪</button></td></tr></tbody></table></div>
   <div class="foot"><button class="btn" @click="addField(edit.items[fieldIdx])">＋ 新增欄位</button><button class="btn primary" @click="fieldIdx=-1">完成</button></div></div></div>
+
+<!-- 匯入檢查項目 -->
+<div class="modal-bg" v-if="itemImp" @click.self="itemImp=null"><div class="modal wide"><h3>匯入檢查項目 → {{ edit && edit.name }}</h3>
+  <div class="alert info mb">上傳 Excel（.xlsx／.xls，可含多個工作表）或 CSV。必要欄位：<b>階段、檢查項目、判定類型</b>；選填：範本名稱、檢查標準、停留點(Y/N)、必填(Y/N)、引用文件編號。匯入後項目會加入目前編輯中的表單，按「儲存」才會生效。</div>
+  <div class="row wrap mb"><input type="file" accept=".xlsx,.xls,.csv,text/csv" @change="onItemFile"><button class="btn" @click="downloadItemSample">下載匯入樣本（.xlsx）</button></div>
+  <div class="alert ng mb" v-if="itemImp.err">{{ itemImp.err }}</div>
+  <template v-if="itemImp.groups.length">
+    <div class="row wrap mb"><label class="f" style="margin:0">匯入範本</label><select v-model="itemImp.sel" style="max-width:320px"><option v-for="g in itemImp.groups" :value="g">{{ g }}</option></select>
+      <label><input type="radio" value="append" v-model="itemImp.mode"> 加在現有項目後面</label><label><input type="radio" value="replace" v-model="itemImp.mode"> 取代全部現有項目</label></div>
+    <div class="tbl-scroll" style="max-height:340px"><table class="table"><thead><tr><th>工作表／列</th><th>階段</th><th>檢查項目</th><th>檢查標準</th><th>類型</th><th>★</th><th>必拍</th><th>引用文件</th><th>驗證結果</th></tr></thead><tbody>
+      <tr v-for="r in itemImpRows" :class="{err: r.errs.length}"><td class="nowrap">{{ r.sheet }}！{{ r.line }}</td><td>{{ r.stageText }}</td><td>{{ r.name }}</td><td class="pre">{{ r.std }}</td><td>{{ r.typeText }}</td><td>{{ r.hold?'Y':'N' }}</td><td>{{ r.photo?'Y':'N' }}</td><td>{{ r.ref }}</td>
+        <td><span class="chip ok" v-if="!r.errs.length">通過</span><div v-else style="color:var(--ng)" class="small"><div v-for="e in r.errs">{{ e }}</div></div></td></tr></tbody></table></div>
+    <div class="mt">可匯入 <b>{{ itemImpRows.length - itemImpBad }}</b> 列，<b :style="itemImpBad?'color:var(--ng)':''">{{ itemImpBad }}</b> 列有錯誤將略過</div>
+  </template>
+  <div class="foot"><button class="btn" @click="itemImp=null">取消</button><button class="btn primary" :disabled="!itemImp.groups.length || itemImpRows.length-itemImpBad<=0" @click="doItemImp">匯入</button></div></div></div>
 
 <!-- 預覽表單 -->
 <div class="modal-bg" v-if="previewOn && edit" @click.self="previewOn=false"><div class="modal wide"><h3>預覽：{{ edit.name }} v{{ edit.version }}</h3><div class="tbl-scroll"><table class="table"><thead><tr><th>序</th><th>檢查項目</th><th>檢查標準</th><th>實際檢查情形（填寫欄位）</th><th>判定</th></tr></thead>

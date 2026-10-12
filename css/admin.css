@@ -52,5 +52,7 @@
 }
 
 .tpl-group { display: flex; align-items: center; gap: 8px; margin: 16px 0 6px; padding: 5px 8px; font-size: 13px; background: #eef3fa; border-left: 3px solid var(--primary); border-radius: 4px; }
-.tpl-item { margin: 2px 0 2px 18px; padding: 8px 10px; border-left: 2px solid var(--line); border-radius: 0 8px 8px 0; cursor: pointer; }
+.tpl-item { margin: 2px 0 2px 18px; padding: 8px 10px 8px 4px; border-left: 2px solid var(--line); border-radius: 0 8px 8px 0; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+.tpl-item .grip { color: #aab4c4; cursor: grab; letter-spacing: -3px; padding: 0 6px; user-select: none; } .tpl-body { flex: 1; min-width: 0; }
+.tpl-item.dragging { opacity: .4; } .tpl-item.over { box-shadow: 0 -3px 0 var(--primary); }
 .tpl-item:hover { background: #f4f7fb; } .tpl-item.on { background: var(--primary-l); border-left-color: var(--primary); }

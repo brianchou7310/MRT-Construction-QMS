@@ -127,7 +127,17 @@ createApp({
     // 分項工程下拉：先依標號，再依項次(order)排列
     const swGroups = computed(() => d.tenders.slice().sort((a, b) => a.code.localeCompare(b.code)).map(t => ({ tender: t, subs: d.subworks.filter(s => s.tenderId === t.id).sort((a, b) => a.order - b.order) })).filter(g => g.subs.length));
     const tplSw = ref('S671-5'), selTplId = ref(null), tplTab = ref('items'), edit = ref(null), previewOn = ref(false), fieldIdx = ref(-1);
-    const tplList = kind => d.templates.filter(t => t.subworkId === tplSw.value && t.kind === kind && t.status === 'published');
+    const tplList = kind => d.templates.filter(t => t.subworkId === tplSw.value && t.kind === kind && t.status === 'published').sort((a, b) => (a.order == null ? 1e9 : a.order) - (b.order == null ? 1e9 : b.order));
+    const dragId = ref(null), dragOver = ref(null);
+    function onDragStart(e, t) { dragId.value = t.id; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', t.id); } catch (x) { /* ignore */ } }
+    function onDragEnd() { dragId.value = null; dragOver.value = null; }
+    async function onDrop(kind, target) {
+      const id = dragId.value; onDragEnd(); if (!id || id === target.id) return;
+      const list = tplList(kind), from = list.findIndex(x => x.id === id), to = list.findIndex(x => x.id === target.id); if (from < 0 || to < 0) return;
+      const [m] = list.splice(from, 1); list.splice(to, 0, m);
+      for (let i = 0; i < list.length; i++) { const t = Q.clone(list[i]); t.order = i; await Q.put('templates', t); }
+      await load();
+    }
     const tplHistory = computed(() => edit.value ? d.templates.filter(t => t.code === edit.value.code && t.subworkId === edit.value.subworkId && t.kind === edit.value.kind).sort((a, b) => b.version - a.version) : []);
     function pickTpl(t) { selTplId.value = t.id; edit.value = Q.clone(t); tplTab.value = 'items'; }
     watch(tplSw, () => { const l = tplList('self')[0] || tplList('spot')[0]; if (l) pickTpl(l); else { selTplId.value = null; edit.value = null; } });
@@ -186,6 +196,49 @@ createApp({
     function exportCsv() {
       const t = edit.value, rows = [CSV_HEAD].concat(t.items.map(i => [t.name, Q.STAGES[i.stage], i.no, i.name, i.std, TYPES[i.type] || '選項', i.hold ? 'Y' : 'N', i.photo ? 'Y' : 'N', i.ref || '']));
       download(`${t.code}_${t.name}.csv`, rows.map(r => r.map(csvCell).join(',')).join('\r\n'));
+    }
+
+    /* ---------- 匯入檢查項目（到目前編輯中的範本）---------- */
+    const itemImp = ref(null);
+    const ITEM_REQ = ['階段', '檢查項目', '判定類型'];
+    function openItemImp() { itemImp.value = { fileName: '', rows: [], groups: [], sel: '', mode: 'append', err: '', done: false }; }
+    function itemSample() {
+      const t = edit.value; return [CSV_HEAD].concat((t.items.length ? t.items : [Q.I(1, 'pre', '施工圖', '是否核准')]).map(i => [t.name, Q.STAGES[i.stage], i.no, i.name, i.std, TYPES[i.type] || '選項', i.hold ? 'Y' : 'N', i.photo ? 'Y' : 'N', i.ref || '']));
+    }
+    function parseItemSheets(sheets) {
+      const m = itemImp.value; m.err = ''; m.rows = []; let usable = 0, lastMiss = '';
+      sheets.forEach(sh => {
+        const rows = sh.rows.filter(r => r.some(x => String(x).trim() !== '')); if (rows.length < 2) return;
+        const head = rows[0].map(x => String(x).trim()), miss = ITEM_REQ.filter(h => !head.includes(h));
+        if (miss.length) { lastMiss = `工作表「${sh.name}」缺少欄位：` + miss.join('、'); return; }
+        usable++; const ix = h => head.indexOf(h), cell = (r, h) => ix(h) < 0 ? '' : String(r[ix(h)] == null ? '' : r[ix(h)]).trim();
+        rows.slice(1).forEach((r, k) => {
+          const errs = [], stage = SR[cell(r, '階段')], type = RT[cell(r, '判定類型')], ref = cell(r, '引用文件編號');
+          if (!stage) errs.push('階段須為 施工前／施工中／施工後');
+          if (!type) errs.push('判定類型「' + cell(r, '判定類型') + '」不在代碼表內（選項／數值／照片／文字／連結表單）');
+          if (!cell(r, '檢查項目')) errs.push('檢查項目不可空白');
+          if (ref && !d.docs.find(x => x.code === ref)) errs.push('引用文件編號「' + ref + '」不存在於參考文件庫');
+          m.rows.push({ line: k + 2, sheet: sh.name, group: cell(r, '範本名稱') || '（未命名）', stage, type, name: cell(r, '檢查項目'), std: ix('檢查標準') < 0 ? '' : String(r[ix('檢查標準')] == null ? '' : r[ix('檢查標準')]), hold: /^y/i.test(cell(r, '停留點')), photo: /^y/i.test(cell(r, '必填')), ref, stageText: cell(r, '階段'), typeText: cell(r, '判定類型'), errs });
+        });
+      });
+      if (!usable) { m.err = lastMiss || '沒有資料列，請確認第一列為欄位標題'; return; }
+      m.groups = [...new Set(m.rows.map(r => r.group))]; m.sel = m.groups[0];
+    }
+    function downloadItemSample() { writeXlsx(`${edit.value.code}_匯入樣本.xlsx`, itemSample(), edit.value.code); }
+    function onItemFile(e) {
+      const f = e.target.files[0]; if (!f) return; const m = itemImp.value; m.fileName = f.name; m.rows = []; m.groups = []; m.err = ''; const rd = new FileReader();
+      if (/\.xlsx?$/i.test(f.name)) {
+        rd.onload = () => { try { const wb = XLSX.read(rd.result, { type: 'array' }); parseItemSheets(wb.SheetNames.map(n => ({ name: n, rows: XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, defval: '' }) }))); } catch (ex) { m.err = '無法讀取 Excel：' + ex.message; } };
+        rd.readAsArrayBuffer(f);
+      } else rd.onload = () => parseItemSheets([{ name: 'CSV', rows: parseCsv(String(rd.result).replace(/^\ufeff/, '')) }]), rd.readAsText(f, 'utf-8');
+    }
+    const itemImpRows = computed(() => itemImp.value ? itemImp.value.rows.filter(r => r.group === itemImp.value.sel) : []);
+    const itemImpBad = computed(() => itemImpRows.value.filter(r => r.errs.length).length);
+    function doItemImp() {
+      const m = itemImp.value, ok = itemImpRows.value.filter(r => !r.errs.length); if (!ok.length) return toast('沒有可匯入的列', true);
+      const items = ok.map(r => Q.I(0, r.stage, r.name, r.std, { type: r.type, hold: r.hold, photo: r.photo || r.type === 'photo', ref: r.ref, fields: r.type === 'number' ? [Q.F('v', '實測值', '', null, null)] : [], linked: r.type === 'linked' ? '5-4' : '' }));
+      edit.value.items = m.mode === 'replace' ? items : edit.value.items.concat(items);
+      toast(`已匯入 ${items.length} 項${itemImpBad.value ? `（略過 ${itemImpBad.value} 列錯誤）` : ''}，請按「儲存」生效`); itemImp.value = null;
     }
 
     /* ---------- CSV 匯入 ---------- */
@@ -293,7 +346,7 @@ createApp({
       progTender, progFilter, progRows, progCount, holdTab, holdTabs, holdCount, holdList, holdByDate, selReqId, selReq, calView, sched, reqChips, lockedAfter, hoursBefore, doSchedule, doReject, doStart,
       showSC, showSP, itemsOf, judgeText, valuesText, spotItem, defCls, defText, defTab, defList, defAct,
       selTenderId, selTender, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, tenderForm, swForm, saveTender, saveSw, moveSw, delSw, newTender,
-      tplSw, swGroups, selTplId, tplTab, edit, previewOn, fieldIdx, tplList, tplHistory, pickTpl, editUsed, editStages, TYPES, holdN, addItem, delItem, moveItem, addField, onType, saveEdit, delTpl, syncFromSelf, newTpl, exportCsv, exportXlsx,
+      tplSw, swGroups, selTplId, tplTab, edit, previewOn, fieldIdx, tplList, tplHistory, pickTpl, editUsed, editStages, TYPES, holdN, addItem, delItem, moveItem, addField, onType, saveEdit, delTpl, syncFromSelf, newTpl, exportCsv, exportXlsx, dragId, dragOver, onDragStart, onDragEnd, onDrop, itemImp, openItemImp, itemSample, downloadItemSample, onItemFile, itemImpRows, itemImpBad, doItemImp,
       imp, validate, onFile, sampleCsv, loadSample, downloadSample, impOk, doImport, impReset, download,
       docForm, userForm, saveDoc, saveUser, delRow, saveParams, resetDemo, navItems, titles, todayStr
     };
