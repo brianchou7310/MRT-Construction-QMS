@@ -1,4 +1,4 @@
-/* 捷運施工品管系統 - 共用資料層 (IndexedDB) + 示範資料 + 業務規則
+/* 捷運施工查驗系統 - 共用資料層 (IndexedDB) + 示範資料 + 業務規則
  * 後台 (admin.html) 與現場作業 (field.html) 共用同一個 IndexedDB，
  * 任一頁寫入後會透過 BroadcastChannel 通知另一頁重新載入。
  */

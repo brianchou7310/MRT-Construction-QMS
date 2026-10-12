@@ -1,4 +1,4 @@
-# 捷運施工品管系統（靜態雛形）
+# 捷運施工查驗系統（靜態雛形）
 
 純 HTML + Vue 3（本地 `lib/vue.global.prod.js`）+ JavaScript + IndexedDB，無需建置、無後端。
 
