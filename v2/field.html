@@ -101,7 +101,7 @@
   <div class="grid-cards">
     <div class="tcard" v-for="sc in scList" :key="sc.id" @click="openSc(sc.id)">
       <div class="row"><div class="grow"><div class="t">表{{ sc.templateCode }} {{ sc.templateName }} <span class="small muted">v{{ sc.templateVer }}</span></div><div class="muted small">{{ sc.subworkName }}｜單元 {{ sc.unit }}｜{{ Q.fmtD(sc.date) }}</div></div><span class="chip" :class="sc.status==='signed'?'ok':'warn'">{{ sc.status==='signed'?'已簽認':'填寫中' }}</span></div>
-      <div class="bar"><i :style="{width: scProgress(sc).n/Math.max(1,scProgress(sc).total)*100+'%'}"></i></div><div class="small muted" v-if="sc.fillMode==='pdf'"><span class="chip warn">PDF 範本</span> {{ sc.pdfFile ? '已上傳簽名後 PDF' : '待上傳簽名後 PDF' }}</div><div class="small muted" v-else>已判定 {{ scProgress(sc).n }} / {{ scProgress(sc).total }}</div>
+      <div class="bar"><i :style="{width: scProgress(sc).n/Math.max(1,scProgress(sc).total)*100+'%'}"></i></div><div class="small muted" v-if="sc.fillMode==='pdf'"><span class="chip warn">PDF 範本</span> <span class="chip" :class="wfCls(sc.wfStatus)">{{ sc.wfStatus }}</span></div><div class="small muted" v-else>已判定 {{ scProgress(sc).n }} / {{ scProgress(sc).total }}</div>
     </div>
   </div>
   <div class="empty" v-if="!scList.length">尚無自主檢查表，請按「新增自主檢查」</div>
@@ -196,7 +196,7 @@
     <div class="tcard" v-for="x in spList" :key="x.id" @click="openSpot(x.id)">
       <div class="row"><div class="grow"><div class="t">{{ x.templateName }} <span class="small muted">v{{ x.templateVer }}</span></div><div class="muted small">{{ x.location }}｜{{ Q.fmtD(x.date||x.createdAt) }}</div></div><span class="chip" :class="x.status==='signed'?'ok':'warn'">{{ x.status==='signed'?'已簽認':'填寫中' }}</span></div>
       <div class="row wrap"><span class="chip warn" v-if="x.kind==='hold'">檢驗停留點：★{{ x.title }}</span><span class="chip" v-else>隨機抽查</span><span class="chip ng" v-if="Object.values(x.answers||{}).some(a=>a.judge==='ng')">有缺失</span></div>
-      <div class="bar"><i :style="{width: spProgress(x).n/Math.max(1,spProgress(x).total)*100+'%'}"></i></div><div class="small muted" v-if="x.fillMode==='pdf'"><span class="chip warn">PDF 範本</span> {{ x.pdfFile ? '已上傳簽名後 PDF' : '待上傳簽名後 PDF' }}</div><div class="small muted" v-else>已抽查 {{ spProgress(x).n }} / {{ spProgress(x).total }}</div>
+      <div class="bar"><i :style="{width: spProgress(x).n/Math.max(1,spProgress(x).total)*100+'%'}"></i></div><div class="small muted" v-if="x.fillMode==='pdf'"><span class="chip warn">PDF 範本</span> <span class="chip" :class="wfCls(x.wfStatus)">{{ x.wfStatus }}</span></div><div class="small muted" v-else>已抽查 {{ spProgress(x).n }} / {{ spProgress(x).total }}</div>
     </div>
   </div>
   <div class="empty" v-if="!spList.length">尚無抽查紀錄。<br>工務所同仁可於「待辦」開始會驗，或按「新增隨機抽查」。</div>
@@ -260,27 +260,34 @@
   <footer class="fbar"><span class="small muted save">{{ spSaveMsg || '廠商自主檢查表將自動附於本抽查紀錄表' }}</span><button class="btn" @click="spFlush().then(()=>toast('已暫存'))" :disabled="!spEditable">暫存</button><button class="btn primary" :class="{disabled: !spEditable}" @click="spGoSign" v-if="sp.status!=='signed'">簽認並完成</button></footer>
 </div>
 
-<!-- ============ 空白範本（PDF）填寫 ============ -->
-<div class="form pdfv" v-if="view==='pdf' && pf && pfTpl">
+<!-- ============ 空白範本（PDF）工作流程 ============ -->
+<div class="form pdfv" v-if="view==='pdf' && pf && pfTpl && pfRec">
   <header class="fhdr"><button class="icon-btn" @click="leavePdf">‹</button>
-    <div class="grow"><div class="ft">{{ pf.kind==='self' ? '表'+pf.rec.templateCode+' ' : '' }}{{ pf.rec.templateName }} <span class="small">v{{ pf.rec.templateVer }}｜{{ pf.rec.id }}</span> <span class="chip warn">空白範本 PDF</span><span class="chip warn" v-if="pf.kind==='spot' && pf.rec.requestId">檢驗停留點</span></div>
-      <div class="fs">{{ pf.rec.tenderCode }}｜{{ pf.rec.subworkName }}｜<b>單元 {{ pf.rec.unit }}</b>｜{{ Q.fmtD(pf.rec.date||pf.rec.createdAt) }}<template v-if="pf.rec.requestId">｜會驗申請 {{ pf.rec.requestId }}</template></div></div></header>
-  <div class="alert gray" v-if="!pfEditable" style="margin:8px 12px">{{ pf.rec.status==='signed' ? '本表已完成並鎖定（雜湊 '+(pf.rec.hash||'').slice(0,12)+'…）' : (pf.kind==='self' ? '自主檢查表由廠商填寫；目前為工務所同仁身分，僅供檢視' : '抽查紀錄由捷運局工務所同仁填寫；目前為廠商身分，僅供檢視') }}</div>
+    <div class="grow"><div class="ft">{{ pfSelf ? '表'+pfRec.templateCode+' ' : '' }}{{ pfRec.templateName }} <span class="small">v{{ pfRec.templateVer }}｜{{ pfRec.id }}</span> <span class="chip warn">空白範本 PDF</span><span class="chip warn" v-if="!pfSelf && pfRec.requestId">檢驗停留點</span></div>
+      <div class="fs">{{ pfRec.tenderCode }}｜{{ pfRec.subworkName }}｜<b>單元 {{ pfRec.unit }}</b>｜{{ Q.fmtD(pfRec.date||pfRec.createdAt) }}<template v-if="pfRec.requestId">｜會驗申請 {{ pfRec.requestId }}</template></div></div></header>
   <div class="pdfbody">
-    <div class="card"><div class="stepno">1</div><h4>下載空白範本</h4>
-      <div class="filecard" v-if="pfTpl.pdf"><div class="fic">PDF</div><div class="grow"><b>{{ pfTpl.pdf.name }}</b><div class="small muted">{{ Q.fmtSize(pfTpl.pdf.size) }}</div></div><button class="btn sm" @click="pfPreview=!pfPreview">{{ pfPreview ? '收合預覽' : '預覽' }}</button><button class="btn primary sm" @click="pfDownloadBlank">下載</button></div>
+    <div class="card"><h4>辦理狀態</h4>
+      <div class="flowline"><span :class="{on: ['未開始','待流轉'].includes(pfSt)}">下載鎖定</span>›<span :class="{on: pfSt==='鎖定中'}">上傳續填・現地手寫簽名</span>›<span v-if="!pfSelf" :class="{on: ['待廠商簽名'].includes(pfSt)}">廠商簽名</span><span v-if="!pfSelf">›</span><span :class="{on: pfSt==='待主任加簽' || (pfSelf && pfSt==='待流轉' && pfRec.version>0)}">憑證加簽結案</span></div>
+      <div class="row wrap mt"><span class="chip big" :class="wfCls(pfSt)">{{ pfSt }}</span><span class="small muted">版本 V{{ pfRec.version }}</span><span class="small" style="color:var(--ng)" v-if="pfSt==='鎖定中'">鎖定人 <b>{{ pfRec.lockedBy }}</b></span><span class="small muted" v-if="pfRec.lastUpdatedBy">最後辦理 {{ pfRec.lastUpdatedBy }}</span>
+        <span class="chip" :class="pfRec.pdfResult==='ng'?'ng':pfRec.pdfResult==='ok'?'ok':''" v-if="!pfSelf && pfRec.pdfResult">抽查判定：{{ pfRec.pdfResult==='ok' ? '合格' : '有缺失' }}</span></div>
+      <div class="small muted mt">{{ pfHint }}</div>
+      <div class="row wrap mt">
+        <button class="btn primary" v-if="pfCanLock" @click="pfLock">{{ pfRec.version>0 ? '下載續填並鎖定' : '下載並鎖定' }}</button>
+        <template v-if="pfIsLocker"><button class="btn green" @click="openWfUp">上傳並簽名</button><button class="btn" @click="pfDownloadCur" v-if="pfRec.version>0">重新下載目前版本</button><button class="btn danger" @click="pfCancel">取消鎖定</button></template>
+        <button class="btn amber" v-if="pfCanVendor" @click="openWfVen">上傳廠商簽名 PDF</button>
+        <button class="btn primary" v-if="pfCanClose" @click="openWfCert">{{ pfSelf ? '憑證加簽結案' : '主任加簽結案' }}</button>
+        <button class="btn" v-if="pfCanUnfreeze" @click="openWfUnf">解除結案</button>
+      </div></div>
+    <div class="card"><h4>表單檔案</h4>
+      <div class="filecard" v-if="pfTpl.pdf"><div class="fic">PDF</div><div class="grow"><b>空白範本：{{ pfTpl.pdf.name }}</b><div class="small muted">{{ Q.fmtSize(pfTpl.pdf.size) }}</div></div><button class="btn sm" @click="pfPreview=!pfPreview">{{ pfPreview ? '收合預覽' : '預覽' }}</button><button class="btn sm" @click="pfDownloadBlank">下載</button></div>
       <div class="alert warn" v-else>此範本尚未上傳空白 PDF，請聯絡管理員至後台「表單範本」上傳。</div>
-      <iframe class="pdf-frame" v-if="pfPreview && pfUrl" :src="pfUrl" title="空白範本預覽"></iframe></div>
-    <div class="card"><div class="stepno">2</div><h4>離線填寫並簽名</h4><div class="small muted">列印後以手寫，或在平板／電腦上直接於 PDF 填寫並簽名（{{ pf.kind==='self' ? '現場工程師與工地授權代表' : '抽查人員與廠商隨同人員' }}）。</div></div>
-    <div class="card"><div class="stepno">3</div><h4>上傳簽名後的 PDF</h4>
-      <div class="filecard" v-if="pf.rec.pdfFile"><div class="fic">PDF</div><div class="grow"><b>{{ pf.rec.pdfFile.name }}</b><div class="small muted">{{ Q.fmtSize(pf.rec.pdfFile.size) }}・{{ Q.fmtFull(pf.rec.pdfFile.at) }}</div></div><button class="btn sm" @click="pfDownloadSigned">下載</button><label class="btn sm" v-if="pfEditable">重新上傳<input type="file" accept="application/pdf,.pdf" hidden @change="pfPick"></label></div>
-      <label class="dropzone" v-else-if="pfEditable"><input type="file" accept="application/pdf,.pdf" hidden @change="pfPick"><div class="ic">PDF</div><div>點擊選取簽名完成的 PDF（上限 10 MB）</div></label>
-      <div class="muted" v-else>尚未上傳</div></div>
-    <div class="card" v-if="pf.kind==='spot'"><div class="stepno">4</div><h4>抽查判定結果 <span class="small muted" v-if="pf.rec.requestId">（本次會驗：★{{ pf.rec.title }}）</span></h4>
-      <div class="judge" style="grid-template-columns:1fr 1fr"><button :class="['ok',{on: pf.rec.pdfResult==='ok'}]" @click="pfSetResult('ok')">○ 合格{{ pf.rec.requestId ? '放行' : '' }}</button><button :class="['ng',{on: pf.rec.pdfResult==='ng'}]" @click="pfSetResult('ng')">╳ 有缺失</button></div>
-      <div class="small muted mt">PDF 範本無法逐項判定，請依簽名後 PDF 的整體結果選擇；有缺失時系統會自動建立缺失追蹤。</div></div>
+      <iframe class="pdf-frame" v-if="pfPreview && pfUrl" :src="pfUrl" title="空白範本預覽"></iframe>
+      <div class="filecard mt" v-if="pfRec.pdfFile"><div class="fic" style="background:#16a34a">PDF</div><div class="grow"><b>目前版本：{{ pfRec.pdfFile.name }}</b><div class="small muted">V{{ pfRec.version }}・{{ Q.fmtSize(pfRec.pdfFile.size) }}・{{ Q.fmtFull(pfRec.pdfFile.at) }}</div></div><button class="btn sm" @click="pfDownloadCur">下載</button></div></div>
+    <div class="card"><h4>辦理軌跡</h4>
+      <ul class="timeline" v-if="pfRec.logs && pfRec.logs.length"><li v-for="(l,i) in pfRec.logs.slice().reverse()" :key="i" :class="l.action.includes('結案')?'ok':l.action.includes('取消')||l.action.includes('解除')?'danger':''">{{ Q.fmtFull(l.at) }}｜<b>{{ l.user }}</b> <span class="chip" :class="l.action.includes('結案')?'ok':''">{{ l.action }}</span><div class="small muted">{{ l.detail }}</div>
+        <a class="small" v-if="l.file" @click="dlLog(l)">⬇ {{ l.file.name }}</a> <img v-if="l.sig" :src="l.sig" alt="簽名" style="height:34px;vertical-align:middle;border:1px solid var(--line);border-radius:4px;background:#fff"></li></ul>
+      <div class="muted small" v-else>尚無辦理紀錄</div></div>
   </div>
-  <footer class="fbar"><span class="small muted save">{{ pf.kind==='self' ? '上傳簽名後 PDF 即視為完成，送出後內容鎖定' : '合格放行後，廠商後續停留點項目自動解鎖' }}</span><button class="btn" @click="leavePdf">離開</button><button class="btn primary" :class="{disabled: !pfEditable || !pf.rec.pdfFile}" @click="pfSubmit" v-if="pf.rec.status!=='signed'">送出完成</button></footer>
 </div>
 
 <!-- ============ 簽認 ============ -->
@@ -303,14 +310,47 @@
 <div class="plain" v-if="view==='docs'"><header class="hdr"><div class="grow"><h1>參考文件</h1></div></header>
   <div class="grid-cards"><div class="tcard" v-for="x in d.docs" :key="x.id" @click="docShow=x.code"><div class="t">{{ x.name }}</div><div class="muted small">{{ x.code }}</div><div class="small">{{ x.note }}</div></div></div></div>
 <div class="plain" v-if="view==='me'"><header class="hdr"><div class="grow"><h1>我的</h1></div></header>
-  <div class="card" style="max-width:520px"><h4>目前身分</h4><div class="pills"><button :class="{on: role==='contractor'}" @click="role='contractor'">廠商品管人員</button><button :class="{on: role==='supervisor'}" @click="role='supervisor'">捷運局工務所同仁</button></div>
-    <div class="small muted mt">{{ me.name }}｜{{ me.org }}。廠商：填自主檢查表、申請會驗；工務所同仁：回覆排定、開始會驗、填抽查紀錄表。</div>
+  <div class="card" style="max-width:520px"><h4>目前身分</h4><div class="pills"><button :class="{on: role==='contractor'}" @click="role='contractor'">廠商品管人員</button><button :class="{on: role==='supervisor'}" @click="role='supervisor'">捷運局工務所同仁</button><button :class="{on: role==='director'}" @click="role='director'">捷運局工務所主任</button></div>
+    <div class="small muted mt">{{ me.name }}｜{{ me.org }}。廠商：填自主檢查表、申請會驗、簽名上傳；工務所同仁：回覆排定、開始會驗、填抽查紀錄表；工務所主任：加簽結案。</div>
     <hr><div class="row wrap"><button class="btn" @click="clearSigs">清除已存簽名</button><button class="btn danger" @click="resetDemo">還原示範資料</button><a class="btn" href="admin.html" target="_blank">開啟後台管理</a></div></div></div>
 
   </main>
 </div>
 
 <!-- ============ 彈窗 ============ -->
+<!-- PDF：上傳並簽名 -->
+<div class="modal-bg" v-if="wfUp" @click.self="wfUp=null"><div class="modal"><h3>上傳並簽名</h3>
+  <div class="alert info mb">{{ pfRec.templateName }}・單元 {{ pfRec.unit }}・簽名人 <b>{{ me.name }}</b></div>
+  <label class="f">上傳填寫後的 PDF 成果檔（上限 10 MB）</label>
+  <div class="filecard" v-if="wfUp.file"><div class="fic">PDF</div><div class="grow"><b>{{ wfUp.file.name }}</b><div class="small muted">{{ Q.fmtSize(wfUp.file.size) }}</div></div><label class="btn sm">更換<input type="file" accept="application/pdf,.pdf" hidden @change="onWfUpFile"></label></div>
+  <label class="dropzone" v-else><input type="file" accept="application/pdf,.pdf" hidden @change="onWfUpFile"><div class="ic">PDF</div><div>點擊選取 PDF</div></label>
+  <template v-if="!pfSelf"><label class="f mt">抽查判定結果</label><div class="judge" style="grid-template-columns:1fr 1fr"><button :class="['ok',{on: wfUp.result==='ok'}]" @click="wfUp.result=wfUp.result==='ok'?null:'ok'">○ 合格{{ pfRec.requestId ? '放行' : '' }}</button><button :class="['ng',{on: wfUp.result==='ng'}]" @click="wfUp.result=wfUp.result==='ng'?null:'ng'">╳ 有缺失</button></div>
+    <label class="f mt">下一關由誰辦理</label>
+    <div class="choice"><label :class="{on: wfUp.next==='relay'}"><input type="radio" value="relay" v-model="wfUp.next"><b>其他局內人員續填</b></label><label :class="{on: wfUp.next==='vendor'}"><input type="radio" value="vendor" v-model="wfUp.next"><b>轉施工廠商簽名</b></label><label :class="{on: wfUp.next==='supervisor'}"><input type="radio" value="supervisor" v-model="wfUp.next"><b>免廠商簽名，逕轉主任加簽結案</b></label></div></template>
+  <label class="f mt">現地手寫簽名（{{ me.name }}）</label>
+  <div class="sigwrap" style="height:200px"><canvas ref="canvasEl" @pointerdown="sDown" @pointermove="sMove" @pointerup="sUp" @pointerleave="sUp" @pointercancel="sUp"></canvas><div class="sigph" v-if="!drawn">用手指或觸控筆在此簽名</div></div>
+  <div class="row"><button class="btn sm" @click="clearSign">重簽</button></div>
+  <div class="foot"><button class="btn" @click="wfUp=null">取消</button><button class="btn green" @click="submitWfUp">上傳並簽名</button></div></div></div>
+
+<!-- PDF：廠商簽名上傳 -->
+<div class="modal-bg" v-if="wfVen" @click.self="wfVen=null"><div class="modal"><h3>上傳廠商簽名 PDF</h3>
+  <div class="alert info mb">請下載最新版本，由施工廠商於紙本或 PDF 簽名後上傳。上傳後轉工務所主任加簽結案。</div>
+  <div class="filecard" v-if="wfVen.file"><div class="fic">PDF</div><div class="grow"><b>{{ wfVen.file.name }}</b><div class="small muted">{{ Q.fmtSize(wfVen.file.size) }}</div></div><label class="btn sm">更換<input type="file" accept="application/pdf,.pdf" hidden @change="onWfVenFile"></label></div>
+  <label class="dropzone" v-else><input type="file" accept="application/pdf,.pdf" hidden @change="onWfVenFile"><div class="ic">PDF</div><div>拖曳或點擊選取已簽名的 PDF</div></label>
+  <div class="foot"><button class="btn" @click="wfVen=null">取消</button><button class="btn amber" @click="submitWfVen">上傳並轉主任</button></div></div></div>
+
+<!-- PDF：憑證加簽結案 -->
+<div class="modal-bg" v-if="wfCert" @click.self="!wfCert.running && (wfCert=null)"><div class="modal"><h3>{{ pfSelf ? '憑證加簽結案' : '主任加簽結案' }}</h3>
+  <template v-if="!wfCert.running"><div class="alert info mb">{{ pfRec.templateName }}・單元 {{ pfRec.unit }}・簽章人 <b>{{ me.name }}</b><br>成果檔：<b>{{ pfRec.pdfFile && pfRec.pdfFile.name }}</b>（V{{ pfRec.version }}）</div>
+    <label class="f">憑證載具</label><div class="choice"><label :class="{on: wfCert.method==='ic-card'}"><input type="radio" value="ic-card" v-model="wfCert.method"><b>實體自然人憑證</b><span>需讀卡機</span></label><label :class="{on: wfCert.method==='tw-fido'}"><input type="radio" value="tw-fido" v-model="wfCert.method"><b>行動自然人憑證（TW FidO）</b><span>以手機 App 確認</span></label></div>
+    <div class="small muted mt">示範環境以進度模擬憑證簽章，不會真的讀卡。</div></template>
+  <div v-else style="text-align:center;padding:40px 0"><div class="bar"><i :style="{width: wfCert.pct+'%'}"></i></div><p style="margin-top:14px;font-weight:700;color:var(--primary-d)">整合成果 PDF 與憑證簽章加密封包中…{{ wfCert.pct }}%</p></div>
+  <div class="foot" v-if="!wfCert.running"><button class="btn" @click="wfCert=null">取消</button><button class="btn primary" @click="submitWfCert">以憑證簽章並結案</button></div></div></div>
+
+<!-- PDF：解除結案 -->
+<div class="modal-bg" v-if="wfUnf" @click.self="wfUnf=null"><div class="modal"><h3>解除結案</h3><label class="f">解除原因（必填）</label><textarea rows="3" v-model="wfUnf.reason"></textarea>
+  <div class="foot"><button class="btn" @click="wfUnf=null">取消</button><button class="btn danger" @click="submitWfUnf">確認解除</button></div></div></div>
+
 <div class="modal-bg" v-if="newForm" @click.self="newForm=null"><div class="modal"><h3>新增自主檢查</h3>
   <label class="f">① 標號</label><select v-model="newForm.tenderId" @change="cascade(newForm, 'self', 'tender')"><option v-for="t in tenderOpts()" :value="t.id">{{ t.name }}</option></select>
   <label class="f mt">② 工項（分項工程）</label><select v-model="newForm.subworkId" @change="cascade(newForm, 'self', 'sw')"><option v-for="s in swOpts(newForm.tenderId, 'self')" :value="s.id">{{ s.no }}、{{ s.name }}</option></select>

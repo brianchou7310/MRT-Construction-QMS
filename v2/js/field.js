@@ -7,10 +7,10 @@ createApp({
     const d = reactive({ tenders: [], subworks: [], templates: [], selfChecks: [], requests: [], spotChecks: [], defects: [], docs: [], params: {} });
     const loaded = ref(false), now = ref(Date.now());
     const view = ref('todo'), todoTab = ref('hold'), tenderSel = ref('all');
-    const role = ref((() => { try { return localStorage.getItem('qms-role') || 'contractor'; } catch (e) { return 'contractor'; } })());
-    const isSup = computed(() => role.value === 'supervisor');
-    watch(role, v => { try { localStorage.setItem('qms-role', v); } catch (e) { /* ignore */ } });
-    const me = computed(() => isSup.value ? { name: '示範工務所同仁', org: '捷運局工務所', title: '捷運局工務所同仁' } : { name: '示範品管', org: '大陸工程股份有限公司', title: '廠商品管人員' });
+    const role = ref((() => { try { return localStorage.getItem('qms2-role') || 'contractor'; } catch (e) { return 'contractor'; } })());
+    const isSup = computed(() => role.value !== 'contractor'), isDirector = computed(() => role.value === 'director');
+    watch(role, v => { try { localStorage.setItem('qms2-role', v); } catch (e) { /* ignore */ } });
+    const me = computed(() => isDirector.value ? { name: '示範工務所主任', org: '捷運局工務所', title: '捷運局工務所主任' } : isSup.value ? { name: '示範工務所同仁', org: '捷運局工務所', title: '捷運局工務所同仁' } : { name: '示範品管', org: '大陸工程股份有限公司', title: '廠商品管人員' });
     const wide = ref(window.matchMedia('(min-width: 900px)').matches);
     window.matchMedia('(min-width: 900px)').addEventListener('change', e => { wide.value = e.matches; });
     const toastMsg = ref(''), toastNg = ref(false); let tt;
@@ -257,31 +257,72 @@ createApp({
       const rec = await Q.newSpotCheck({ templateId: f.templateId, unit: f.unit.trim().toUpperCase(), location: f.location.trim() }); spNew.value = null; await load(); openSpot(rec.id);
     }
 
-    /* ---------- 空白範本（PDF）：下載 → 離線填寫簽名 → 上傳簽名後 PDF ---------- */
+    /* ---------- 空白範本（PDF）工作流程：下載鎖定 → 上傳續填 → 現地手寫簽名 → 憑證加簽結案 ---------- */
     const pf = ref(null), pfPreview = ref(false), pfUrl = ref('');
+    const wfUp = ref(null), wfCert = ref(null), wfVen = ref(null), wfUnf = ref(null);
     const pfTpl = computed(() => pf.value && tplOf(pf.value.rec.templateId));
-    const pfEditable = computed(() => pf.value && pf.value.rec.status !== 'signed' && (pf.value.kind === 'self' ? !isSup.value : isSup.value));
+    const pfRec = computed(() => pf.value && pf.value.rec);
+    const pfSelf = computed(() => pf.value && pf.value.kind === 'self');
+    const pfSt = computed(() => pfRec.value ? pfRec.value.wfStatus : '');
+    const wfCls = st => st === '已結案' ? 'ok' : st === '未開始' ? '' : 'warn';
+    const pfOperator = computed(() => pfSelf.value ? role.value === 'contractor' : isSup.value);
+    const pfCanLock = computed(() => pfOperator.value && ['未開始', '待流轉'].includes(pfSt.value));
+    const pfIsLocker = computed(() => pfSt.value === '鎖定中' && pfRec.value.lockedBy === me.value.name);
+    const pfCanClose = computed(() => pfSelf.value ? (pfSt.value === '待流轉' && pfRec.value.lastUpdatedBy === me.value.name && role.value === 'contractor') : (pfSt.value === '待主任加簽' && isDirector.value));
+    const pfCanVendor = computed(() => !pfSelf.value && pfSt.value === '待廠商簽名' && role.value === 'contractor');
+    const pfCanUnfreeze = computed(() => pfSt.value === '已結案' && pfRec.value.lastUpdatedBy === me.value.name && !(pf.value.kind === 'spot' && pfRec.value.requestId));
+    const pfHint = computed(() => {
+      const st = pfSt.value, r = pfRec.value; if (!r) return '';
+      if (st === '鎖定中') return pfIsLocker.value ? '您已鎖定本表。請離線填寫並簽名後，按「上傳並簽名」；不需要時可「取消鎖定」。' : `本表由「${r.lockedBy}」鎖定中，僅鎖定人可上傳或取消。`;
+      if (st === '待流轉') return pfSelf.value ? (pfCanClose.value ? '已上傳並簽名，請辦理憑證加簽結案。' : `待最後上傳人「${r.lastUpdatedBy}」憑證加簽結案；亦可由他人下載續填。`) : '已轉下一位局內人員，可下載並鎖定後續填。';
+      if (st === '待廠商簽名') return pfCanVendor.value ? '請下載最新版本，由施工廠商簽名後上傳。' : '待施工廠商簽名後上傳。';
+      if (st === '待主任加簽') return isDirector.value ? '請以憑證辦理加簽及結案。' : '待工務所主任以憑證加簽結案。';
+      if (st === '已結案') return '本表已結案並鎖定。';
+      return pfOperator.value ? '尚未開始。請下載空白範本並鎖定後，離線填寫。' : (pfSelf.value ? '自主檢查表由廠商填寫；目前身分僅供檢視。' : '抽查紀錄由捷運局工務所同仁填寫；目前身分僅供檢視。');
+    });
     function openPdf(kind, rec) { pf.value = { kind, rec: reactive(Q.clone(rec)) }; pfPreview.value = false; view.value = 'pdf'; window.scrollTo(0, 0); }
     watch([pfPreview, pfTpl], () => { if (pfUrl.value) URL.revokeObjectURL(pfUrl.value); pfUrl.value = pfPreview.value && pfTpl.value && pfTpl.value.pdf ? Q.pdfBlobUrl(pfTpl.value.pdf.data) : ''; });
+    const pfStore = () => pf.value.kind === 'self' ? 'selfChecks' : 'spotChecks';
+    async function pfRefresh() { const rec = await Q.get(pfStore(), pf.value.rec.id); pf.value.rec = reactive(Q.clone(rec)); await load(); }
     function pfDownloadBlank() { const f = pfTpl.value && pfTpl.value.pdf; if (!f) return toast('此範本尚未上傳空白 PDF，請至後台上傳', true); Q.downloadPdf(f); }
-    function pfDownloadSigned() { Q.downloadPdf(pf.value.rec.pdfFile); }
-    async function pfPick(e) {
-      const file = e.target.files[0]; e.target.value = ''; if (!file) return; if (!pfEditable.value) return toast('目前不可編輯', true);
-      if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') return toast('請選擇 PDF 檔案', true);
-      if (file.size > 10 * 1048576) return toast('PDF 檔案過大（上限 10 MB）', true);
-      pf.value.rec.pdfFile = { name: file.name, size: file.size, data: await Q.fileToDataUrl(file), at: Date.now() };
-      await Q.put(pf.value.kind === 'self' ? 'selfChecks' : 'spotChecks', Q.clone(pf.value.rec)); toast('已上傳簽名後 PDF');
+    function pfDownloadCur() { Q.downloadPdf(pfRec.value.pdfFile); }
+    async function pfRun(fn, okMsg) { try { await fn(); await pfRefresh(); if (okMsg) toast(okMsg); } catch (e) { toast(e.message, true); } }
+    async function pfLock() {
+      await pfRun(async () => { await Q.wfLock(pf.value.kind, pfRec.value.id, me.value.name); }, null);
+      const f = pfRec.value.version > 0 ? pfRec.value.pdfFile : (pfTpl.value && pfTpl.value.pdf); if (f && pfIsLocker.value) { Q.downloadPdf(f); toast(pfRec.value.version > 0 ? '已下載最新版本並鎖定，請續填後上傳' : '已下載空白範本並鎖定，請離線填寫'); }
     }
-    async function pfSubmit() {
-      const r = pf.value.rec; if (!pfEditable.value) return;
-      if (!r.pdfFile) return toast('請先上傳簽名後的 PDF', true);
-      if (pf.value.kind === 'spot' && !r.pdfResult) return toast('請選擇抽查判定結果', true);
-      await Q.put(pf.value.kind === 'self' ? 'selfChecks' : 'spotChecks', Q.clone(r));
-      if (pf.value.kind === 'self') { await Q.finalizePdfSelf(r.id); toast('自主檢查表（PDF）已完成並鎖定'); view.value = 'checks'; }
-      else { await Q.finalizeSpot(r.id); toast(r.pdfResult === 'ng' ? '抽查完成：有缺失，已建立缺失追蹤' : (r.requestId ? '抽查完成：合格放行，後續項目已解鎖' : '抽查紀錄已完成')); view.value = 'spots'; }
-      pf.value = null; await load();
+    const pfCancel = () => pfRun(() => Q.wfCancel(pf.value.kind, pfRec.value.id, me.value.name), '已取消鎖定，釋放表單控制權');
+    // 上傳並簽名（含現地手寫簽名）
+    async function openWfUp() { wfUp.value = { file: null, next: 'vendor', result: pfRec.value.pdfResult || null }; drawn.value = false; await nextTick(); initCanvas(); }
+    async function readPdfFile(e) {
+      const file = e.target.files[0]; e.target.value = ''; if (!file) return null;
+      if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') { toast('請選擇 PDF 檔案', true); return null; }
+      if (file.size > 10 * 1048576) { toast('PDF 檔案過大（上限 10 MB）', true); return null; }
+      return { name: file.name, size: file.size, data: await Q.fileToDataUrl(file), at: Date.now() };
     }
-    async function pfSetResult(v) { if (!pfEditable.value) return; pf.value.rec.pdfResult = pf.value.rec.pdfResult === v ? null : v; await Q.put('spotChecks', Q.clone(pf.value.rec)); }
+    async function onWfUpFile(e) { const f = await readPdfFile(e); if (f) wfUp.value.file = f; }
+    async function submitWfUp() {
+      const u = wfUp.value; if (!u.file) return toast('請上傳填寫後的 PDF 成果檔', true);
+      if (!pfSelf.value && !u.result) return toast('請選擇抽查判定結果', true); if (!drawn.value) return toast('請於畫布完成手寫簽名', true);
+      const sig = canvasEl.value.toDataURL('image/png'); const args = { file: u.file, sig, next: u.next, result: u.result };
+      await pfRun(() => Q.wfUpload(pf.value.kind, pfRec.value.id, me.value.name, args), pfSelf.value ? '成果上傳與現地手寫簽名完成，待憑證加簽結案' : { relay: '已轉下一位局內人員續填', vendor: '已轉施工廠商簽名', supervisor: '已轉工務所主任加簽結案' }[u.next]); wfUp.value = null;
+    }
+    // 廠商簽名後上傳（抽查表）
+    function openWfVen() { wfVen.value = { file: null }; }
+    async function onWfVenFile(e) { const f = await readPdfFile(e); if (f) wfVen.value.file = f; }
+    async function submitWfVen() { if (!wfVen.value.file) return toast('請上傳簽名後的 PDF', true); await pfRun(() => Q.wfVendorSign(pfRec.value.id, me.value.name, wfVen.value.file), '簽名後 PDF 已上傳，已轉工務所主任加簽結案'); wfVen.value = null; }
+    // 憑證加簽結案（模擬讀卡／行動憑證簽章）
+    function openWfCert() { wfCert.value = { method: 'ic-card', running: false, pct: 0 }; }
+    function submitWfCert() {
+      const c = wfCert.value; c.running = true; c.pct = 0;
+      const t = setInterval(async () => {
+        c.pct += 50; if (c.pct < 100) return; clearInterval(t);
+        await pfRun(() => Q.wfClose(pf.value.kind, pfRec.value.id, me.value.name, c.method), pfSelf.value ? '憑證加簽與結案作業完成！' : '主任加簽與結案作業完成！'); wfCert.value = null;
+      }, 500);
+    }
+    function openWfUnf() { wfUnf.value = { reason: '' }; }
+    async function submitWfUnf() { if (!wfUnf.value.reason.trim()) return toast('請填寫解除結案原因', true); await pfRun(() => Q.wfUnfreeze(pf.value.kind, pfRec.value.id, me.value.name, wfUnf.value.reason.trim()), '已解除結案'); wfUnf.value = null; }
+    function dlLog(l) { Q.downloadPdf(l.file); }
     function leavePdf() { const k = pf.value.kind; pf.value = null; view.value = k === 'self' ? 'checks' : 'spots'; load(); }
 
     /* ---------- 簽認 ---------- */
@@ -354,7 +395,7 @@ createApp({
     return {
       Q, d, loaded, now, view, todoTab, tenderSel, role, isSup, me, wide, toastMsg, toastNg, toast, tplOf, rel, hh, todayLabel, reqCls,
       todoReqs, lockedCards, draftSpots, openDefects, todoCount, holdFilter, holdsList, selReqId, selReq, sched, selectReq, reqChips, reqPhotos, lockedAfter, doSchedule, doReject, doStart,
-      pf, pfPreview, pfUrl, pfTpl, pfEditable, pfDownloadBlank, pfDownloadSigned, pfPick, pfSubmit, pfSetResult, leavePdf, scList, scProgress, newForm, qrForm, tenderOpts, swOpts, tplOpts, cascade, openNew, createSc, scanQr,
+      pf, pfPreview, pfUrl, pfTpl, pfRec, pfSelf, pfSt, wfCls, pfCanLock, pfIsLocker, pfCanClose, pfCanVendor, pfCanUnfreeze, pfHint, pfDownloadBlank, pfDownloadCur, pfLock, pfCancel, wfUp, wfCert, wfVen, wfUnf, openWfUp, onWfUpFile, submitWfUp, openWfVen, onWfVenFile, submitWfVen, openWfCert, submitWfCert, openWfUnf, submitWfUnf, dlLog, leavePdf, isDirector, scList, scProgress, newForm, qrForm, tenderOpts, swOpts, tplOpts, cascade, openNew, createSc, scanQr,
       cur, curTpl, stageTab, itemNo, saveMsg, docShow, linkShow, applyForm, readonly, stageList, curItem, shownItems, judged, total, stageStat, stageDone, ans, ensure, lockOf, hstate, hreq, itemEditable, sugg, itemIcon,
       flush, queueSave, openSc, gotoItem, setStage, step, setJudge, addPhoto, addDemoPhoto, delPhoto, useSuggest, markLinked, confirmQr, canApply, openApply, applyShort, applyHours, submitApply, holdText,
       summary, holdItems, attachCodes, canSubmit, goSign, finishStage, stageTabs, stageNext, leaveForm,

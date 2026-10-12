@@ -198,6 +198,7 @@ createApp({
     const pdfUrl = ref(''); let pdfUrlSrc = null;
     watch(() => edit.value && edit.value.pdf && edit.value.pdf.data, v => { if (pdfUrl.value) URL.revokeObjectURL(pdfUrl.value); pdfUrl.value = v ? Q.pdfBlobUrl(v) : ''; pdfUrlSrc = v; }, { immediate: true });
     function downloadFile(f) { Q.downloadPdf(f); }
+    const wfCls = st => st === '已結案' ? 'ok' : st === '未開始' ? '' : 'warn';
     async function delTpl() {
       const t = edit.value, vers = d.templates.filter(x => x.code === t.code && x.subworkId === t.subworkId && x.kind === t.kind && (x.id === t.id || x.id.replace(/-v\d+$/, '') === t.id.replace(/-v\d+$/, '')));
       const used = vers.reduce((n, v) => n + usedCount(v), 0);
@@ -371,7 +372,7 @@ createApp({
       progTender, progFilter, progRows, progCount, holdTab, holdTabs, holdCount, holdList, holdByDate, selReqId, selReq, calView, sched, reqChips, lockedAfter, hoursBefore, doSchedule, doReject, doStart,
       showSC, showSP, itemsOf, judgeText, valuesText, spotCount, defCls, defText, defTab, defList, defAct,
       selTenderId, selTender, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, tenderForm, swForm, saveTender, saveSw, moveSw, delSw, newTender,
-      tplSw, swGroups, selTplId, tplTab, edit, previewOn, fieldIdx, tplList, tplHistory, pickTpl, editUsed, editStages, isPdf, newTplForm, onNewPdf, onEditPdf, createTpl, pdfUrl, downloadFile, readPdf, TYPES, holdN, addItem, delItem, moveItem, addField, onType, saveEdit, delTpl, syncFromSelf, newTpl, exportCsv, exportXlsx, dragId, dragOver, onDragStart, onDragEnd, onDrop, itemImp, openItemImp, itemSample, downloadItemSample, onItemFile, itemImpRows, itemImpBad, doItemImp,
+      tplSw, swGroups, selTplId, tplTab, edit, previewOn, fieldIdx, tplList, tplHistory, pickTpl, editUsed, editStages, isPdf, newTplForm, onNewPdf, onEditPdf, createTpl, pdfUrl, downloadFile, wfCls, readPdf, TYPES, holdN, addItem, delItem, moveItem, addField, onType, saveEdit, delTpl, syncFromSelf, newTpl, exportCsv, exportXlsx, dragId, dragOver, onDragStart, onDragEnd, onDrop, itemImp, openItemImp, itemSample, downloadItemSample, onItemFile, itemImpRows, itemImpBad, doItemImp,
       imp, validate, onFile, sampleCsv, loadSample, downloadSample, impOk, doImport, impReset, download,
       docForm, userForm, saveDoc, saveUser, delRow, saveParams, resetDemo, navItems, navTree, collapsed, toggleGroup, titles, todayStr
     };

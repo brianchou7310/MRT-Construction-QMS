@@ -268,7 +268,7 @@
     }
     for (const r of await all('requests')) if (r.inspector === '示範監造') { r.inspector = '示範工務所同仁'; await put('requests', r); }
   }
-  const ready = open().then(() => seed(false)).then(() => migrateRoles()).then(() => migrateSpots()).then(() => tickOverdue());
+  const ready = open().then(() => seed(false)).then(() => migrateRoles()).then(() => migrateSpots()).then(() => migratePdfWf()).then(() => tickOverdue());
 
   async function getParams() { return Object.assign({}, DEFAULT_PARAMS, await get('meta', 'params') || {}); }
   async function counter(name) {
@@ -298,7 +298,8 @@
       tenderId: tender.id, tenderCode: tender.code, templateId: tpl.id, templateVer: tpl.version, templateCode: tpl.code, templateName: tpl.name,
       subworkId: sw.id, subworkName: 'Y01站' + sw.name.replace('工程', '') + '施工', unit, location: location || `Y01站 單元 ${unit}`, date: Date.now(), contractor: tender.contractor,
       status: 'draft', answers: {}, linked: {}, qrConfirmed: false, drawingNo: drawingNo || '', hold: {}, recovery: '', signatures: {}, createdAt: Date.now(), updatedAt: Date.now(),
-      fillMode: tpl.fillMode || 'online', pdfFile: null
+      fillMode: tpl.fillMode || 'online', pdfFile: null,
+      wfStatus: '未開始', lockedBy: null, lastUpdatedBy: null, version: 0, logs: []
     };
     await put('selfChecks', sc); return sc;
   }
@@ -348,7 +349,8 @@
       templateId: tpl.id, templateVer: tpl.version, templateName: tpl.name, subworkId: tpl.subworkId, tenderId: tender.id, tenderCode: tender.code, unit: unit || (request && request.unit) || '', location: location || (request && request.location) || (sc && sc.location) || `Y01站 單元 ${unit || ''}`,
       title: focus ? tpl.items.find(i => i.no === focus).name : (request ? request.title : tpl.name), subworkName: sw ? sw.name : '', answers,
       calc: { thickness: '1.0', length: sc && sc.answers[2] ? String((sc.answers[2].values || {}).len || '') : '', depth: '' }, status: 'draft', signatures: {}, date: Date.now(), createdAt: Date.now(),
-      fillMode: tpl.fillMode || 'online', pdfFile: null, pdfResult: null
+      fillMode: tpl.fillMode || 'online', pdfFile: null, pdfResult: null,
+      wfStatus: '未開始', lockedBy: null, lastUpdatedBy: null, version: 0, logs: []
     };
     await put('spotChecks', sp); return sp;
   }
@@ -398,12 +400,64 @@
     }
     return sp;
   }
-  // PDF 範本：上傳簽名後的 PDF 即完成（自主檢查表）
-  async function finalizePdfSelf(scId) {
-    const sc = await get('selfChecks', scId);
-    sc.hash = await hashOf({ p: [sc.pdfFile.name, sc.pdfFile.size], v: sc.templateVer }); sc.status = 'signed'; sc.signatures = { site: { at: Date.now(), name: '簽名後 PDF' } };
-    await saveSelf(sc); return sc;
+  /* ---------- PDF 範本工作流程：下載鎖定 → 上傳續填 → 現地手寫簽名 → 憑證加簽結案 ----------
+   * 狀態：未開始／鎖定中／待流轉／待廠商簽名(抽查表)／待主任加簽(抽查表)／已結案 */
+  const WF_STORE = { self: 'selfChecks', spot: 'spotChecks' };
+  const wfGet = (kind, id) => get(WF_STORE[kind], id);
+  const wfSave = (kind, rec) => kind === 'self' ? saveSelf(rec) : put('spotChecks', rec);
+  function wfLog(rec, user, action, detail, extra) { (rec.logs = rec.logs || []).push(Object.assign({ at: Date.now(), user, action, detail }, extra || {})); }
+  async function wfLock(kind, id, user) {
+    const rec = await wfGet(kind, id);
+    if (!['未開始', '待流轉'].includes(rec.wfStatus)) throw new Error('目前狀態不可鎖定');
+    rec.wfStatus = '鎖定中'; rec.lockedBy = user;
+    wfLog(rec, user, rec.version > 0 ? '下載續填鎖定' : '下載鎖定', rec.version > 0 ? '下載最新版本並鎖定控制權，接續填寫。' : '下載空白範本並鎖定控制權，開始填寫表單。');
+    await wfSave(kind, rec); return rec;
   }
+  async function wfCancel(kind, id, user) {
+    const rec = await wfGet(kind, id); rec.wfStatus = rec.version > 0 ? '待流轉' : '未開始'; rec.lockedBy = null;
+    wfLog(rec, user, '取消鎖定', '放棄當次修改，釋放控制權。'); await wfSave(kind, rec); return rec;
+  }
+  // next（抽查表）：relay 其他局內人員續填／vendor 轉廠商簽名／supervisor 免廠商簽名逕轉主任加簽
+  async function wfUpload(kind, id, user, { file, sig, next, result }) {
+    const rec = await wfGet(kind, id); if (rec.wfStatus !== '鎖定中' || rec.lockedBy !== user) throw new Error('需由鎖定人上傳');
+    rec.version = (rec.version || 0) + 1; rec.pdfFile = file; rec.lockedBy = null; rec.lastUpdatedBy = user; if (kind === 'spot') rec.pdfResult = result || rec.pdfResult;
+    let detail;
+    if (kind === 'self') { rec.wfStatus = '待流轉'; detail = '已完成 PDF 上傳並現地手寫簽名，待辦理憑證加簽結案。'; }
+    else if (next === 'vendor') { rec.wfStatus = '待廠商簽名'; detail = '完成 PDF 上傳與現地手寫簽名，轉施工廠商辦理簽名確認。'; }
+    else if (next === 'supervisor') { rec.wfStatus = '待主任加簽'; detail = '完成 PDF 上傳與現地手寫簽名，本案免施工廠商簽名，逕轉工務所主任辦理加簽及結案。'; }
+    else { rec.wfStatus = '待流轉'; detail = '完成 PDF 上傳與現地手寫簽名，轉下一位局內人員接續鎖定辦理。'; }
+    wfLog(rec, user, '上傳並簽名', detail, { file: { name: file.name, size: file.size, data: file.data }, sig });
+    await wfSave(kind, rec); return rec;
+  }
+  async function wfVendorSign(id, user, file) {
+    const rec = await wfGet('spot', id); if (rec.wfStatus !== '待廠商簽名') throw new Error('目前狀態不需廠商簽名');
+    rec.version = (rec.version || 0) + 1; rec.pdfFile = file; rec.lastUpdatedBy = user; rec.wfStatus = '待主任加簽';
+    wfLog(rec, user, '廠商簽名確認', '施工廠商已上傳完成簽名之 PDF，轉工務所主任辦理加簽及結案。', { file: { name: file.name, size: file.size, data: file.data } });
+    await put('spotChecks', rec); return rec;
+  }
+  async function wfClose(kind, id, user, method) {
+    const rec = await wfGet(kind, id);
+    rec.version = (rec.version || 0) + 1; rec.lastUpdatedBy = user; rec.wfStatus = '已結案'; rec.lockedBy = null;
+    wfLog(rec, user, kind === 'self' ? '憑證加簽結案' : '主任加簽結案', `經${method === 'tw-fido' ? '行動自然人憑證（TW FidO）' : '實體自然人憑證'}數位簽章認證，表單正式結案。`, { file: rec.pdfFile ? { name: rec.pdfFile.name, size: rec.pdfFile.size, data: rec.pdfFile.data } : null });
+    if (kind === 'self') {
+      rec.hash = await hashOf({ p: [rec.pdfFile.name, rec.pdfFile.size], v: rec.templateVer, n: rec.version }); rec.status = 'signed'; rec.signatures = { site: { at: Date.now(), name: user } };
+      await saveSelf(rec); return rec;
+    }
+    await put('spotChecks', rec); return finalizeSpot(id);
+  }
+  async function wfUnfreeze(kind, id, user, reason) {
+    const rec = await wfGet(kind, id); if (kind === 'spot' && rec.requestId) throw new Error('已放行／判定之會驗抽查不可解除結案');
+    rec.wfStatus = kind === 'spot' ? '待主任加簽' : '待流轉'; rec.status = 'draft'; wfLog(rec, user, '解除結案', `原因：${reason}`); await wfSave(kind, rec); return rec;
+  }
+  async function migratePdfWf() {
+    for (const [kind, store] of [['self', 'selfChecks'], ['spot', 'spotChecks']]) {
+      for (const r of (await all(store)).filter(x => x.fillMode === 'pdf' && !x.wfStatus)) {
+        r.wfStatus = r.status === 'signed' ? '已結案' : r.pdfFile ? '待流轉' : '未開始'; r.version = r.pdfFile ? 1 : 0; r.lockedBy = null; r.lastUpdatedBy = r.pdfFile ? '示範品管' : null; r.logs = r.logs || [];
+        await put(store, r);
+      }
+    }
+  }
+
   async function setDefectStatus(id, status, note) {
     const d = await get('defects', id); d.status = status; if (note != null) d.note = note; if (status === 'closed') d.closedAt = Date.now(); return put('defects', d);
   }
@@ -423,6 +477,6 @@
     LINKED, JUDGE, STAGES, HOLD_TEXT, REQ_TEXT, H, D,
     fmtDT, fmtD, fmtFull, toLocalInput, fromLocalInput, nextHour, atDay, relTime, uid, clone, hashOf,
     evalField, suggest, rangeText, stageItems, stageDone, lockReason, holdState,
-    tickOverdue, newSelfCheck, saveSelf, applyHold, schedule, reject, startInspection, newSpotCheck, autoNa, migrateSpots, finalizePdfSelf, pdfBlobUrl, downloadPdf, fileToDataUrl, fmtSize, dataUrlSize, createDefect, finalizeSelf, finalizeSpot, setDefectStatus, saveTemplate, putMany, F, I
+    tickOverdue, newSelfCheck, saveSelf, applyHold, schedule, reject, startInspection, newSpotCheck, autoNa, migrateSpots, wfLock, wfCancel, wfUpload, wfVendorSign, wfClose, wfUnfreeze, pdfBlobUrl, downloadPdf, fileToDataUrl, fmtSize, dataUrlSize, createDefect, finalizeSelf, finalizeSpot, setDefectStatus, saveTemplate, putMany, F, I
   };
 })();
