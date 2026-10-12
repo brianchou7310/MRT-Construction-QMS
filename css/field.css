@@ -82,7 +82,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
 @media (min-width: 900px) {
   .shell { flex-direction: row; }
   .rail { position: sticky; top: 0; height: 100vh; width: 92px; flex: none; flex-direction: column; background: var(--navy); border: 0; padding: 12px 8px; gap: 6px; }
-  .rail .logo { display: block; color: #fff; font-weight: 700; text-align: center; padding: 6px 0 14px; line-height: 1.2; }
+  .rail .logo { display: block; text-align: center; padding: 6px 0 14px; } .rail .logo img { width: 62px; height: auto; }
   .rail button { flex: none; color: #d6eef6; border-radius: 12px; padding: 12px 4px; font-size: 13px; } .rail button.on { background: var(--hdr); color: #fff; }
   .rail .badge { top: 4px; left: auto; right: 8px; }
   .shell.immersive .rail { display: flex; }

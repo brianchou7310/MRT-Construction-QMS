@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="images/logo.png">
 <title>捷運施工品管系統 - 後台管理</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/common.css">
@@ -13,20 +14,29 @@
 <template v-if="loaded">
 <header class="app-header">
   <button class="btn sm hamburger" style="background:transparent;color:#fff;border-color:#fff" @click="menuOpen=!menuOpen">☰</button>
-  <div class="logo">捷運<br>品管</div>
+  <img class="logo-img" src="images/logo.png" alt="捷運工程局">
   <h1>捷運施工品管系統</h1>
   <div class="right"><span class="chip hide-sm">雛形示範資料</span><span class="hide-sm">第二區工程處｜監造工務所</span><a href="field.html" target="_blank" class="hide-sm">現場作業</a><span class="user"><span class="avatar">管</span>系統管理員</span></div>
 </header>
 <div class="layout">
   <!-- 側邊選單 -->
   <aside class="side" :class="{open: menuOpen}">
-    <template v-for="n in navItems">
-      <div class="grp" v-if="n[0]==='g'">{{ n[1] }}</div>
-      <a v-else :class="{on: page===n[0], lvl1: n[0]==='dashboard'}" @click="go(n[0])">
-        <span>{{ n[1] }}</span>
-        <span class="badge" v-if="n[2]==='badge' && openReqs.length">{{ openReqs.length }}</span>
-        <span class="badge" v-if="n[2]==='dbadge' && openDefects.length">{{ openDefects.length }}</span>
-      </a>
+    <template v-for="g in navTree">
+      <a v-if="g.link" class="lvl1" :class="{on: page===g.link[0]}" @click="go(g.link[0])"><span>{{ g.link[1] }}</span></a>
+      <template v-else>
+        <div class="grp" :class="{closed: collapsed[g.group]}" @click="toggleGroup(g.group)" role="button" :aria-expanded="!collapsed[g.group]">
+          <span>{{ g.group }}</span>
+          <span class="badge" v-if="collapsed[g.group] && g.items.some(i=>i[2]==='badge') && openReqs.length">{{ openReqs.length }}</span>
+          <span class="chev">⌄</span>
+        </div>
+        <div class="sub" v-show="!collapsed[g.group]">
+          <a v-for="n in g.items" :key="n[0]" :class="{on: page===n[0]}" @click="go(n[0])">
+            <span>{{ n[1] }}</span>
+            <span class="badge" v-if="n[2]==='badge' && openReqs.length">{{ openReqs.length }}</span>
+            <span class="badge" v-if="n[2]==='dbadge' && openDefects.length">{{ openDefects.length }}</span>
+          </a>
+        </div>
+      </template>
     </template>
     <div class="bottom">
       <a href="field.html" target="_blank">→ 開啟現場作業（平板／手機）</a>

@@ -332,6 +332,11 @@ createApp({
     }
     async function resetDemo() { if (!confirm('將清除所有資料並還原示範資料，確定？')) return; await Q.seed(true); await load(); toast('已還原示範資料'); }
     const navItems = [['dashboard', '品管總覽'], ['g', '品管作業'], ['holds', '停留點會驗', 'badge'], ['selfchecks', '自主檢查紀錄'], ['spots', '抽查紀錄'], ['defects', '缺失追蹤', 'dbadge'], ['g', '基本資料'], ['projects', '標案與分項工程'], ['templates', '表單範本'], ['import', '範本匯入'], ['docs', '參考文件'], ['g', '系統'], ['users', '帳號與權限'], ['params', '參數設定']];
+    // 側邊選單：分組可收合（狀態記在 localStorage）
+    const navTree = (() => { const t = []; navItems.forEach(n => { if (n[0] === 'g') t.push({ group: n[1], items: [] }); else if (t.length) t[t.length - 1].items.push(n); else t.push({ link: n }); }); return t; })();
+    const collapsed = reactive((() => { try { return JSON.parse(localStorage.getItem('qms-nav-collapsed') || '{}'); } catch (e) { return {}; } })());
+    function toggleGroup(name) { collapsed[name] = !collapsed[name]; try { localStorage.setItem('qms-nav-collapsed', JSON.stringify(collapsed)); } catch (e) { /* ignore */ } }
+    watch(page, p => { const g = navTree.find(x => x.group && x.items.some(i => i[0] === p)); if (g && collapsed[g.group]) toggleGroup(g.group); }, { immediate: true });
     const titles = Object.fromEntries(navItems.filter(n => n[0] !== 'g').map(n => [n[0], n[1]]));
     const todayStr = () => { const t = new Date(); return `${Q.fmtD(t)}（${'日一二三四五六'[t.getDay()]}）`; };
 
@@ -348,7 +353,7 @@ createApp({
       selTenderId, selTender, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, tenderForm, swForm, saveTender, saveSw, moveSw, delSw, newTender,
       tplSw, swGroups, selTplId, tplTab, edit, previewOn, fieldIdx, tplList, tplHistory, pickTpl, editUsed, editStages, TYPES, holdN, addItem, delItem, moveItem, addField, onType, saveEdit, delTpl, syncFromSelf, newTpl, exportCsv, exportXlsx, dragId, dragOver, onDragStart, onDragEnd, onDrop, itemImp, openItemImp, itemSample, downloadItemSample, onItemFile, itemImpRows, itemImpBad, doItemImp,
       imp, validate, onFile, sampleCsv, loadSample, downloadSample, impOk, doImport, impReset, download,
-      docForm, userForm, saveDoc, saveUser, delRow, saveParams, resetDemo, navItems, titles, todayStr
+      docForm, userForm, saveDoc, saveUser, delRow, saveParams, resetDemo, navItems, navTree, collapsed, toggleGroup, titles, todayStr
     };
   }
 }).mount('#app');

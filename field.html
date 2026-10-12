@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="icon" href="images/logo.png">
 <title>捷運品管 - 現場作業</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/common.css">
@@ -14,7 +15,7 @@
 
   <!-- 導覽列：平板在左側、手機在底部 -->
   <nav class="rail">
-    <div class="logo">捷運<br>品管</div>
+    <div class="logo"><img src="images/logo.png" alt="捷運工程局"></div>
     <button v-for="n in navItems" :key="n[0]" :class="{on: navActive===n[0]}" @click="nav(n[0])">
       <span class="ic">{{ {todo:'☰',checks:'✓',holds:'☆',docs:'▤',me:'●'}[n[0]] }}</span><span>{{ n[1] }}</span><b class="badge" v-if="n[2]">{{ n[2] }}</b></button>
   </nav>
