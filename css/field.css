@@ -96,7 +96,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
   .plain > .card { margin: 16px 20px; }
   .form { height: 100vh; min-height: 0; } .fbody { overflow-y: auto; display: flex; flex-direction: column; }
   .fhdr { position: static; padding: 12px 20px; } .fhdr .ft { font-size: 18px; } .prog { flex-basis: auto; width: 230px; }
-  .stab { display: none; }
+  .stab { position: static; }
   .fgrid { display: grid; grid-template-columns: 360px 1fr; flex: 1; min-height: 0; }
   .ipane { display: block; overflow-y: auto; padding: 8px; background: #fff; border-right: 1px solid var(--line); }
   .ipane::before { content: none; }
@@ -112,3 +112,6 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
   .shell.immersive .page { overflow: hidden; }
 }
 @media print { .rail, .fbar, .stab, .btn, .cam, .judge button:not(.on) { display: none !important; } .page { height: auto; overflow: visible; } .form, .fbody, .fgrid, .dpane { height: auto; overflow: visible; display: block; } .ipane { display: none; } .icard { break-inside: avoid; } }
+
+.mtbl { width: 100%; border-collapse: collapse; margin: 8px 0; } .mtbl th { background: var(--th); color: var(--th-text); font-weight: 600; font-size: 13px; padding: 6px 8px; text-align: left; border: 1px solid var(--cell-line); }
+.mtbl td { padding: 6px 8px; border: 1px solid var(--cell-line); vertical-align: middle; } .mtbl input { width: 100%; min-width: 80px; font-size: 18px; padding: 8px; }

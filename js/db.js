@@ -206,8 +206,12 @@
       mkReq('HP-CF671-0929-001', '垂直度（超音波檢測）', 'Y01站 單元 P10', now - 8 * D, now - 7 * D, 'failed')
     );
     // 抽查（已完成）
-    out.spotChecks.push({ id: 'SP-CF671-1002-001', requestId: 'HP-CF671-1002-001', scId: '', itemNo: 8, templateId: 'TP-SP-1', title: '垂直度（超音波檢測）', tenderCode: 'CF671', location: 'Y01站 單元 P12', measures: {}, judge: 'ok', photos: [], calc: { thickness: '1.0', length: '6.0', depth: '32' }, status: 'signed', signatures: {}, createdAt: now - 2 * D, subworkId: 'S671-5' });
-    out.spotChecks.push({ id: 'SP-CF671-0930-001', requestId: 'HP-CF671-0929-001', scId: '', itemNo: 8, templateId: 'TP-SP-1', title: '垂直度（超音波檢測）', tenderCode: 'CF671', location: 'Y01站 單元 P10', measures: {}, judge: 'ng', photos: [], calc: {}, status: 'signed', signatures: {}, createdAt: now - 7 * D, subworkId: 'S671-5' });
+    const mkSpot = (id, reqId, focus, judge, loc, unit, when) => {
+      const tp = out.templates.find(t => t.id === 'TP-SP-1'), ans = {};
+      tp.items.forEach(i => { ans[i.no] = { judge: i.no === focus ? judge : 'na', values: {}, photos: [], note: '' }; });
+      return { id, kind: 'hold', requestId: reqId, scId: '', itemNo: focus, focusNo: focus, templateId: tp.id, templateVer: 1, templateName: tp.name, subworkId: 'S671-5', tenderId: 'T671', tenderCode: 'CF671', unit, location: loc, title: tp.items.find(i => i.no === focus).name, answers: ans, calc: { thickness: '1.0', length: '6.0', depth: '32' }, status: 'signed', signatures: {}, hash: 'seeddemo', date: when, createdAt: when };
+    };
+    out.spotChecks.push(mkSpot('SP-CF671-1002-001', 'HP-CF671-1002-001', 8, 'ok', 'Y01站 單元 P12', 'P12', now - 2 * D), mkSpot('SP-CF671-0930-001', 'HP-CF671-0929-001', 8, 'ng', 'Y01站 單元 P10', 'P10', now - 7 * D));
     // 缺失
     const dd = (n, t, loc, code, due, st, sw) => ({ id: 'DF-' + pad(n, 4), tenderId: code === 'CF671' ? 'T671' : 'T624', tenderCode: code, title: t, location: loc, source: '抽查', refId: '', itemNo: 0, subworkId: sw || 'S671-5', createdAt: due - 7 * D, due, status: st, note: '' });
     out.defects.push(
@@ -228,7 +232,19 @@
     for (const s of Object.keys(d)) await putMany(s, d[s]);
     await put('meta', { id: 'seeded', at: Date.now() });
   }
-  const ready = open().then(() => seed(false)).then(() => tickOverdue());
+  // 舊版抽查紀錄（單項 measures/judge）轉為完整表單結構
+  async function migrateSpots() {
+    const list = (await all('spotChecks')).filter(x => !x.answers); if (!list.length) return;
+    for (const sp of list) {
+      const tpl = await get('templates', sp.templateId || 'TP-SP-1'); if (!tpl) continue;
+      const focus = (tpl.items.find(i => i.srcNo === sp.itemNo) || {}).no || null, ans = {};
+      tpl.items.forEach(i => { ans[i.no] = { judge: sp.status === 'signed' ? 'na' : null, values: {}, photos: [], note: '' }; });
+      if (focus) ans[focus] = { judge: sp.judge || null, values: sp.measures || {}, photos: sp.photos || [], note: '' };
+      Object.assign(sp, { kind: sp.requestId ? 'hold' : 'random', focusNo: focus, templateVer: tpl.version, templateName: tpl.name, answers: ans, date: sp.date || sp.createdAt });
+      delete sp.measures; delete sp.judge; delete sp.photos; await put('spotChecks', sp);
+    }
+  }
+  const ready = open().then(() => seed(false)).then(() => migrateSpots()).then(() => tickOverdue());
 
   async function getParams() { return Object.assign({}, DEFAULT_PARAMS, await get('meta', 'params') || {}); }
   async function counter(name) {
@@ -294,18 +310,32 @@
     r.status = 'rejected'; r.notices.push({ at: Date.now(), text: `監造退回申請：${reason || '（未填原因）'}`, level: 'danger' });
     await put('requests', r); await syncHold(r, 'none'); return r;
   }
+  // 建立抽查紀錄（會驗或隨機抽查）。focus = 本次會驗的檢查項目(對應自主檢查表項次)
+  async function newSpotCheck({ templateId, unit, location, request, selfCheckId }) {
+    const tpl = await get('templates', templateId), n = await counter('spot'), d = new Date();
+    const tender = await get('tenders', tpl.tenderId); const sw = await get('subworks', tpl.subworkId);
+    let sc = selfCheckId ? await get('selfChecks', selfCheckId) : null;
+    if (!sc && unit) { const l = (await all('selfChecks')).filter(x => x.unit === unit && x.subworkId === tpl.subworkId).sort((a, b) => b.createdAt - a.createdAt); sc = l[0] || null; }
+    const focus = request && request.itemNo ? (tpl.items.find(i => i.srcNo === request.itemNo) || {}).no || null : null;
+    const answers = {}; tpl.items.forEach(i => { answers[i.no] = { judge: null, values: {}, photos: [], note: '' }; });
+    const sp = {
+      id: `SP-${tender.code}-${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(n, 3)}`, kind: request ? 'hold' : 'random', requestId: request ? request.id : '', scId: sc ? sc.id : '', itemNo: request ? request.itemNo : 0, focusNo: focus,
+      templateId: tpl.id, templateVer: tpl.version, templateName: tpl.name, subworkId: tpl.subworkId, tenderId: tender.id, tenderCode: tender.code, unit: unit || (request && request.unit) || '', location: location || (request && request.location) || (sc && sc.location) || `Y01站 單元 ${unit || ''}`,
+      title: focus ? tpl.items.find(i => i.no === focus).name : (request ? request.title : tpl.name), subworkName: sw ? sw.name : '', answers,
+      calc: { thickness: '1.0', length: sc && sc.answers[2] ? String((sc.answers[2].values || {}).len || '') : '', depth: '' }, status: 'draft', signatures: {}, date: Date.now(), createdAt: Date.now()
+    };
+    await put('spotChecks', sp); return sp;
+  }
   async function startInspection(reqId) {
     const r = await get('requests', reqId);
     if (r.spotId) return get('spotChecks', r.spotId);
-    const n = await counter('spot'); const d = new Date();
     const sc = r.scId ? await get('selfChecks', r.scId) : null;
-    const sp = {
-      id: `SP-${r.tenderCode}-${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(n, 3)}`, requestId: r.id, scId: r.scId, itemNo: r.itemNo, templateId: 'TP-SP-1', subworkId: sc ? sc.subworkId : 'S671-5',
-      title: r.title, tenderCode: r.tenderCode, location: r.location, unit: r.unit, measures: {}, judge: null, photos: [], calc: { thickness: '1.0', length: sc && sc.answers[2] ? String((sc.answers[2].values || {}).len || '') : '', depth: '' },
-      status: 'draft', signatures: {}, createdAt: Date.now()
-    };
+    const sub = sc ? sc.subworkId : 'S671-5';
+    const tpls = (await all('templates')).filter(t => t.kind === 'spot' && t.status === 'published' && t.subworkId === sub);
+    const tpl = tpls.find(t => t.items.some(i => i.srcNo === r.itemNo)) || tpls[0] || await get('templates', 'TP-SP-1');
+    const sp = await newSpotCheck({ templateId: tpl.id, unit: r.unit, location: r.location, request: r, selfCheckId: r.scId });
     r.status = 'inspecting'; r.spotId = sp.id; r.notices.push({ at: Date.now(), text: '監造開始會驗', level: 'info' });
-    await put('spotChecks', sp); await put('requests', r); return sp;
+    await put('requests', r); return sp;
   }
   async function createDefect({ tenderCode, title, location, source, refId, itemNo, subworkId }) {
     const n = await counter('defect'), p = await getParams(), now = Date.now();
@@ -322,15 +352,21 @@
     }
     return sc;
   }
+  // 未抽查項目自動填 ╱
+  function autoNa(sp) { Object.values(sp.answers).forEach(a => { if (!a.judge) a.judge = 'na'; }); }
   async function finalizeSpot(spId) {
-    const sp = await get('spotChecks', spId); const r = await get('requests', sp.requestId);
-    sp.hash = await hashOf({ m: sp.measures, j: sp.judge, c: sp.calc });
+    const sp = await get('spotChecks', spId); const tpl = await get('templates', sp.templateId);
+    autoNa(sp); sp.hash = await hashOf({ a: sp.answers, c: sp.calc, v: sp.templateVer });
     sp.status = 'signed'; await put('spotChecks', sp);
-    const pass = sp.judge !== 'ng';
-    r.status = pass ? 'passed' : 'failed';
-    r.notices.push({ at: Date.now(), text: pass ? '抽查完成，合格放行（後續項目解鎖）' : '抽查判定有缺失，不合格', level: pass ? 'ok' : 'danger' });
-    await put('requests', r); await syncHold(r, pass ? 'passed' : 'failed');
-    if (!pass) await createDefect({ tenderCode: sp.tenderCode, title: sp.title, location: `${sp.tenderCode}｜${sp.location}`, source: '抽查', refId: sp.id, itemNo: sp.itemNo, subworkId: sp.subworkId });
+    const ngItems = tpl.items.filter(i => (sp.answers[i.no] || {}).judge === 'ng');
+    for (const it of ngItems) await createDefect({ tenderCode: sp.tenderCode, title: it.name, location: `${sp.tenderCode}｜${sp.location}`, source: '抽查', refId: sp.id, itemNo: it.no, subworkId: sp.subworkId });
+    if (sp.requestId) {
+      const r = await get('requests', sp.requestId);
+      const pass = sp.focusNo ? sp.answers[sp.focusNo].judge !== 'ng' : !ngItems.length;
+      r.status = pass ? 'passed' : 'failed';
+      r.notices.push({ at: Date.now(), text: pass ? '抽查完成，合格放行（後續項目解鎖）' : '抽查判定有缺失，不合格', level: pass ? 'ok' : 'danger' });
+      await put('requests', r); await syncHold(r, pass ? 'passed' : 'failed');
+    }
     return sp;
   }
   async function setDefectStatus(id, status, note) {
@@ -352,6 +388,6 @@
     LINKED, JUDGE, STAGES, HOLD_TEXT, REQ_TEXT, H, D,
     fmtDT, fmtD, fmtFull, toLocalInput, fromLocalInput, nextHour, atDay, relTime, uid, clone, hashOf,
     evalField, suggest, rangeText, stageItems, stageDone, lockReason, holdState,
-    tickOverdue, newSelfCheck, saveSelf, applyHold, schedule, reject, startInspection, createDefect, finalizeSelf, finalizeSpot, setDefectStatus, saveTemplate, putMany, F, I
+    tickOverdue, newSelfCheck, saveSelf, applyHold, schedule, reject, startInspection, newSpotCheck, autoNa, migrateSpots, createDefect, finalizeSelf, finalizeSpot, setDefectStatus, saveTemplate, putMany, F, I
   };
 })();

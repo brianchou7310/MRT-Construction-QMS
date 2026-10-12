@@ -48,7 +48,7 @@ createApp({
       const selfT = d.templates.filter(t => t.subworkId === s.id && t.kind === 'self' && t.status === 'published');
       const spotT = d.templates.filter(t => t.subworkId === s.id && t.kind === 'spot' && t.status === 'published');
       const spots = d.spotChecks.filter(p => p.subworkId === s.id);
-      const rate = spots.length ? Math.round(spots.filter(p => p.judge !== 'ng').length / spots.length * 100) : null;
+      const rate = spots.length ? Math.round(spots.filter(p => spotCount(p, 'ng') === 0).length / spots.length * 100) : null;
       return { sw: s, selfN: selfT.length, spotN: spotT.length, holdN: selfT.reduce((n, t) => n + t.items.filter(i => i.hold).length, 0), rate, open: d.defects.filter(x => x.subworkId === s.id && x.status !== 'closed').length };
     }).filter(r => progFilter.value === '全部' || r.sw.status === progFilter.value));
     const progCount = status => d.subworks.filter(s => s.tenderId === progTender.value && (status === '全部' || s.status === status)).length;
@@ -89,10 +89,10 @@ createApp({
 
     /* ---------- 紀錄清單 ---------- */
     const showSC = ref(null), showSP = ref(null);
-    const itemsOf = sc => { const t = tplOf(sc.templateId); return t ? t.items.map(i => ({ it: i, a: sc.answers[i.no] || {} })) : []; };
+    const itemsOf = sc => { const t = tplOf(sc.templateId); return t ? t.items.map(i => ({ it: i, a: (sc.answers || {})[i.no] || {} })) : []; };
     const judgeText = j => j ? Q.JUDGE[j] : '—';
     const valuesText = (it, a) => it.fields.filter(f => (a.values || {})[f.key] !== undefined && a.values[f.key] !== '').map(f => `${f.label} ${a.values[f.key]}${f.unit || ''}`).join('、');
-    const spotItem = sp => { const t = tplOf(sp.templateId); return t && (t.items.find(i => i.srcNo === sp.itemNo) || {}); };
+    const spotCount = (sp, j) => Object.values(sp.answers || {}).filter(a => a.judge === j).length;
     const defCls = x => x.status === 'closed' ? 'ok' : x.due < now.value ? 'ng' : x.status === 'review' ? 'warn' : 'blue';
     const defText = x => x.status === 'closed' ? '已結案' : x.status === 'review' ? '待複查' : x.due < now.value ? `逾期 ${Math.ceil((now.value - x.due) / Q.D)} 天` : '改善中';
     const defTab = ref('open');
@@ -349,7 +349,7 @@ createApp({
     return {
       Q, d, now, loaded, page, menuOpen, toastMsg, toastNg, toast, go, tenderById, swById, tenderFilter, supervisors, reqCls, rel, openReqs, overdueReqs, openDefects, overdueDefects, weekHolds, spotRate, todayAgenda, tplOf, usedCount,
       progTender, progFilter, progRows, progCount, holdTab, holdTabs, holdCount, holdList, holdByDate, selReqId, selReq, calView, sched, reqChips, lockedAfter, hoursBefore, doSchedule, doReject, doStart,
-      showSC, showSP, itemsOf, judgeText, valuesText, spotItem, defCls, defText, defTab, defList, defAct,
+      showSC, showSP, itemsOf, judgeText, valuesText, spotCount, defCls, defText, defTab, defList, defAct,
       selTenderId, selTender, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, tenderForm, swForm, saveTender, saveSw, moveSw, delSw, newTender,
       tplSw, swGroups, selTplId, tplTab, edit, previewOn, fieldIdx, tplList, tplHistory, pickTpl, editUsed, editStages, TYPES, holdN, addItem, delItem, moveItem, addField, onType, saveEdit, delTpl, syncFromSelf, newTpl, exportCsv, exportXlsx, dragId, dragOver, onDragStart, onDragEnd, onDrop, itemImp, openItemImp, itemSample, downloadItemSample, onItemFile, itemImpRows, itemImpBad, doItemImp,
       imp, validate, onFile, sampleCsv, loadSample, downloadSample, impOk, doImport, impReset, download,

@@ -32,6 +32,7 @@ createApp({
     function getGps() {
       return new Promise(res => {
         if (!navigator.geolocation) return res(lastGps);
+        setTimeout(() => res(lastGps), 2000); // 使用者未回應定位授權時不卡住拍照
         navigator.geolocation.getCurrentPosition(p => { lastGps = `${p.coords.latitude.toFixed(5)},${p.coords.longitude.toFixed(5)}`; res(lastGps); }, () => res(lastGps), { timeout: 1500, maximumAge: 60000 });
       });
     }
@@ -187,28 +188,60 @@ createApp({
     const stageNext = computed(() => ({ pre: '完成施工前檢查，進入施工中', during: '完成施工中，進入施工後', post: '送出前總覽 ›', sum: '' })[stageTab.value]);
     async function leaveForm() { await flush(); cur.value = null; view.value = 'checks'; await load(); }
 
-    /* ---------- 抽查紀錄 ---------- */
-    const sp = ref(null);
+    /* ---------- 抽查紀錄（與自主檢查相同：分階段、逐項判定）---------- */
+    const sp = ref(null), spStage = ref('pre'), spItemNo = ref(1), spSaveMsg = ref(''), spNew = ref(null);
+    const spTpl = computed(() => sp.value && tplOf(sp.value.templateId));
     const spReq = computed(() => sp.value && d.requests.find(r => r.id === sp.value.requestId));
     const spSc = computed(() => sp.value && d.selfChecks.find(s => s.id === sp.value.scId));
-    const spSelfItem = computed(() => { const t = spSc.value && tplOf(spSc.value.templateId); return t && t.items.find(i => i.no === sp.value.itemNo); });
-    const spFields = computed(() => {
-      const tp = tplOf(sp.value.templateId); const si = tp && tp.items.find(i => i.srcNo === sp.value.itemNo && i.fields.length);
-      const f = (si && si.fields) || (spSelfItem.value && spSelfItem.value.fields) || []; return f.length ? f : [Q.F('v', '實測值', '', null, null)];
-    });
-    const selfVal = f => { const a = spSc.value && spSc.value.answers[sp.value.itemNo]; const v = a && a.values && a.values[f.key]; return v === undefined || v === '' ? null : v; };
-    const spSugg = computed(() => sp.value ? Q.suggest({ fields: spFields.value }, sp.value.measures) : null);
+    const spEditable = computed(() => sp.value && sp.value.status !== 'signed' && isSup.value);
+    const spStageList = computed(() => spTpl.value ? Q.stageItems(spTpl.value, spStage.value) : []);
+    const spCurItem = computed(() => spTpl.value && (spTpl.value.items.find(i => i.no === spItemNo.value) || spTpl.value.items[0]));
+    const spShown = computed(() => wide.value ? (spCurItem.value ? [spCurItem.value] : []) : spStageList.value);
+    const spA = no => (sp.value && sp.value.answers[no]) || { judge: null, values: {}, photos: [], note: '' };
+    const spJudged = computed(() => sp.value ? Object.values(sp.value.answers).filter(a => a.judge).length : 0);
+    const spTotal = computed(() => spTpl.value ? spTpl.value.items.length : 0);
+    const spSummary = computed(() => { const a = sp.value ? Object.values(sp.value.answers) : []; return { ok: a.filter(x => x.judge === 'ok').length, ng: a.filter(x => x.judge === 'ng').length, na: a.filter(x => x.judge === 'na').length, none: a.filter(x => !x.judge).length, photos: a.reduce((n, x) => n + (x.photos || []).length, 0) }; });
+    const spStageStat = st => { const l = spTpl.value ? Q.stageItems(spTpl.value, st) : []; return `${l.filter(i => spA(i.no).judge).length}/${l.length}`; };
+    const spSelfVals = it => { const a = spSc.value && spSc.value.answers[it.srcNo || it.no]; return (a && a.values) || {}; };
+    const spSugg = it => Q.suggest(it, spA(it.no).values);
     const spArea = computed(() => { const l = Number(sp.value && sp.value.calc.length), dp = Number(sp.value && sp.value.calc.depth); return l && dp ? (l * dp).toFixed(2) : ''; });
     const spLocked = computed(() => spReq.value ? lockedAfter(spReq.value) : []);
-    const spEditable = computed(() => sp.value && sp.value.status !== 'signed' && isSup.value);
+    const spTpls = computed(() => d.templates.filter(t => t.kind === 'spot' && t.status === 'published').sort((a, b) => b.items.length - a.items.length));
+    const spList = computed(() => d.spotChecks.filter(x => tenderSel.value === 'all' || x.tenderId === tenderSel.value).sort((a, b) => b.createdAt - a.createdAt));
+    const spProgress = x => ({ n: Object.values(x.answers || {}).filter(a => a.judge).length, total: Object.keys(x.answers || {}).length });
     let spTimer = null;
-    function spSave() { clearTimeout(spTimer); spTimer = setTimeout(() => Q.put('spotChecks', Q.clone(sp.value)), 400); }
-    async function openSpot(id) { sp.value = reactive(Q.clone(await Q.get('spotChecks', id))); view.value = 'spot'; window.scrollTo(0, 0); }
-    function spJudge(j) { if (!spEditable.value) return toast(isSup.value ? '表單已簽認' : '抽查紀錄由監造人員填寫（請於「我的」切換為監造）', true); sp.value.judge = sp.value.judge === j ? null : j; spSave(); }
-    function spPhoto() { if (!spEditable.value) return; pickPhoto(`${sp.value.tenderCode}・${sp.value.location}・★${sp.value.title}`, u => { sp.value.photos.push(u); spSave(); }); }
-    function spDemoPhoto() { if (!spEditable.value) return; demoPhoto(`${sp.value.tenderCode}・${sp.value.location}・★${sp.value.title}`, u => { sp.value.photos.push(u); spSave(); }); }
-    async function spGoSign() { if (!sp.value.judge) return toast('請先判定結果', true); clearTimeout(spTimer); await Q.put('spotChecks', Q.clone(sp.value)); openSign('spot', sp.value.id); }
-    async function leaveSpot() { clearTimeout(spTimer); if (sp.value && sp.value.status !== 'signed') await Q.put('spotChecks', Q.clone(sp.value)); sp.value = null; view.value = 'todo'; await load(); }
+    function spSave() { if (!sp.value || sp.value.status === 'signed') return; spSaveMsg.value = '儲存中…'; clearTimeout(spTimer); spTimer = setTimeout(spFlush, 500); }
+    async function spFlush() { clearTimeout(spTimer); spTimer = null; if (!sp.value || sp.value.status === 'signed') return; await Q.put('spotChecks', Q.clone(sp.value)); spSaveMsg.value = '已自動儲存 ' + hh(Date.now()); }
+    async function openSpot(id) {
+      await Q.migrateSpots(); const rec = await Q.get('spotChecks', id); sp.value = reactive(Q.clone(rec)); spSaveMsg.value = '';
+      const t = tplOf(rec.templateId); const first = t && (t.items.find(i => i.no === rec.focusNo) || t.items[0]);
+      if (first) { spItemNo.value = first.no; spStage.value = first.stage; } view.value = 'spot'; window.scrollTo(0, 0);
+    }
+    function spGoto(it) { spItemNo.value = it.no; spStage.value = it.stage; }
+    function spSetStage(st) { spStage.value = st; const l = Q.stageItems(spTpl.value, st); const f = l.find(i => i.no === sp.value.focusNo) || l.find(i => !spA(i.no).judge) || l[0]; if (f) spItemNo.value = f.no; }
+    function spJudge(it, j) {
+      if (!spEditable.value) return toast(isSup.value ? '表單已簽認，不可修改' : '抽查紀錄由監造人員填寫（請於「我的」切換為監造）', true);
+      const a = sp.value.answers[it.no]; if (a.judge === j) { a.judge = null; spSave(); return; }
+      if (j === 'ok' && it.photo && !a.photos.length) return toast('此項必須拍照後才能判定 ○', true);
+      a.judge = j; spSave(); if (j === 'ng') toast('已判定缺失；簽認後系統將自動建立缺失追蹤');
+    }
+    function spUseSuggest(it) { const s = spSugg(it); if (s) spJudge(it, s); }
+    const spLabel = it => `${sp.value.tenderCode}・單元 ${sp.value.unit}・${it.name}`;
+    function spPhoto(it) { if (!spEditable.value) return toast('目前不可編輯', true); pickPhoto(spLabel(it), u => { sp.value.answers[it.no].photos.push(u); spSave(); }); }
+    function spDemoPhoto(it) { if (!spEditable.value) return toast('目前不可編輯', true); demoPhoto(spLabel(it), u => { sp.value.answers[it.no].photos.push(u); spSave(); }); }
+    function spDelPhoto(it, i) { if (!spEditable.value) return; const a = sp.value.answers[it.no]; a.photos.splice(i, 1); if (it.photo && !a.photos.length && a.judge === 'ok') a.judge = null; spSave(); }
+    async function spGoSign() {
+      if (!spEditable.value) return toast('抽查紀錄由監造人員填寫', true);
+      const f = sp.value.focusNo; if (f && !sp.value.answers[f].judge) { spGoto(spTpl.value.items.find(i => i.no === f)); return toast('請先判定本次會驗項目：' + sp.value.title, true); }
+      if (!f && !spJudged.value) return toast('請至少抽查並判定一個項目', true);
+      Q.autoNa(sp.value); await spFlush(); openSign('spot', sp.value.id);
+    }
+    async function leaveSpot() { await spFlush(); sp.value = null; view.value = 'spots'; await load(); }
+    function openSpotNew() { spNew.value = { templateId: (spTpls.value[0] || {}).id, unit: '', location: '' }; }
+    async function createSpot() {
+      const f = spNew.value; if (!f.templateId) return toast('請選擇抽查表', true); if (!f.unit.trim()) return toast('請輸入單元編號', true);
+      const rec = await Q.newSpotCheck({ templateId: f.templateId, unit: f.unit.trim().toUpperCase(), location: f.location.trim() }); spNew.value = null; await load(); openSpot(rec.id);
+    }
 
     /* ---------- 簽認 ---------- */
     const signCtx = ref(null), signHash = ref(''), signAgree = ref(false), canvasEl = ref(null);
@@ -222,12 +255,12 @@ createApp({
     const signSummary = computed(() => {
       const c = signCtx.value; if (!c) return [];
       if (c.kind === 'self') return [['檢查結果', `○ ${summary.value.ok}　╳ ${summary.value.ng}　╱ ${summary.value.na}`], ['檢驗停留點', `${holdItems.value.filter(i => hstate(i) === 'passed').length} 項已放行`], ['現場照片', summary.value.photos + ' 張'], ['自動附件', attachCodes.value.map(x => '表' + x).join('、') || '—'], ['內容雜湊', (signHash.value || '').slice(0, 14) + '…']];
-      return [['判定', Q.JUDGE[c.rec.judge]], ['現場照片', c.rec.photos.length + ' 張'], ['自動附件', '廠商自主檢查表 ' + (c.rec.scId || '—')], ['內容雜湊', (signHash.value || '').slice(0, 14) + '…']];
+      return [['抽查結果', `○ ${spSummary.value.ok}　╳ ${spSummary.value.ng}　╱ ${spSummary.value.na}`], ['抽查時機', c.rec.kind === 'hold' ? '檢驗停留點：★' + c.rec.title : '隨機抽查'], ['現場照片', spSummary.value.photos + ' 張'], ['自動附件', '廠商自主檢查表 ' + (c.rec.scId || '—')], ['內容雜湊', (signHash.value || '').slice(0, 14) + '…']];
     });
     async function openSign(kind, id) {
       const rec = kind === 'self' ? cur.value : sp.value;
       signCtx.value = { kind, id, rec }; signIdx.value = rec.signatures && rec.signatures[signers.value[0].key] ? 1 : 0; signAgree.value = false; drawn.value = false;
-      signHash.value = await Q.hashOf(kind === 'self' ? { a: rec.answers, l: rec.linked, h: rec.hold } : { m: rec.measures, j: rec.judge, c: rec.calc });
+      signHash.value = await Q.hashOf(kind === 'self' ? { a: rec.answers, l: rec.linked, h: rec.hold } : { a: rec.answers, c: rec.calc });
       view.value = 'sign'; await nextTick(); initCanvas();
     }
     function initCanvas() {
@@ -252,7 +285,7 @@ createApp({
       if (c.kind === 'self') await Q.put('selfChecks', Q.clone(c.rec)); else await Q.put('spotChecks', Q.clone(c.rec));
       if (signIdx.value < signers.value.length - 1) { signIdx.value++; signAgree.value = false; await nextTick(); initCanvas(); toast(`${s.title} 已簽認，請 ${signers.value[signIdx.value].title} 簽名`); return; }
       if (c.kind === 'self') { await Q.finalizeSelf(c.id); toast('自主檢查表已簽認完成並鎖定'); cur.value = null; view.value = 'checks'; }
-      else { await Q.finalizeSpot(c.id); toast(c.rec.judge === 'ng' ? '抽查完成：有缺失，已建立缺失追蹤' : '抽查完成：合格放行，後續項目已解鎖'); sp.value = null; view.value = 'todo'; }
+      else { await Q.finalizeSpot(c.id); const ng = Object.values(c.rec.answers).some(a => a.judge === 'ng'); toast(ng ? '抽查完成：有缺失，已建立缺失追蹤' : (c.rec.requestId ? '抽查完成：合格放行，後續項目已解鎖' : '抽查紀錄已簽認完成')); sp.value = null; view.value = 'spots'; }
       signCtx.value = null; await load();
     }
     function cancelSign() { const c = signCtx.value; signCtx.value = null; view.value = c.kind === 'self' ? 'form' : 'spot'; }
@@ -263,9 +296,9 @@ createApp({
     async function defAct(x) { await Q.setDefectStatus(x.id, isSup.value ? 'closed' : 'review'); await load(); toast(isSup.value ? '複查合格，缺失已結案' : '已回報改善完成，待監造複查'); }
     async function resetDemo() { if (!confirm('將清除所有資料並還原示範資料，確定？')) return; await Q.seed(true); cur.value = null; sp.value = null; view.value = 'todo'; await load(); toast('已還原示範資料'); }
     async function clearSigs() { for (const k of ['site', 'rep', 'insp', 'att']) await Q.del('meta', 'sig-' + k); toast('已清除已存簽名'); }
-    const navItems = computed(() => [['todo', '待辦', todoCount.value], ['checks', '自主檢查', 0], ['holds', '停留點', 0], ['docs', '參考文件', 0], ['me', '我的', 0]]);
-    function nav(v) { if (view.value === 'form') flush(); view.value = v; if (v !== 'form') cur.value = null; sp.value = null; selReqId.value = null; window.scrollTo(0, 0); }
-    const navActive = computed(() => ({ form: 'checks', spot: 'todo', sign: signCtx.value && signCtx.value.kind === 'self' ? 'checks' : 'todo' })[view.value] || view.value);
+    const navItems = computed(() => [['todo', '待辦', todoCount.value], ['checks', '自主檢查', 0], ['spots', '抽查紀錄', 0], ['holds', '停留點', 0], ['docs', '參考文件', 0], ['me', '我的', 0]]);
+    function nav(v) { if (view.value === 'form') flush(); if (view.value === 'spot') spFlush(); view.value = v; if (v !== 'form') cur.value = null; sp.value = null; selReqId.value = null; window.scrollTo(0, 0); }
+    const navActive = computed(() => ({ form: 'checks', spot: 'spots', sign: signCtx.value && signCtx.value.kind === 'self' ? 'checks' : 'spots' })[view.value] || view.value);
     const printForm = () => window.print();
 
     watch(wide, () => { if (view.value === 'sign') nextTick(initCanvas); });
@@ -284,7 +317,7 @@ createApp({
       cur, curTpl, stageTab, itemNo, saveMsg, docShow, linkShow, applyForm, readonly, stageList, curItem, shownItems, judged, total, stageStat, stageDone, ans, ensure, lockOf, hstate, hreq, itemEditable, sugg, itemIcon,
       flush, queueSave, openSc, gotoItem, setStage, step, setJudge, addPhoto, addDemoPhoto, delPhoto, useSuggest, markLinked, confirmQr, canApply, openApply, applyShort, applyHours, submitApply, holdText,
       summary, holdItems, attachCodes, canSubmit, goSign, finishStage, stageTabs, stageNext, leaveForm,
-      sp, spReq, spSc, spSelfItem, spFields, selfVal, spSugg, spArea, spLocked, spEditable, spSave, openSpot, spJudge, spPhoto, spDemoPhoto, spGoSign, leaveSpot,
+      sp, spStage, spItemNo, spSaveMsg, spNew, spTpl, spReq, spSc, spEditable, spStageList, spCurItem, spShown, spA, spJudged, spTotal, spSummary, spStageStat, spSelfVals, spSugg, spArea, spLocked, spTpls, spList, spProgress, spSave, spFlush, openSpot, spGoto, spSetStage, spJudge, spUseSuggest, spPhoto, spDemoPhoto, spDelPhoto, spGoSign, leaveSpot, openSpotNew, createSpot,
       signCtx, signHash, signAgree, canvasEl, drawn, signers, signIdx, curSigner, signSummary, sDown, sMove, sUp, clearSign, applySaved, saveSig, confirmSign, cancelSign,
       defCls, defText, defAct, resetDemo, clearSigs, navItems, nav, navActive, printForm
     };

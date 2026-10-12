@@ -188,37 +188,76 @@
   <footer class="fbar"><span class="small muted save">{{ saveMsg }}</span><button class="btn" @click="flush().then(()=>toast('已暫存'))" :disabled="readonly">暫存</button><button class="btn primary" :class="{disabled: !canSubmit}" @click="goSign" v-if="cur.status!=='signed'">{{ canSubmit ? '送出，進行簽認' : '送出（尚有 '+(total-judged)+' 項未判定）' }}</button></footer>
 </div>
 
-<!-- ============ 抽查紀錄表 ============ -->
-<div class="form" v-if="view==='spot' && sp">
-  <header class="fhdr"><button class="icon-btn" @click="leaveSpot">‹</button>
-    <div class="grow"><div class="ft">連續壁施工品質抽查記錄表 <span class="chip warn">檢驗停留點</span></div><div class="fs">{{ sp.tenderCode }}｜{{ sp.location }}｜大陸工程股份有限公司｜會驗申請 {{ sp.requestId }}</div></div></header>
-  <div class="alert gray" v-if="!isSup" style="margin:8px 12px">抽查紀錄由監造人員填寫；目前為「廠商」身分，僅供檢視。可到「我的」切換身分。</div>
-  <div class="spgrid">
-    <div class="card"><h4>廠商自主檢查</h4><div class="star t">☆{{ sp.title }}</div><div class="small muted" v-if="spSc">{{ spSc.templateName }} 第 {{ sp.itemNo }} 項・判定 ○ 合格</div>
-      <div class="kvr" v-for="f in spFields" :key="f.key"><span>{{ f.label }}</span><b>{{ selfVal(f) ?? '—' }} {{ f.unit }}</b></div>
-      <div class="photos" v-if="spSc && spSc.answers[sp.itemNo]"><div class="photo th" v-for="(p,i) in spSc.answers[sp.itemNo].photos" :key="i"><img v-if="p && p!=='*'" :src="p"><span v-else>自檢照片 {{ i+1 }}</span></div></div>
-      <div class="alert warn mt" v-if="spReq && spReq.shortNotice">申請不足 {{ d.params.holdAdvanceHours }} 小時：{{ spReq.shortReason }}</div>
-      <h5 class="mt">同單元後續停留點</h5><div class="kvr" v-for="n in spLocked"><span class="star">★{{ n }}</span><span class="chip">鎖定中</span></div><div class="small muted" v-if="!spLocked.length">無</div></div>
-
-    <div>
-      <div class="card"><h4><span class="star">★</span>抽查實測</h4>
-        <div class="field" v-for="f in spFields" :key="f.key"><label>{{ f.label }}<div class="small muted">{{ Q.rangeText(f) }} {{ f.unit }}</div></label><input type="number" inputmode="decimal" step="any" v-model="sp.measures[f.key]" @input="spSave" :disabled="!spEditable"><span class="unit">{{ f.unit }}</span>
-          <span class="chip" :class="Q.evalField(f, sp.measures[f.key])==='ok'?'ok':Q.evalField(f, sp.measures[f.key])==='ng'?'ng':''" v-if="Q.rangeText(f)">{{ Q.evalField(f, sp.measures[f.key])==='ok'?'符合':Q.evalField(f, sp.measures[f.key])==='ng'?'超出':'—' }}</span></div>
-        <div class="alert ok" v-if="spSugg==='ok'">實測值皆在容許範圍內，系統建議判定 ○</div><div class="alert ng" v-if="spSugg==='ng'">有實測值超出容許範圍，系統建議判定 ╳</div>
-        <div class="judge mt"><button :class="['ok',{on: sp.judge==='ok'}]" @click="spJudge('ok')">○ 合格放行</button><button :class="['ng',{on: sp.judge==='ng'}]" @click="spJudge('ng')">╳ 有缺失</button><button :class="['na',{on: sp.judge==='na'}]" @click="spJudge('na')">╱ 無此項</button></div></div>
-      <div class="card mt"><h4>現場照片</h4><div class="photos"><div class="photo th" v-for="(p,i) in sp.photos" :key="i" @click="spEditable && (sp.photos.splice(i,1), spSave())"><img :src="p"></div><button class="cam" :disabled="!spEditable" @click="spPhoto">📷<small>拍照</small></button><button class="cam demo" :disabled="!spEditable" @click="spDemoPhoto">🖼<small>示範照片</small></button></div><div class="small muted">自動壓浮水印（時間、單元、GPS）</div></div>
-    </div>
-
-    <div>
-      <div class="card"><h4>單元計價資料（{{ spReq ? spReq.unit : '' }}）</h4>
-        <div class="field"><label>單元厚度</label><input type="number" step="any" v-model="sp.calc.thickness" @input="spSave" :disabled="!spEditable"><span class="unit">m</span></div>
-        <div class="field"><label>單元長度</label><input type="number" step="any" v-model="sp.calc.length" @input="spSave" :disabled="!spEditable"><span class="unit">m</span></div>
-        <div class="field"><label>計價深度</label><input type="number" step="any" v-model="sp.calc.depth" @input="spSave" :disabled="!spEditable"><span class="unit">m</span></div>
-        <div class="kvr"><span>計價面積（長 × 深）</span><b>{{ spArea || '自動計算' }} <span v-if="spArea">m²</span></b></div></div>
-      <div class="card mt"><h4>簽認</h4><div class="kvr"><span>監造工務所（抽查人員）</span><span class="chip" :class="sp.signatures.insp?'ok':''">{{ sp.signatures.insp ? '已簽' : '待簽' }}</span></div><div class="kvr"><span>施工廠商隨同人員</span><span class="chip" :class="sp.signatures.att?'ok':''">{{ sp.signatures.att ? '已簽' : '待簽' }}</span></div></div>
+<!-- ============ 抽查紀錄清單 ============ -->
+<div class="plain" v-if="view==='spots'">
+  <header class="hdr"><div class="grow"><div class="small sub">{{ me.title }}・{{ me.org }}</div><h1>抽查紀錄</h1></div><button class="btn" v-if="isSup" @click="openSpotNew">＋ 新增隨機抽查</button></header>
+  <div class="alert gray" v-if="!isSup" style="margin:12px 14px 0">抽查紀錄由監造人員填寫；目前為「廠商」身分，僅供檢視。可到「我的」切換身分。</div>
+  <div class="grid-cards">
+    <div class="tcard" v-for="x in spList" :key="x.id" @click="openSpot(x.id)">
+      <div class="row"><div class="grow"><div class="t">{{ x.templateName }} <span class="small muted">v{{ x.templateVer }}</span></div><div class="muted small">{{ x.location }}｜{{ Q.fmtD(x.date||x.createdAt) }}</div></div><span class="chip" :class="x.status==='signed'?'ok':'warn'">{{ x.status==='signed'?'已簽認':'填寫中' }}</span></div>
+      <div class="row wrap"><span class="chip warn" v-if="x.kind==='hold'">檢驗停留點：★{{ x.title }}</span><span class="chip" v-else>隨機抽查</span><span class="chip ng" v-if="Object.values(x.answers||{}).some(a=>a.judge==='ng')">有缺失</span></div>
+      <div class="bar"><i :style="{width: spProgress(x).n/Math.max(1,spProgress(x).total)*100+'%'}"></i></div><div class="small muted">已抽查 {{ spProgress(x).n }} / {{ spProgress(x).total }}</div>
     </div>
   </div>
-  <footer class="fbar"><span class="small muted save">廠商自主檢查表將自動附於本抽查紀錄表</span><button class="btn" @click="leaveSpot">暫存離開</button><button class="btn primary" :class="{disabled: !sp.judge || !spEditable}" @click="spEditable ? spGoSign() : toast('抽查紀錄由監造人員填寫', true)">{{ sp.judge ? '簽認並完成' : '請先判定結果' }}</button></footer>
+  <div class="empty" v-if="!spList.length">尚無抽查紀錄。<br>監造可於「待辦」開始會驗，或按「新增隨機抽查」。</div>
+</div>
+
+<!-- ============ 抽查紀錄表單 ============ -->
+<div class="form" v-if="view==='spot' && sp && spTpl">
+  <header class="fhdr">
+    <button class="icon-btn" @click="leaveSpot">‹</button>
+    <div class="grow"><div class="ft">{{ spTpl.name }} <span class="small">v{{ sp.templateVer }}｜{{ sp.id }}</span> <span class="chip warn" v-if="sp.kind==='hold'">檢驗停留點</span><span class="chip" v-else>隨機抽查</span></div>
+      <div class="fs">{{ sp.tenderCode }}｜{{ sp.subworkName }}｜<b>單元 {{ sp.unit }}</b>｜{{ Q.fmtD(sp.date||sp.createdAt) }}<template v-if="sp.requestId">｜會驗申請 {{ sp.requestId }}</template></div></div>
+    <div class="prog"><div class="small">已抽查 <b>{{ spJudged }} / {{ spTotal }}</b></div><div class="bar light"><i :style="{width: spJudged/Math.max(1,spTotal)*100+'%'}"></i></div></div>
+    <button class="btn sm" @click="printForm">列印</button>
+  </header>
+  <div class="alert gray" v-if="!spEditable" style="margin:8px 12px">{{ sp.status==='signed' ? '本表已簽認完成，內容已鎖定（雜湊 '+(sp.hash||'').slice(0,12)+'…）' : '抽查紀錄由監造人員填寫；目前為廠商身分，僅供檢視' }}</div>
+  <div class="fbody">
+    <div class="stab"><button v-for="s in stageTabs" :key="s[0]" :class="{on: spStage===s[0]}" @click="s[0]==='sum' ? spStage='sum' : spSetStage(s[0])">{{ s[1] }}<small>{{ s[0]==='sum' ? spJudged+'/'+spTotal : spStageStat(s[0]) }}</small></button></div>
+    <div class="fgrid">
+      <div class="ipane" v-if="wide">
+        <div class="irow" v-for="it in (spStage==='sum' ? spTpl.items : spStageList)" :key="it.no" :class="{sel: it.no===spItemNo && spStage!=='sum'}" @click="spGoto(it)">
+          <span class="dot" :class="spA(it.no).judge">{{ {ok:'○',ng:'╳',na:'╱'}[spA(it.no).judge] || '' }}</span><span class="no">{{ it.no }}</span><span class="nm"><span class="star" v-if="it.hold">★</span>{{ it.name }}</span>
+          <span class="chip warn sm" v-if="sp.focusNo===it.no">本次會驗</span></div>
+        <div class="small muted" style="padding:10px">未抽查的項目，簽認時自動填 ╱</div>
+      </div>
+      <div class="dpane">
+        <div class="sum" v-if="spStage==='sum'">
+          <div class="card"><h4>抽查結果總覽</h4><div class="tri"><div class="ok"><b>{{ spSummary.ok }}</b>○ 合格</div><div class="ng"><b>{{ spSummary.ng }}</b>╳ 缺失</div><div class="na"><b>{{ spSummary.na + spSummary.none }}</b>╱ 未抽查／無此項</div></div>
+            <div class="alert warn mt" v-if="sp.focusNo && !spA(sp.focusNo).judge">本次會驗項目「★{{ sp.title }}」尚未判定</div>
+            <div class="alert gray mt" v-if="spLocked.length">本停留點合格放行後，解鎖：{{ spLocked.map(x=>'★'+x).join('、') }}</div>
+            <div class="alert ng mt" v-if="spSummary.ng">有缺失項目，簽認後系統將自動建立缺失追蹤。</div></div>
+          <div class="card"><h4>單元計價資料（{{ sp.unit }}）</h4>
+            <div class="field"><label>單元厚度</label><input type="number" step="any" v-model="sp.calc.thickness" @input="spSave" :disabled="!spEditable"><span class="unit">m</span></div>
+            <div class="field"><label>單元長度</label><input type="number" step="any" v-model="sp.calc.length" @input="spSave" :disabled="!spEditable"><span class="unit">m</span></div>
+            <div class="field"><label>計價深度</label><input type="number" step="any" v-model="sp.calc.depth" @input="spSave" :disabled="!spEditable"><span class="unit">m</span></div>
+            <div class="kvr"><span>計價面積（長 × 深）</span><b>{{ spArea || '自動計算' }} <span v-if="spArea">m²</span></b></div></div>
+          <div class="card"><h4>自動附件</h4><div class="row wrap"><span class="chip blue" v-if="spSc">廠商自主檢查表 {{ spSc.id }}</span><span class="chip" v-else>無對應自主檢查表</span><span class="chip blue">現場照片 {{ spSummary.photos }} 張</span></div></div>
+          <div class="card"><h4>簽認</h4><div class="kvr"><span>監造工務所（抽查人員）</span><span class="chip" :class="sp.signatures.insp?'ok':''">{{ sp.signatures.insp ? '已簽' : '待簽' }}</span></div><div class="kvr"><span>施工廠商隨同人員</span><span class="chip" :class="sp.signatures.att?'ok':''">{{ sp.signatures.att ? '已簽' : '待簽' }}</span></div></div>
+        </div>
+
+        <div class="card icard" v-for="it in spShown" :key="it.no" v-show="spStage!=='sum'">
+          <div class="row"><h3 class="grow"><span class="muted">{{ it.no }}.</span> <span class="star" v-if="it.hold">★</span>{{ it.name }} <span class="chip warn" v-if="sp.focusNo===it.no">本次會驗項目</span></h3><a v-if="it.ref" @click="docShow=it.ref">參考文件</a></div>
+          <div class="std pre">標準：{{ it.std || '—' }}</div>
+          <div class="linked" v-if="it.type==='linked'"><span>連結表單：表{{ it.linked }} {{ Q.LINKED[it.linked] }}</span><span class="chip" :class="spSc && spSc.linked[it.linked] ? 'ok' : ''">廠商{{ spSc && spSc.linked[it.linked] ? '已完成 ○' : '未完成' }}</span></div>
+          <table class="mtbl" v-if="it.fields.length"><thead><tr><th>項目／標準</th><th>廠商自檢</th><th>抽查實測</th><th>判定</th></tr></thead><tbody>
+            <tr v-for="f in it.fields" :key="f.key"><td>{{ f.label }}<div class="small muted">{{ Q.rangeText(f) }} {{ f.unit }}</div></td>
+              <td>{{ spSelfVals(it)[f.key] ?? '—' }} {{ spSelfVals(it)[f.key] !== undefined && spSelfVals(it)[f.key] !== '' ? f.unit : '' }}</td>
+              <td><input type="number" inputmode="decimal" step="any" v-model="spA(it.no).values[f.key]" @input="spSave" :disabled="!spEditable"></td>
+              <td><span class="chip" :class="Q.evalField(f, spA(it.no).values[f.key])==='ok'?'ok':Q.evalField(f, spA(it.no).values[f.key])==='ng'?'ng':''" v-if="Q.rangeText(f)">{{ Q.evalField(f, spA(it.no).values[f.key])==='ok'?'符合':Q.evalField(f, spA(it.no).values[f.key])==='ng'?'超出':'—' }}</span></td></tr></tbody></table>
+          <div class="alert ok" v-if="spSugg(it)==='ok'">實測值皆在容許範圍內，系統建議判定 ○ <a v-if="spEditable && spA(it.no).judge!=='ok'" @click="spUseSuggest(it)">套用</a></div>
+          <div class="alert ng" v-if="spSugg(it)==='ng'">實測值超出容許範圍，系統建議判定 ╳ <a v-if="spEditable && spA(it.no).judge!=='ng'" @click="spUseSuggest(it)">套用</a></div>
+          <div class="photos" v-if="it.photo || spA(it.no).photos.length || it.hold">
+            <div class="photo th" v-for="(p,i) in spA(it.no).photos" :key="i" @click="spDelPhoto(it,i)"><img v-if="p && p!=='*'" :src="p"><span v-else>示範照片</span></div>
+            <button class="cam" :disabled="!spEditable" @click="spPhoto(it)">📷<small>拍照</small></button><button class="cam demo" :disabled="!spEditable" @click="spDemoPhoto(it)">🖼<small>示範照片</small></button>
+            <span class="small muted" v-if="it.photo && !spA(it.no).photos.length">此項必拍照片（自動壓浮水印）</span><span class="small muted" v-else>點照片可刪除</span></div>
+          <div class="judge"><button :class="['ok',{on: spA(it.no).judge==='ok'}]" @click="spJudge(it,'ok')">○ {{ it.hold ? '合格放行' : '合格' }}</button><button :class="['ng',{on: spA(it.no).judge==='ng'}]" @click="spJudge(it,'ng')">╳ 有缺失</button><button :class="['na',{on: spA(it.no).judge==='na'}]" @click="spJudge(it,'na')">╱ 無此項</button></div>
+        </div>
+        <div class="card" v-if="!wide && spStage!=='sum'"><div class="small muted">{{ spStageStat(spStage) }} 項已抽查</div><button class="btn block mt" @click="spStage = spStage==='pre' ? 'during' : spStage==='during' ? 'post' : 'sum'">下一階段 ›</button></div>
+      </div>
+    </div>
+  </div>
+  <footer class="fbar"><span class="small muted save">{{ spSaveMsg || '廠商自主檢查表將自動附於本抽查紀錄表' }}</span><button class="btn" @click="spFlush().then(()=>toast('已暫存'))" :disabled="!spEditable">暫存</button><button class="btn primary" :class="{disabled: !spEditable}" @click="spGoSign" v-if="sp.status!=='signed'">簽認並完成</button></footer>
 </div>
 
 <!-- ============ 簽認 ============ -->
@@ -253,6 +292,11 @@
   <label class="f">表單</label><select v-model="newForm.templateId"><option v-for="t in selfTpls" :value="t.id">{{ d.tenders.find(x=>x.id===t.tenderId).code }}｜表{{ t.code }} {{ t.name }}（{{ t.items.length }} 項）</option></select>
   <label class="f mt">單元編號（可由 QR Code 掃描）</label><input type="text" v-model="newForm.unit" placeholder="例：P13"><label class="f mt">檢查位置（選填）</label><input type="text" v-model="newForm.location" placeholder="預設：Y01站 單元 P13">
   <div class="foot"><button class="btn" @click="newForm=null">取消</button><button class="btn primary" @click="createSc">建立並開始</button></div></div></div>
+<div class="modal-bg" v-if="spNew" @click.self="spNew=null"><div class="modal"><h3>新增隨機抽查</h3>
+  <label class="f">抽查記錄表</label><select v-model="spNew.templateId"><option v-for="t in spTpls" :value="t.id">{{ d.tenders.find(x=>x.id===t.tenderId).code }}｜{{ t.name }}（{{ t.items.length }} 項）</option></select>
+  <label class="f mt">單元編號（可由 QR Code 掃描）</label><input type="text" v-model="spNew.unit" placeholder="例：P12"><label class="f mt">抽查位置（選填）</label><input type="text" v-model="spNew.location">
+  <div class="mt small muted">系統會自動帶入同單元最近一份廠商自主檢查表作為「廠商自檢」對照；未抽查的項目簽認時自動填 ╱。</div>
+  <div class="foot"><button class="btn" @click="spNew=null">取消</button><button class="btn primary" @click="createSpot">建立並開始</button></div></div></div>
 <div class="modal-bg" v-if="qrForm" @click.self="qrForm=null"><div class="modal"><h3>掃描單元 QR Code</h3><div class="alert info mb">示範環境以輸入單元編號代替鏡頭掃描（例：P12 會開啟進行中的自主檢查表）。</div>
   <input type="text" v-model="qrForm.code" placeholder="單元編號，例 P12" @keyup.enter="scanQr"><div class="foot"><button class="btn" @click="qrForm=null">取消</button><button class="btn primary" @click="scanQr">確認</button></div></div></div>
 <div class="modal-bg" v-if="applyForm" @click.self="applyForm=null"><div class="modal"><h3>申請停留點會驗</h3>
