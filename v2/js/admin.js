@@ -393,7 +393,21 @@ createApp({
 
     /* ---------- 其他 ---------- */
     const docForm = ref(null), userForm = ref(null);
-    async function saveDoc() { const x = docForm.value; if (!x.code.trim()) return toast('請輸入文件編號', true); x.id = x.code; await Q.put('docs', x); docForm.value = null; await load(); }
+    // 參考文件：可上傳檔案（PDF、Word、Excel、圖檔等，上限 20 MB），現場作業可下載
+    function newDoc() { docForm.value = { id: '', code: '', name: '', note: '', file: null, isNew: true }; }
+    function editDoc(x) { docForm.value = Object.assign(Q.clone(x), { isNew: false }); }
+    async function onDocFile(e) {
+      const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+      if (f.size > 20 * 1048576) return toast('檔案過大（上限 20 MB）', true);
+      docForm.value.file = { name: f.name, size: f.size, type: f.type, data: await Q.fileToDataUrl(f), at: Date.now() };
+      if (!docForm.value.name.trim()) docForm.value.name = f.name.replace(/\.[^.]+$/, '');
+    }
+    async function saveDoc() {
+      const x = docForm.value; if (!x.code.trim()) return toast('請輸入文件編號', true); if (!x.name.trim()) return toast('請輸入文件名稱', true);
+      if (x.isNew && d.docs.some(o => o.code === x.code.trim())) return toast('文件編號已存在', true);
+      const rec = { id: x.isNew ? x.code.trim() : x.id, code: x.isNew ? x.code.trim() : x.code, name: x.name.trim(), note: x.note || '', file: x.file || null };
+      await Q.put('docs', rec); docForm.value = null; await load(); toast(rec.file ? '已儲存，現場作業可下載此文件' : '已儲存（尚未上傳檔案）');
+    }
     async function saveUser() { const x = userForm.value; if (!x.name.trim()) return toast('請輸入姓名', true); if (!x.id) x.id = Q.uid('U'); await Q.put('users', x); userForm.value = null; await load(); }
     async function delRow(store, id) {
       if (store === 'docs') { const used = d.templates.filter(t => t.status === 'published' && (t.items || []).some(i => i.ref === id)); if (used.length) return toast(`文件 ${id} 仍被 ${used.length} 張範本引用（${used.slice(0, 3).map(t => '表' + t.code).join('、')}${used.length > 3 ? '…' : ''}），請先移除引用`, true); }
@@ -426,7 +440,7 @@ createApp({
       selTenderId, selTender, treeRoot, treeOpen, swPick, treeAll, pickTender, pickSw, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, tenderForm, swForm, saveTender, saveSw, moveSw, delSw, newTender,
       tplSw, swGroups, selTplId, tplTab, edit, previewOn, fieldIdx, tplList, tplHistory, pickTpl, editUsed, editStages, isPdf, newTplForm, onNewPdf, onEditPdf, createTpl, pdfUrl, downloadFile, wfCls, readPdf, TYPES, holdN, addItem, delItem, moveItem, addField, onType, saveEdit, delTpl, syncFromSelf, newTpl, exportCsv, exportXlsx, dragId, dragOver, onDragStart, onDragEnd, onDrop, itemImp, openItemImp, itemSample, downloadItemSample, onItemFile, itemImpRows, itemImpBad, doItemImp,
       imp, impDup, linkOpts, adminUser, validate, onFile, sampleCsv, loadSample, downloadSample, impOk, doImport, impReset, download,
-      docForm, userForm, saveDoc, saveUser, delRow, saveParams, resetDemo, navItems, navTree, collapsed, toggleGroup, titles, todayStr
+      docForm, userForm, saveDoc, newDoc, editDoc, onDocFile, saveUser, delRow, saveParams, resetDemo, navItems, navTree, collapsed, toggleGroup, titles, todayStr
     };
   }
 }).mount('#app');

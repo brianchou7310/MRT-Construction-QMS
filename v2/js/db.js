@@ -150,6 +150,15 @@
   }
   function downloadPdf(f) { const u = pdfBlobUrl(f.data), a = document.createElement('a'); a.href = u; a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 3000); }
   function fileToDataUrl(file) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); }); }
+  // 任意檔案（參考文件）：data URL → Blob，保留原始檔案類型
+  function fileBlobUrl(dataUrl) {
+    if (!dataUrl) return ''; const i = dataUrl.indexOf(','), mime = (dataUrl.slice(5, i).split(';')[0]) || 'application/octet-stream', bin = atob(dataUrl.slice(i + 1)), buf = new Uint8Array(bin.length);
+    for (let k = 0; k < bin.length; k++) buf[k] = bin.charCodeAt(k);
+    return URL.createObjectURL(new Blob([buf], { type: mime }));
+  }
+  function downloadAny(f) { const u = fileBlobUrl(f.data), a = document.createElement('a'); a.href = u; a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 3000); }
+  function openAny(f) { const u = fileBlobUrl(f.data); window.open(u, '_blank'); setTimeout(() => URL.revokeObjectURL(u), 60000); }
+  const canPreview = f => !!f && /^data:(application\/pdf|image\/)/.test(f.data || '');
   function fmtSize(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
 
   function buildSeed() {
@@ -587,6 +596,6 @@
     LINKED, JUDGE, STAGES, HOLD_TEXT, REQ_TEXT, H, D,
     fmtDT, fmtD, fmtFull, toLocalInput, fromLocalInput, nextHour, atDay, relTime, uid, clone, hashOf,
     evalField, suggest, rangeText, stageItems, stageDone, lockReason, holdState,
-    tickOverdue, newSelfCheck, saveSelf, applyHold, schedule, reject, spotOptions, startInspection, cancelInspection, reportFix, reviewDefect, newSpotCheck, autoNa, migrateSpots, wfLock, wfCancel, wfUpload, wfVendorSign, wfClose, wfUnfreeze, pdfBlobUrl, downloadPdf, fileToDataUrl, fmtSize, dataUrlSize, createDefect, finalizeSelf, finalizeSpot, setDefectStatus, saveTemplate, putMany, F, I, ensureKeys, baseId
+    tickOverdue, newSelfCheck, saveSelf, applyHold, schedule, reject, spotOptions, startInspection, cancelInspection, reportFix, reviewDefect, newSpotCheck, autoNa, migrateSpots, wfLock, wfCancel, wfUpload, wfVendorSign, wfClose, wfUnfreeze, pdfBlobUrl, downloadPdf, downloadAny, openAny, canPreview, fileToDataUrl, fmtSize, dataUrlSize, createDefect, finalizeSelf, finalizeSpot, setDefectStatus, saveTemplate, putMany, F, I, ensureKeys, baseId
   };
 })();

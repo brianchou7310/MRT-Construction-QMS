@@ -331,8 +331,10 @@
 
 <!-- ================= 參考文件 / 帳號 / 參數 ================= -->
 <template v-if="page==='docs'">
-  <div class="page-head"><div><h1>參考文件</h1><div class="muted">範本項目可引用文件編號，現場作業可由此開啟參考。</div></div><button class="btn primary" @click="docForm={id:'',code:'',name:'',note:''}">＋ 新增文件</button></div>
-  <div class="card tbl-scroll"><table class="table"><thead><tr><th>文件編號</th><th>名稱</th><th>備註</th><th></th></tr></thead><tbody><tr v-for="x in d.docs" :key="x.id"><td>{{ x.code }}</td><td>{{ x.name }}</td><td>{{ x.note }}</td><td><button class="btn sm danger" @click="delRow('docs',x.id)">刪除</button></td></tr></tbody></table></div>
+  <div class="page-head"><div><h1>參考文件</h1><div class="muted">範本項目可引用文件編號，現場作業可由此開啟參考。</div></div><button class="btn primary" @click="newDoc">＋ 新增文件</button></div>
+  <div class="card tbl-scroll"><table class="table"><thead><tr><th>文件編號</th><th>名稱</th><th>備註</th><th>檔案</th><th></th></tr></thead><tbody><tr v-for="x in d.docs" :key="x.id"><td>{{ x.code }}</td><td>{{ x.name }}</td><td>{{ x.note }}</td>
+    <td><template v-if="x.file"><a @click="Q.downloadAny(x.file)">⬇ {{ x.file.name }}</a><div class="small muted">{{ Q.fmtSize(x.file.size) }}・{{ Q.fmtD(x.file.at) }}</div></template><span class="chip" v-else>尚未上傳</span></td>
+    <td class="nowrap"><button class="btn sm" @click="editDoc(x)">編輯</button> <button class="btn sm danger" @click="delRow('docs',x.id)">刪除</button></td></tr></tbody></table></div>
 </template>
 <template v-if="page==='users'">
   <div class="page-head"><div><h1>帳號與權限</h1><div class="muted">示範用名單，現場作業的簽認人員與監造指派來源。</div></div><button class="btn primary" @click="userForm={id:'',name:'',role:'廠商品管人員',org:'',email:''}">＋ 新增帳號</button></div>
@@ -368,7 +370,12 @@
   <div><label class="f">狀態</label><select v-model="swForm.status"><option>施工中</option><option>未開始</option><option>已完成</option></select></div></div>
   <div class="foot"><button class="btn" @click="swForm=null">取消</button><button class="btn primary" @click="saveSw">儲存</button></div></div></div>
 
-<div class="modal-bg" v-if="docForm" @click.self="docForm=null"><div class="modal"><h3>新增參考文件</h3><div class="form-grid"><div><label class="f">文件編號</label><input type="text" v-model="docForm.code"></div><div><label class="f">名稱</label><input type="text" v-model="docForm.name"></div><div style="grid-column:1/-1"><label class="f">備註</label><input type="text" v-model="docForm.note"></div></div><div class="foot"><button class="btn" @click="docForm=null">取消</button><button class="btn primary" @click="saveDoc">儲存</button></div></div></div>
+<div class="modal-bg" v-if="docForm" @click.self="docForm=null"><div class="modal"><h3>{{ docForm.isNew ? '新增參考文件' : '編輯參考文件' }}</h3><div class="form-grid"><div><label class="f">文件編號</label><input type="text" v-model="docForm.code" :disabled="!docForm.isNew" placeholder="例：CF671-SP-0010"></div><div><label class="f">名稱</label><input type="text" v-model="docForm.name"></div><div style="grid-column:1/-1"><label class="f">備註</label><input type="text" v-model="docForm.note" placeholder="例：第 5 章 品質管理（p.5-10）"></div></div>
+  <label class="f mt">文件檔案（PDF、Word、Excel、圖檔等，上限 20 MB）</label>
+  <div class="filecard" v-if="docForm.file"><div class="fic">{{ (docForm.file.name.split('.').pop() || '').toUpperCase().slice(0,4) }}</div><div class="grow"><b>{{ docForm.file.name }}</b><div class="small muted">{{ Q.fmtSize(docForm.file.size) }}</div></div><label class="btn sm">更換<input type="file" hidden @change="onDocFile"></label><button class="btn sm danger" @click="docForm.file=null">移除</button></div>
+  <label class="dropzone" v-else><input type="file" hidden @change="onDocFile"><div class="ic">⬆</div><div>點擊選取檔案上傳</div></label>
+  <div class="small muted mt">上傳後，現場作業「參考文件」與檢查項目的「參考文件」連結都可以下載。</div>
+  <div class="foot"><button class="btn" @click="docForm=null">取消</button><button class="btn primary" @click="saveDoc">儲存</button></div></div></div>
 <div class="modal-bg" v-if="userForm" @click.self="userForm=null"><div class="modal"><h3>帳號</h3><div class="form-grid"><div><label class="f">姓名</label><input type="text" v-model="userForm.name"></div><div><label class="f">角色</label><select v-model="userForm.role"><option>系統管理員</option><option>廠商品管人員</option><option>工地授權代表</option><option>捷運局工務所同仁</option><option>捷運局工務所主任</option></select></div><div><label class="f">單位</label><input type="text" v-model="userForm.org"></div><div><label class="f">Email</label><input type="email" v-model="userForm.email"></div></div><div class="foot"><button class="btn" @click="userForm=null">取消</button><button class="btn primary" @click="saveUser">儲存</button></div></div></div>
 
 <!-- 新增表單範本 -->

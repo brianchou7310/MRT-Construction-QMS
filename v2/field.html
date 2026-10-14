@@ -329,7 +329,9 @@
 
 <!-- ============ 參考文件 / 我的 ============ -->
 <div class="plain" v-if="view==='docs'"><header class="hdr"><div class="grow"><h1>參考文件</h1></div></header>
-  <div class="grid-cards"><div class="tcard" v-for="x in d.docs" :key="x.id" @click="docShow=x.code"><div class="t">{{ x.name }}</div><div class="muted small">{{ x.code }}</div><div class="small">{{ x.note }}</div></div></div></div>
+  <div class="grid-cards"><div class="tcard" v-for="x in d.docs" :key="x.id"><div @click="docShow=x.code" style="cursor:pointer"><div class="t">{{ x.name }}</div><div class="muted small">{{ x.code }}</div><div class="small">{{ x.note }}</div></div>
+    <div class="row mt" v-if="x.file"><span class="small muted grow">📄 {{ x.file.name }}（{{ Q.fmtSize(x.file.size) }}）</span><button class="btn sm" v-if="Q.canPreview(x.file)" @click="Q.openAny(x.file)">開啟</button><button class="btn sm primary" @click="Q.downloadAny(x.file)">下載</button></div>
+    <div class="small muted mt" v-else>尚未上傳檔案</div></div></div></div>
 <div class="plain" v-if="view==='me'"><header class="hdr"><div class="grow"><h1>我的</h1></div></header>
   <div class="card" style="max-width:520px"><h4>目前身分</h4><div class="pills"><button :class="{on: role==='contractor'}" @click="role='contractor'">廠商品管人員</button><button :class="{on: role==='supervisor'}" @click="role='supervisor'">捷運局工務所同仁</button><button :class="{on: role==='director'}" @click="role='director'">捷運局工務所主任</button></div>
     <div class="small muted mt">{{ me.name }}｜{{ me.org }}。廠商：填自主檢查表、申請會驗、簽名上傳；工務所同仁：回覆排定、開始會驗、填抽查紀錄表；工務所主任：加簽結案。</div>
@@ -427,7 +429,11 @@
   <div class="foot"><button class="btn" @click="linkShow=null">關閉</button>
     <button class="btn primary" v-if="linkedRec(linkShow)" @click="openLinked(linkShow)">開啟表{{ linkShow }}</button>
     <button class="btn primary" v-else-if="linkedTpl(linkShow) && !readonly" @click="createLinked(linkShow)">建立表{{ linkShow }}（單元 {{ cur.unit }}）</button></div></div></div>
-<div class="modal-bg" v-if="docShow" @click.self="docShow=null"><div class="modal"><h3>參考文件 {{ docShow }}</h3><div v-for="x in d.docs.filter(x=>x.code===docShow)"><b>{{ x.name }}</b><div class="muted">{{ x.note }}</div></div><div class="small muted mt">示範環境僅顯示文件摘要，正式版可開啟 PDF 並跳至對應頁。</div><div class="foot"><button class="btn primary" @click="docShow=null">關閉</button></div></div></div>
+<div class="modal-bg" v-if="docShow" @click.self="docShow=null"><div class="modal"><h3>參考文件 {{ docShow }}</h3><template v-for="x in d.docs.filter(x=>x.code===docShow)" :key="x.id"><b>{{ x.name }}</b><div class="muted">{{ x.note }}</div>
+  <div class="filecard mt" v-if="x.file"><div class="fic">{{ (x.file.name.split('.').pop() || '').toUpperCase().slice(0,4) }}</div><div class="grow"><b>{{ x.file.name }}</b><div class="small muted">{{ Q.fmtSize(x.file.size) }}・上傳 {{ Q.fmtD(x.file.at) }}</div></div><button class="btn sm" v-if="Q.canPreview(x.file)" @click="Q.openAny(x.file)">開啟</button><button class="btn sm primary" @click="Q.downloadAny(x.file)">下載</button></div>
+  <div class="alert warn mt" v-else>此文件尚未上傳檔案，請洽系統管理員至後台「參考文件」上傳。</div></template>
+  <div class="small muted mt" v-if="!d.docs.some(x=>x.code===docShow)">找不到文件 {{ docShow }}。</div>
+  <div class="foot"><button class="btn primary" @click="docShow=null">關閉</button></div></div></div>
 
 <div class="toast" :class="{ng: toastNg}" v-if="toastMsg">{{ toastMsg }}</div>
 </div>
