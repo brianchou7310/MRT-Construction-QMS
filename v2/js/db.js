@@ -98,8 +98,8 @@
     const order = ['pre', 'during', 'post'];
     const si = order.indexOf(item.stage);
     for (let k = 0; k < si; k++) if (!stageDone(sc, tpl, order[k])) return `請先完成${STAGES[order[k]]}項目`;
-    const blocker = tpl.items.find(i => i.hold && i.no < item.no && (sc.hold[i.no] || {}).state !== 'passed');
-    if (blocker) return `待 ☆${blocker.name} 監造放行`;
+    const blocker = tpl.items.find(i => i.hold && i.no < item.no && (sc.answers[i.no] || {}).judge !== 'na' && (sc.hold[i.no] || {}).state !== 'passed');
+    if (blocker) return (sc.answers[blocker.no] || {}).judge === 'ng' ? `待 ☆${blocker.name} 缺失改善、重新判定並經監造放行` : `待 ☆${blocker.name} 監造放行`;
     return null;
   }
   const holdState = (sc, no) => (sc.hold[no] || { state: 'none' }).state;
@@ -206,12 +206,12 @@
     // 停留點申請
     const A = now - 9 * H;
     out.requests.push({
-      id: 'HP-CF671-1004-003', tenderId: 'T671', tenderCode: 'CF671', scId: sc.id, itemNo: 10, title: '鋼筋籠吊放高程及位置確認', subworkName: '連續壁工程', checkName: '表5-5 連續壁施工自主檢查表', location: 'Y01站 單元 P12（公單元）', unit: 'P12',
+      id: 'HP-CF671-1004-003', tenderId: 'T671', tenderCode: 'CF671', subworkId: 'S671-5', scId: sc.id, itemNo: 10, title: '鋼筋籠吊放高程及位置確認', subworkName: '連續壁工程', checkName: '表5-5 連續壁施工自主檢查表', location: 'Y01站 單元 P12（公單元）', unit: 'P12',
       appliedAt: A, replyDue: A + 8 * H, scheduledAt: A + 18 * H, applicant: '大陸工程 品管人員', status: 'pending', shortNotice: true, shortReason: '配合混凝土車預約時段，需於明早吊放完成。', inspector: '', photoCount: 3,
       std: '壁體垂直方向偏差 25mm\n其他方向 75mm\n鋼筋籠頂高程 EL 122.9m', values: { dv: 18, do: 40, el: 122.91 },
       notices: [{ at: A, text: '廠商送出會驗申請（附照片 3 張）', level: 'info' }, { at: A, text: 'Email 已寄送監造人員（2 位）', level: 'info' }]
     });
-    const mkReq = (id, title, loc, applied, sched, status, sw) => ({ id, tenderId: 'T671', tenderCode: 'CF671', scId: '', itemNo: 0, title, subworkName: sw || '連續壁工程', checkName: '', location: loc, unit: '', appliedAt: applied, replyDue: applied + 8 * H, scheduledAt: sched, applicant: '大陸工程 品管人員', status, shortNotice: false, shortReason: '', inspector: status === 'pending' ? '' : '示範工務所同仁', photoCount: 2, std: '依施工圖及規範', values: {}, notices: [{ at: applied, text: '廠商送出會驗申請', level: 'info' }, { at: applied, text: 'Email 已寄送監造人員（2 位）', level: 'info' }] });
+    const mkReq = (id, title, loc, applied, sched, status, sw) => ({ id, tenderId: 'T671', tenderCode: 'CF671', subworkId: 'S671-5', scId: '', itemNo: 0, title, subworkName: sw || '連續壁工程', checkName: '', location: loc, unit: '', appliedAt: applied, replyDue: applied + 8 * H, scheduledAt: sched, applicant: '大陸工程 品管人員', status, shortNotice: false, shortReason: '', inspector: status === 'pending' ? '' : '示範工務所同仁', photoCount: 2, std: '依施工圖及規範', values: {}, notices: [{ at: applied, text: '廠商送出會驗申請', level: 'info' }, { at: applied, text: 'Email 已寄送監造人員（2 位）', level: 'info' }] });
     out.requests.push(
       mkReq('HP-CF671-1005-001', '混凝土澆注', 'Y01站 導溝 G05~G08', now - 3 * H, atDay(1, 8, 30), 'pending', '導溝工程'),
       mkReq('HP-CF671-1005-002', '護耳置放位置、間隔', '鋼筋籠加工場 P14', now - H, atDay(1, 14, 0), 'pending', '鋼筋籠工程'),
@@ -247,7 +247,72 @@
     const d = buildSeed();
     for (const s of Object.keys(d)) await putMany(s, d[s]);
     await put('meta', { id: 'seeded', at: Date.now() });
+    if (force) await postSeed();
   }
+  /* ---------- 項目永久代碼（key）：範本改版、項次重排後，抽查表仍能對應到正確的自檢項目 ---------- */
+  const baseId = id => String(id).replace(/-v\d+$/, '');
+  function ensureKeys(tpl) { (tpl.items || []).forEach(i => { if (!i.key) i.key = uid('K'); }); return tpl; }
+  async function migrateKeys() {
+    const tpls = await all('templates'), byId = Object.fromEntries(tpls.map(t => [t.id, t]));
+    for (const t of tpls) {
+      let ch = false;
+      (t.items || []).forEach(i => { if (!i.key) { i.key = baseId(t.id) + '#' + i.no; ch = true; } });
+      if (t.kind === 'spot' && t.pairedSelf && byId[t.pairedSelf]) {
+        const ps = byId[t.pairedSelf];
+        t.items.forEach(i => { if (i.srcNo && !i.srcKey) { const si = ps.items.find(x => x.no === i.srcNo); if (si) { i.srcKey = si.key || baseId(ps.id) + '#' + si.no; ch = true; } } });
+      }
+      if (ch) await put('templates', t);
+    }
+    for (const r of await all('requests')) {
+      if (r.itemKey || !r.scId || !r.itemNo) continue;
+      const sc = await get('selfChecks', r.scId), tpl = sc && await get('templates', sc.templateId), it = tpl && tpl.items.find(i => i.no === r.itemNo);
+      if (it && it.key) { r.itemKey = it.key; await put('requests', r); }
+    }
+  }
+  // 自檢表的關聯子表單（表5-4、5-6、5-7）建立真實紀錄，取代「手動標記完成」
+  async function seedLinked() {
+    if (await get('meta', 'linkSeed')) return;
+    const now = Date.now();
+    for (const [unit, loc, ago] of [['P11', 'Y01站 單元 P11（母單元）', 6 * D], ['P12', 'Y01站 單元 P12（公單元）', 11 * H]]) {
+      for (const code of ['5-4', '5-6', '5-7']) {
+        const tpl = (await all('templates')).find(t => t.code === code && t.kind === 'self' && t.status === 'published'); if (!tpl) continue;
+        if ((await all('selfChecks')).some(s => s.unit === unit && s.templateCode === code)) continue;
+        const at = now - ago, ans = {}; tpl.items.forEach(i => { ans[i.no] = { judge: 'ok', values: {}, photos: [], note: '' }; });
+        const rec = { id: `SC-CF671-LNK-${unit}-${code}`, tenderId: 'T671', tenderCode: 'CF671', templateId: tpl.id, templateVer: tpl.version, templateCode: code, templateName: tpl.name, subworkId: tpl.subworkId, subworkName: 'Y01站連續壁施工', unit, location: loc, date: at, contractor: '大陸工程股份有限公司', status: 'signed', answers: ans, linked: {}, qrConfirmed: true, drawingNo: '', hold: {}, recovery: '', signatures: { site: { img: '', at, name: '示範品管' }, rep: { img: '', at, name: '示範工地主任' } }, hash: 'linkseed', createdAt: at, updatedAt: at, fillMode: tpl.fillMode || 'online', pdfFile: null, wfStatus: '未開始', lockedBy: null, lastUpdatedBy: null, version: 0, logs: [] };
+        if (tpl.fillMode === 'pdf' && tpl.pdf) {
+          const f = { name: `${tpl.name}_${unit}_已填寫.pdf`, size: tpl.pdf.size, data: tpl.pdf.data, at };
+          Object.assign(rec, { answers: {}, pdfFile: f, pdfResult: 'ok', wfStatus: '已結案', version: 2, lastUpdatedBy: '示範品管', logs: [{ at: at - 3600e3, user: '示範品管', action: '下載鎖定', detail: '下載空白範本並鎖定控制權，開始填寫表單。' }, { at: at - 1800e3, user: '示範品管', action: '上傳並簽名', detail: '已完成 PDF 上傳並現地手寫簽名，待辦理憑證加簽結案。', file: { name: f.name, size: f.size, data: f.data } }, { at, user: '示範品管', action: '憑證加簽結案', detail: '經實體自然人憑證數位簽章認證，表單正式結案。', file: { name: f.name, size: f.size, data: f.data } }] });
+        }
+        await put('selfChecks', rec);
+      }
+    }
+    await put('meta', { id: 'linkSeed', at: now });
+  }
+  function mailNotice(users) { return users.length ? { at: Date.now(), text: `Email 已寄送捷運局工務所人員（${users.length} 位：${users.map(u => u.name).join('、')}）`, level: 'info' } : { at: Date.now(), text: '尚未設定捷運局工務所人員帳號，Email 未寄出', level: 'warn' }; }
+  // 舊資料：會驗申請補上 subworkId（依自檢表或分項工程名稱對應）
+  async function migrateReqSub() {
+    const subs = await all('subworks');
+    for (const r of await all('requests')) {
+      if (r.subworkId) continue; const sc = r.scId ? await get('selfChecks', r.scId) : null;
+      const sw = sc ? { id: sc.subworkId } : subs.find(s => s.tenderId === r.tenderId && s.name === r.subworkName) || (r.tenderId === 'T671' && /導溝|鋼筋籠|連續壁|穩定液/.test(r.subworkName + r.title) ? { id: 'S671-5' } : null);
+      if (sw) { r.subworkId = sw.id; await put('requests', r); }
+    }
+  }
+  // 舊資料：會驗申請／抽查紀錄補上對應的自主檢查表（依停留點的申請編號，或同分項工程＋同單元）
+  async function migrateScLinks() {
+    const scs = await all('selfChecks');
+    for (const r of await all('requests')) {
+      if (r.scId) continue; const sc = scs.find(s => Object.entries(s.hold || {}).some(([, h]) => h.requestId === r.id));
+      if (sc) { r.scId = sc.id; r.itemNo = r.itemNo || Number(Object.entries(sc.hold).find(([, h]) => h.requestId === r.id)[0]); await put('requests', r); }
+    }
+    const reqs = await all('requests');
+    for (const sp of await all('spotChecks')) {
+      if (sp.scId) continue; const r = sp.requestId && reqs.find(x => x.id === sp.requestId);
+      const sc = (r && r.scId && scs.find(s => s.id === r.scId)) || scs.filter(s => s.unit === sp.unit && s.subworkId === sp.subworkId).sort((a, b) => b.createdAt - a.createdAt)[0];
+      if (sc) { sp.scId = sc.id; await put('spotChecks', sp); }
+    }
+  }
+  async function postSeed() { await migrateKeys(); await migrateReqSub(); await migrateScLinks(); await seedLinked(); }
   // 舊版抽查紀錄（單項 measures/judge）轉為完整表單結構
   async function migrateSpots() {
     const list = (await all('spotChecks')).filter(x => !x.answers); if (!list.length) return;
@@ -268,7 +333,7 @@
     }
     for (const r of await all('requests')) if (r.inspector === '示範監造') { r.inspector = '示範工務所同仁'; await put('requests', r); }
   }
-  const ready = open().then(() => seed(false)).then(() => migrateRoles()).then(() => migrateSpots()).then(() => migratePdfWf()).then(() => tickOverdue());
+  const ready = open().then(() => seed(false)).then(() => migrateRoles()).then(() => migrateSpots()).then(() => migratePdfWf()).then(() => postSeed()).then(() => tickOverdue());
 
   async function getParams() { return Object.assign({}, DEFAULT_PARAMS, await get('meta', 'params') || {}); }
   async function counter(name) {
@@ -280,11 +345,12 @@
   // 逾時回覆：寄提醒並往上通知主管（只記錄一次）
   async function tickOverdue() {
     const now = Date.now(); const reqs = await all('requests');
+    const bosses = (await all('users')).filter(u => u.role === '捷運局工務所主任').map(u => u.name);
     for (const r of reqs) {
       if (r.status === 'pending' && now > r.replyDue && !r.overdueNotified) {
         r.overdueNotified = true;
         r.notices.push({ at: r.replyDue, text: '回覆期限到期，寄出逾時提醒 Email', level: 'warn' });
-        r.notices.push({ at: r.replyDue + 3600e3 > now ? now : r.replyDue + 3600e3, text: '逾時未回覆，往上通知主管（第二區工程處 主任工程司）', level: 'danger' });
+        r.notices.push({ at: r.replyDue + 3600e3 > now ? now : r.replyDue + 3600e3, text: bosses.length ? `逾時未回覆，往上通知主管（${bosses.join('、')}）` : '逾時未回覆，但尚未設定「捷運局工務所主任」帳號，無法往上通知', level: 'danger' });
         await put('requests', r);
       }
     }
@@ -296,7 +362,7 @@
     const sc = {
       id: `SC-${tender.code}-${String(d.getFullYear()).slice(2)}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(n, 3)}`,
       tenderId: tender.id, tenderCode: tender.code, templateId: tpl.id, templateVer: tpl.version, templateCode: tpl.code, templateName: tpl.name,
-      subworkId: sw.id, subworkName: 'Y01站' + sw.name.replace('工程', '') + '施工', unit, location: location || `Y01站 單元 ${unit}`, date: Date.now(), contractor: tender.contractor,
+      subworkId: sw.id, subworkName: sw.name, unit, location: location || `${tender.site || tender.name} 單元 ${unit}`, date: Date.now(), contractor: tender.contractor,
       status: 'draft', answers: {}, linked: {}, qrConfirmed: false, drawingNo: drawingNo || '', hold: {}, recovery: '', signatures: {}, createdAt: Date.now(), updatedAt: Date.now(),
       fillMode: tpl.fillMode || 'online', pdfFile: null,
       wfStatus: '未開始', lockedBy: null, lastUpdatedBy: null, version: 0, logs: []
@@ -305,17 +371,18 @@
   }
   async function saveSelf(sc) { sc.updatedAt = Date.now(); return put('selfChecks', sc); }
 
-  async function applyHold(scId, itemNo, { scheduledAt, reason, location }) {
+  async function applyHold(scId, itemNo, { scheduledAt, reason, location, applicant }) {
     const sc = await get('selfChecks', scId), tpl = await get('templates', sc.templateId), it = tpl.items.find(i => i.no === itemNo), p = await getParams();
+    const sups = (await all('users')).filter(u => /工務所/.test(u.role));
     const now = Date.now(), short = (scheduledAt - now) < p.holdAdvanceHours * H;
     if (short && !(reason || '').trim()) throw new Error(`距預定會驗不足 ${p.holdAdvanceHours} 小時，請填寫原因`);
     const n = await counter('req'); const d = new Date();
     const a = sc.answers[itemNo] || { values: {}, photos: [] };
     const req = {
-      id: `HP-${sc.tenderCode}-${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(n, 3)}`, tenderId: sc.tenderId, tenderCode: sc.tenderCode, scId, itemNo, title: it.name,
+      id: `HP-${sc.tenderCode}-${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(n, 3)}`, tenderId: sc.tenderId, tenderCode: sc.tenderCode, scId, itemNo, itemKey: it.key || '', title: it.name,
       subworkName: sc.subworkName, checkName: `表${sc.templateCode} ${sc.templateName}`, location: location || sc.location, unit: sc.unit, appliedAt: now, replyDue: now + p.replyHours * H, scheduledAt,
-      applicant: '大陸工程 品管人員', status: 'pending', shortNotice: short, shortReason: short ? reason : '', inspector: '', photoCount: (a.photos || []).length, std: it.std, values: clone(a.values || {}),
-      notices: [{ at: now, text: `廠商送出會驗申請（附照片 ${(a.photos || []).length} 張）`, level: 'info' }, { at: now, text: 'Email 已寄送監造人員（2 位）', level: 'info' }]
+      subworkId: sc.subworkId, applicant: applicant || sc.contractor || '施工廠商', status: 'pending', shortNotice: short, shortReason: short ? reason : '', inspector: '', photoCount: (a.photos || []).length, std: it.std, values: clone(a.values || {}),
+      notices: [{ at: now, text: `廠商送出會驗申請（附照片 ${(a.photos || []).length} 張）`, level: 'info' }, mailNotice(sups)]
     };
     sc.hold[itemNo] = { state: 'applied', requestId: req.id };
     await put('requests', req); await saveSelf(sc); return req;
@@ -323,6 +390,7 @@
   async function syncHold(req, state) {
     if (!req.scId) return;
     const sc = await get('selfChecks', req.scId); if (!sc) return;
+    if (sc.status === 'signed') return; // 已簽認鎖定的表單不再回寫（避免與簽認雜湊不符）
     sc.hold[req.itemNo] = { state, requestId: req.id }; await saveSelf(sc);
   }
   async function schedule(reqId, ts, inspector, isReschedule) {
@@ -333,7 +401,7 @@
   }
   async function reject(reqId, reason) {
     const r = await get('requests', reqId);
-    r.status = 'rejected'; r.notices.push({ at: Date.now(), text: `監造退回申請：${reason || '（未填原因）'}`, level: 'danger' });
+    r.status = 'rejected'; r.rejectReason = reason || '（未填原因）'; r.rejectedAt = Date.now(); r.notices.push({ at: Date.now(), text: `監造退回申請：${r.rejectReason}`, level: 'danger' });
     await put('requests', r); await syncHold(r, 'none'); return r;
   }
   // 建立抽查紀錄（會驗或隨機抽查）。focus = 本次會驗的檢查項目(對應自主檢查表項次)
@@ -342,7 +410,7 @@
     const tender = await get('tenders', tpl.tenderId); const sw = await get('subworks', tpl.subworkId);
     let sc = selfCheckId ? await get('selfChecks', selfCheckId) : null;
     if (!sc && unit) { const l = (await all('selfChecks')).filter(x => x.unit === unit && x.subworkId === tpl.subworkId).sort((a, b) => b.createdAt - a.createdAt); sc = l[0] || null; }
-    const focus = request && request.itemNo ? (tpl.items.find(i => i.srcNo === request.itemNo) || {}).no || null : null;
+    const focus = request && request.itemNo ? (tpl.items.find(i => request.itemKey && i.srcKey === request.itemKey) || tpl.items.find(i => !request.itemKey && i.srcNo === request.itemNo) || {}).no || null : null;
     const answers = {}; tpl.items.forEach(i => { answers[i.no] = { judge: null, values: {}, photos: [], note: '' }; });
     const sp = {
       id: `SP-${tender.code}-${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(n, 3)}`, kind: request ? 'hold' : 'random', requestId: request ? request.id : '', scId: sc ? sc.id : '', itemNo: request ? request.itemNo : 0, focusNo: focus,
@@ -354,20 +422,35 @@
     };
     await put('spotChecks', sp); return sp;
   }
-  async function startInspection(reqId) {
+  // 會驗可用的抽查紀錄表：同分項工程已發布者；預設為含本停留點對應項目的線上抽查表
+  async function spotOptions(reqId) {
+    const r = await get('requests', reqId), sc = r.scId ? await get('selfChecks', r.scId) : null, sub = (sc && sc.subworkId) || r.subworkId;
+    const tpls = (await all('templates')).filter(t => t.kind === 'spot' && t.status === 'published' && t.subworkId === sub).sort((a, b) => (a.order == null ? 1e9 : a.order) - (b.order == null ? 1e9 : b.order));
+    const def = (r.itemKey && tpls.find(t => t.items.some(i => i.srcKey === r.itemKey))) || tpls.find(t => t.items.some(i => i.srcNo === r.itemNo)) || tpls[0] || null;
+    return { tpls, def };
+  }
+  async function startInspection(reqId, templateId) {
     const r = await get('requests', reqId);
     if (r.spotId) return get('spotChecks', r.spotId);
-    const sc = r.scId ? await get('selfChecks', r.scId) : null;
-    const sub = sc ? sc.subworkId : 'S671-5';
-    const tpls = (await all('templates')).filter(t => t.kind === 'spot' && t.status === 'published' && t.subworkId === sub);
-    const tpl = tpls.find(t => t.items.some(i => i.srcNo === r.itemNo)) || tpls[0] || await get('templates', 'TP-SP-1');
+    const { tpls, def } = await spotOptions(reqId);
+    if (!tpls.length) throw new Error(`「${r.subworkName || '此分項工程'}」尚未設定已發布的抽查紀錄表範本，請先至後台「表單範本」建立`);
+    const tpl = (templateId && tpls.find(t => t.id === templateId)) || def;
     const sp = await newSpotCheck({ templateId: tpl.id, unit: r.unit, location: r.location, request: r, selfCheckId: r.scId });
     r.status = 'inspecting'; r.spotId = sp.id; r.notices.push({ at: Date.now(), text: '監造開始會驗', level: 'info' });
     await put('requests', r); return sp;
   }
-  async function createDefect({ tenderCode, title, location, source, refId, itemNo, subworkId }) {
-    const n = await counter('defect'), p = await getParams(), now = Date.now();
-    const df = { id: 'DF-' + pad(n, 4), tenderId: tenderCode === 'CF671' ? 'T671' : 'T624', tenderCode, title, location, source, refId, itemNo, subworkId: subworkId || '', createdAt: now, due: now + p.defectDueDays * D, status: 'open', note: '' };
+  // 取消會驗：「檢驗中」回到「已排定」，未簽認的抽查紀錄草稿作廢
+  async function cancelInspection(reqId, reason, user) {
+    const r = await get('requests', reqId); if (r.status !== 'inspecting') throw new Error('只有「檢驗中」的會驗可以取消');
+    if (!(reason || '').trim()) throw new Error('請填寫取消原因');
+    if (r.spotId) { const sp = await get('spotChecks', r.spotId); if (sp && sp.status === 'signed') throw new Error('抽查紀錄已簽認，不可取消'); if (sp) await del('spotChecks', sp.id); }
+    r.status = 'scheduled'; r.spotId = null;
+    r.notices.push({ at: Date.now(), text: `${user || '監造'}取消會驗：${reason.trim()}（抽查紀錄草稿已作廢，可改期或重新開始會驗）`, level: 'warn' });
+    await put('requests', r); await syncHold(r, 'scheduled'); return r;
+  }
+  async function createDefect({ tenderCode, title, location, source, refId, itemNo, subworkId, scId, scItemNo }) {
+    const n = await counter('defect'), p = await getParams(), now = Date.now(), tender = (await all('tenders')).find(t => t.code === tenderCode);
+    const df = { id: 'DF-' + pad(n, 4), tenderId: tender ? tender.id : '', tenderCode, title, location, source, refId, itemNo, subworkId: subworkId || '', scId: scId || '', scItemNo: scItemNo || 0, createdAt: now, due: now + p.defectDueDays * D, status: 'open', note: '', history: [{ at: now, text: `由「${source}」判定缺失，自動建立（改善期限 ${p.defectDueDays} 天）` }] };
     await put('defects', df); return df;
   }
   // 自主檢查表兩位簽認完成後鎖定
@@ -376,7 +459,12 @@
     sc.hash = await hashOf({ a: sc.answers, l: sc.linked, h: sc.hold, r: sc.recovery, t: sc.templateId, v: sc.templateVer });
     sc.status = 'signed'; await saveSelf(sc);
     for (const it of tpl.items) {
-      if ((sc.answers[it.no] || {}).judge === 'ng') await createDefect({ tenderCode: sc.tenderCode, title: it.name, location: `${sc.tenderCode}｜${sc.subworkName} ${sc.unit}`, source: '自主檢查', refId: sc.id, itemNo: it.no, subworkId: sc.subworkId });
+      const a = sc.answers[it.no] || {};
+      if (a.judge === 'ng' && !a.defectId) {
+        const df = await createDefect({ tenderCode: sc.tenderCode, title: it.name, location: `${sc.tenderCode}｜${sc.subworkName} ${sc.unit}`, source: '自主檢查', refId: sc.id, itemNo: it.no, subworkId: sc.subworkId, scId: sc.id, scItemNo: it.no });
+        // 自檢表已勾選「已完成改善」：缺失直接進入「待複查」，不需廠商再回報一次
+        if (sc.recovery === 'done') { df.status = 'review'; df.fix = { note: '廠商於自主檢查表勾選「已完成改善」', photos: (a.photos || []).slice(0, 6), at: Date.now(), by: (sc.signatures.site || {}).name || '廠商' }; df.history = [{ at: Date.now(), text: '自主檢查表勾選「已完成改善」，轉待複查' }]; await put('defects', df); }
+      }
     }
     return sc;
   }
@@ -389,14 +477,19 @@
     sp.hash = await hashOf({ a: sp.answers, c: sp.calc, v: sp.templateVer, p: sp.pdfFile ? [sp.pdfFile.name, sp.pdfFile.size] : null, r: sp.pdfResult });
     sp.status = 'signed'; await put('spotChecks', sp);
     const ngItems = isPdf ? [] : tpl.items.filter(i => (sp.answers[i.no] || {}).judge === 'ng');
-    for (const it of ngItems) await createDefect({ tenderCode: sp.tenderCode, title: it.name, location: `${sp.tenderCode}｜${sp.location}`, source: '抽查', refId: sp.id, itemNo: it.no, subworkId: sp.subworkId });
-    if (isPdf && sp.pdfResult === 'ng') await createDefect({ tenderCode: sp.tenderCode, title: sp.templateName, location: `${sp.tenderCode}｜${sp.location}`, source: '抽查（PDF）', refId: sp.id, itemNo: 0, subworkId: sp.subworkId });
+    const scItem = it => (it.no === sp.focusNo ? sp.itemNo : 0);
+    for (const it of ngItems) await createDefect({ tenderCode: sp.tenderCode, title: it.name, location: `${sp.tenderCode}｜${sp.location}`, source: '抽查', refId: sp.id, itemNo: it.no, subworkId: sp.subworkId, scId: sp.scId, scItemNo: scItem(it) });
+    if (isPdf && sp.pdfResult === 'ng') await createDefect({ tenderCode: sp.tenderCode, title: sp.templateName, location: `${sp.tenderCode}｜${sp.location}`, source: '抽查（PDF）', refId: sp.id, itemNo: 0, subworkId: sp.subworkId, scId: sp.scId, scItemNo: sp.requestId ? sp.itemNo : 0 });
     if (sp.requestId) {
       const r = await get('requests', sp.requestId);
       const pass = isPdf ? sp.pdfResult !== 'ng' : (sp.focusNo ? sp.answers[sp.focusNo].judge !== 'ng' : !ngItems.length);
       r.status = pass ? 'passed' : 'failed';
       r.notices.push({ at: Date.now(), text: pass ? '抽查完成，合格放行（後續項目解鎖）' : '抽查判定有缺失，不合格', level: pass ? 'ok' : 'danger' });
       await put('requests', r); await syncHold(r, pass ? 'passed' : 'failed');
+      // 停留點會驗合格 = 完成缺失複查：同一張自檢表、同一停留點的未結案缺失自動結案
+      if (pass && r.scId) for (const df of (await all('defects')).filter(x => x.scId === r.scId && x.scItemNo === r.itemNo && x.status !== 'closed')) {
+        df.status = 'closed'; df.closedAt = Date.now(); df.note = `經停留點會驗（${sp.id}）合格，自動結案`; (df.history = df.history || []).push({ at: Date.now(), text: df.note }); await put('defects', df);
+      }
     }
     return sp;
   }
@@ -420,7 +513,7 @@
   // next（抽查表）：relay 其他局內人員續填／vendor 轉廠商簽名／supervisor 免廠商簽名逕轉主任加簽
   async function wfUpload(kind, id, user, { file, sig, next, result }) {
     const rec = await wfGet(kind, id); if (rec.wfStatus !== '鎖定中' || rec.lockedBy !== user) throw new Error('需由鎖定人上傳');
-    rec.version = (rec.version || 0) + 1; rec.pdfFile = file; rec.lockedBy = null; rec.lastUpdatedBy = user; if (kind === 'spot') rec.pdfResult = result || rec.pdfResult;
+    rec.version = (rec.version || 0) + 1; rec.pdfFile = file; rec.lockedBy = null; rec.lastUpdatedBy = user; rec.pdfResult = result || rec.pdfResult;
     let detail;
     if (kind === 'self') { rec.wfStatus = '待流轉'; detail = '已完成 PDF 上傳並現地手寫簽名，待辦理憑證加簽結案。'; }
     else if (next === 'vendor') { rec.wfStatus = '待廠商簽名'; detail = '完成 PDF 上傳與現地手寫簽名，轉施工廠商辦理簽名確認。'; }
@@ -441,6 +534,7 @@
     wfLog(rec, user, kind === 'self' ? '憑證加簽結案' : '主任加簽結案', `經${method === 'tw-fido' ? '行動自然人憑證（TW FidO）' : '實體自然人憑證'}數位簽章認證，表單正式結案。`, { file: rec.pdfFile ? { name: rec.pdfFile.name, size: rec.pdfFile.size, data: rec.pdfFile.data } : null });
     if (kind === 'self') {
       rec.hash = await hashOf({ p: [rec.pdfFile.name, rec.pdfFile.size], v: rec.templateVer, n: rec.version }); rec.status = 'signed'; rec.signatures = { site: { at: Date.now(), name: user } };
+      if (rec.pdfResult === 'ng' && !rec.defectId) { const df = await createDefect({ tenderCode: rec.tenderCode, title: rec.templateName, location: `${rec.tenderCode}｜${rec.subworkName} ${rec.unit}`, source: '自主檢查（PDF）', refId: rec.id, itemNo: 0, subworkId: rec.subworkId, scId: rec.id, scItemNo: 0 }); rec.defectId = df.id; }
       await saveSelf(rec); return rec;
     }
     await put('spotChecks', rec); return finalizeSpot(id);
@@ -458,13 +552,29 @@
     }
   }
 
+  // 缺失：廠商回報改善（須說明＋照片）→ 工務所複查（合格結案／退回重新改善）
+  async function reportFix(id, { note, photos, by }) {
+    const df = await get('defects', id); if (df.status !== 'open') throw new Error('此缺失目前不是「待改善」狀態');
+    if (!(note || '').trim()) throw new Error('請填寫改善說明'); if (!(photos || []).length) throw new Error('請至少附 1 張改善後照片');
+    df.status = 'review'; df.fix = { note: note.trim(), photos, at: Date.now(), by }; (df.history = df.history || []).push({ at: Date.now(), text: `${by} 回報改善完成：${note.trim()}` });
+    await put('defects', df); return df;
+  }
+  async function reviewDefect(id, pass, reason, by) {
+    const df = await get('defects', id); if (df.status !== 'review') throw new Error('廠商尚未回報改善，不可複查結案');
+    if (!pass && !(reason || '').trim()) throw new Error('請填寫退回原因');
+    (df.history = df.history || []).push({ at: Date.now(), text: pass ? `${by} 複查合格，結案` : `${by} 複查不合格，退回重新改善：${reason.trim()}` });
+    if (pass) { df.status = 'closed'; df.closedAt = Date.now(); df.note = `${by} 複查合格`; } else { df.status = 'open'; df.lastFix = df.fix; df.fix = null; df.note = '退回：' + reason.trim(); }
+    await put('defects', df); return df;
+  }
   async function setDefectStatus(id, status, note) {
-    const d = await get('defects', id); d.status = status; if (note != null) d.note = note; if (status === 'closed') d.closedAt = Date.now(); return put('defects', d);
+    const d = await get('defects', id); d.status = status; if (note != null) d.note = note; if (status === 'closed') d.closedAt = Date.now();
+    (d.history = d.history || []).push({ at: Date.now(), text: note || ({ open: '轉待改善', review: '轉待複查', closed: '結案' })[status] || status }); return put('defects', d);
   }
 
   /* ---------- 版本控制 ---------- */
   // 範本已被使用 → 另存為新版本；未使用 → 直接覆寫
   async function saveTemplate(tpl, asNewVersion) {
+    ensureKeys(tpl);
     if (!asNewVersion) return put('templates', tpl);
     const old = await get('templates', tpl.id);
     old.status = 'superseded'; await put('templates', old);
@@ -477,6 +587,6 @@
     LINKED, JUDGE, STAGES, HOLD_TEXT, REQ_TEXT, H, D,
     fmtDT, fmtD, fmtFull, toLocalInput, fromLocalInput, nextHour, atDay, relTime, uid, clone, hashOf,
     evalField, suggest, rangeText, stageItems, stageDone, lockReason, holdState,
-    tickOverdue, newSelfCheck, saveSelf, applyHold, schedule, reject, startInspection, newSpotCheck, autoNa, migrateSpots, wfLock, wfCancel, wfUpload, wfVendorSign, wfClose, wfUnfreeze, pdfBlobUrl, downloadPdf, fileToDataUrl, fmtSize, dataUrlSize, createDefect, finalizeSelf, finalizeSpot, setDefectStatus, saveTemplate, putMany, F, I
+    tickOverdue, newSelfCheck, saveSelf, applyHold, schedule, reject, spotOptions, startInspection, cancelInspection, reportFix, reviewDefect, newSpotCheck, autoNa, migrateSpots, wfLock, wfCancel, wfUpload, wfVendorSign, wfClose, wfUnfreeze, pdfBlobUrl, downloadPdf, fileToDataUrl, fmtSize, dataUrlSize, createDefect, finalizeSelf, finalizeSpot, setDefectStatus, saveTemplate, putMany, F, I, ensureKeys, baseId
   };
 })();

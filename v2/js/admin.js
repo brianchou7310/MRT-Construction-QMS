@@ -33,8 +33,18 @@ createApp({
     const overdueReqs = computed(() => openReqs.value.filter(r => r.replyDue < now.value));
     const openDefects = computed(() => ft(d.defects).filter(x => x.status !== 'closed'));
     const overdueDefects = computed(() => openDefects.value.filter(x => x.due < now.value));
-    const weekHolds = computed(() => ft(d.requests).filter(r => ['scheduled', 'pending'].includes(r.status) && r.scheduledAt >= now.value - Q.D && r.scheduledAt < now.value + 7 * Q.D));
-    const spotRate = computed(() => { const n = ft(d.selfChecks).length; return n ? Math.round(ft(d.spotChecks).length / n * 100) : 0; });
+    const today0 = () => { const t = new Date(now.value); t.setHours(0, 0, 0, 0); return t.getTime(); };
+    const weekHolds = computed(() => ft(d.requests).filter(r => ['scheduled', 'pending', 'inspecting'].includes(r.status) && r.scheduledAt >= today0() && r.scheduledAt < today0() + 7 * Q.D));
+    // 抽查統計：只計「已簽認／已結案」的抽查紀錄；PDF 抽查依上傳時的判定結果
+    const spotDone = p => p.status === 'signed';
+    const spotNg = p => p.fillMode === 'pdf' ? p.pdfResult === 'ng' : Object.values(p.answers || {}).some(a => a.judge === 'ng');
+    // 抽查率 ＝ 有完成抽查的自主檢查表張數 ÷ 自主檢查表總張數（同一張表被抽查多次只算一次，不會超過 100%）
+    const kpiSelf = computed(() => {
+      const scs = ft(d.selfChecks), done = ft(d.spotChecks).filter(spotDone), ids = new Set(done.map(p => p.scId).filter(Boolean));
+      const covered = scs.filter(s => ids.has(s.id)).length;
+      return { n: scs.length, spots: done.length, covered, rate: scs.length ? Math.round(covered / scs.length * 100) : 0 };
+    });
+    const spotRate = computed(() => kpiSelf.value.rate);
     const todayAgenda = computed(() => {
       const s = new Date(); s.setHours(0, 0, 0, 0); const a = s.getTime(), b = a + Q.D;
       return ft(d.requests).filter(r => ['scheduled', 'inspecting', 'pending'].includes(r.status) && r.scheduledAt >= a && r.scheduledAt < b).sort((x, y) => x.scheduledAt - y.scheduledAt);
@@ -47,15 +57,15 @@ createApp({
     const progRows = computed(() => d.subworks.filter(s => s.tenderId === progTender.value).sort((a, b) => a.order - b.order).map(s => {
       const selfT = d.templates.filter(t => t.subworkId === s.id && t.kind === 'self' && t.status === 'published');
       const spotT = d.templates.filter(t => t.subworkId === s.id && t.kind === 'spot' && t.status === 'published');
-      const spots = d.spotChecks.filter(p => p.subworkId === s.id);
-      const rate = spots.length ? Math.round(spots.filter(p => spotCount(p, 'ng') === 0).length / spots.length * 100) : null;
+      const spots = d.spotChecks.filter(p => p.subworkId === s.id && spotDone(p));
+      const rate = spots.length ? Math.round(spots.filter(p => !spotNg(p)).length / spots.length * 100) : null;
       return { sw: s, selfN: selfT.length, spotN: spotT.length, holdN: selfT.reduce((n, t) => n + t.items.filter(i => i.hold).length, 0), rate, open: d.defects.filter(x => x.subworkId === s.id && x.status !== 'closed').length };
     }).filter(r => progFilter.value === '全部' || r.sw.status === progFilter.value));
     const progCount = status => d.subworks.filter(s => s.tenderId === progTender.value && (status === '全部' || s.status === status)).length;
 
     /* ---------- 停留點會驗管理 ---------- */
     const holdTab = ref('pending'), selReqId = ref(null), calView = ref(false);
-    const sched = reactive({ dt: '', inspector: '', reason: '', rejecting: false });
+    const sched = reactive({ dt: '', inspector: '', reason: '', rejecting: false, cancelling: false, tplId: '', tplOpts: [] });
     const holdTabs = [['pending', '待回覆'], ['scheduled', '已排定'], ['inspecting', '檢驗中'], ['passed', '合格放行'], ['failed', '不合格'], ['rejected', '已退回'], ['all', '全部']];
     const holdCount = k => ft(d.requests).filter(r => k === 'all' || r.status === k).length;
     const holdList = computed(() => ft(d.requests).filter(r => holdTab.value === 'all' || r.status === holdTab.value).sort((a, b) => holdTab.value === 'pending' ? a.replyDue - b.replyDue : b.scheduledAt - a.scheduledAt));
@@ -63,7 +73,8 @@ createApp({
     const selReq = computed(() => d.requests.find(r => r.id === selReqId.value));
     watch(selReqId, () => {
       const r = selReq.value; if (!r) return;
-      sched.dt = Q.toLocalInput(r.scheduledAt); sched.inspector = r.inspector || (supervisors.value[0] || {}).name || ''; sched.reason = ''; sched.rejecting = false;
+      sched.dt = Q.toLocalInput(r.scheduledAt); sched.inspector = r.inspector || (supervisors.value[0] || {}).name || ''; sched.reason = ''; sched.rejecting = false; sched.cancelling = false; sched.tplOpts = []; sched.tplId = '';
+      Q.spotOptions(r.id).then(o => { if (selReqId.value !== r.id) return; sched.tplOpts = o.tpls.map(t => ({ id: t.id, name: t.name, pdf: t.fillMode === 'pdf' })); sched.tplId = o.def ? o.def.id : ''; });
     });
     watch(holdList, l => { if (!l.find(r => r.id === selReqId.value)) selReqId.value = l.length ? l[0].id : null; }, { immediate: true });
     const reqChips = r => {
@@ -85,7 +96,8 @@ createApp({
       if (!sched.reason.trim()) return toast('請填寫退回原因', true);
       await Q.reject(selReq.value.id, sched.reason); sched.rejecting = false; await load(); toast('已退回申請');
     }
-    async function doStart() { await Q.startInspection(selReq.value.id); await load(); toast('已建立抽查紀錄，請至現場作業頁填寫（平板／手機）'); }
+    async function doCancel() { try { await Q.cancelInspection(selReq.value.id, sched.reason, adminUser.value.name); sched.cancelling = false; sched.reason = ''; await load(); toast('已取消會驗，抽查紀錄草稿已作廢'); } catch (e) { toast(e.message, true); } }
+    async function doStart() { try { await Q.startInspection(selReq.value.id, sched.tplId || undefined); await load(); toast('已建立抽查紀錄，請至現場作業頁填寫（平板／手機）'); } catch (e) { toast(e.message, true); } }
 
     /* ---------- 紀錄清單 ---------- */
     const showSC = ref(null), showSP = ref(null);
@@ -97,7 +109,10 @@ createApp({
     const defText = x => x.status === 'closed' ? '已結案' : x.status === 'review' ? '待複查' : x.due < now.value ? `逾期 ${Math.ceil((now.value - x.due) / Q.D)} 天` : '改善中';
     const defTab = ref('open');
     const defList = computed(() => ft(d.defects).filter(x => defTab.value === 'all' || (defTab.value === 'open' ? x.status !== 'closed' : x.status === 'closed')).sort((a, b) => a.due - b.due));
-    async function defAct(x, st) { await Q.setDefectStatus(x.id, st); await load(); toast(st === 'closed' ? '缺失已結案' : '已標記待複查'); }
+    // 缺失複查：須廠商回報改善後才可結案，可退回重新改善
+    const defShow = ref(null);
+    function defAct(x) { defShow.value = { x, reason: '', rejecting: false }; }
+    async function defReview(pass) { const f = defShow.value; try { await Q.reviewDefect(f.x.id, pass, f.reason, adminUser.value.name); defShow.value = null; await load(); toast(pass ? '複查合格，缺失已結案' : '已退回廠商重新改善'); } catch (e) { toast(e.message, true); } }
 
     /* ---------- 標案與分項工程 ---------- */
     const selTenderId = ref('T671'), swSearch = ref(''), swStatus = ref(''), swPage = ref(1);
@@ -120,7 +135,12 @@ createApp({
       if (j < 0 || j >= list.length) return;
       const a = list[i], b = list[j]; const t = a.order; a.order = b.order; b.order = t; await Q.put('subworks', a); await Q.put('subworks', b); await load();
     }
-    async function delSw(s) { if (!confirm(`刪除分項工程「${s.name}」？`)) return; await Q.del('subworks', s.id); await load(); }
+    // 刪除前檢查引用：有範本或紀錄就不可刪
+    function swRefs(s) { const n = (arr, f) => arr.filter(f).length; return [['表單範本', n(d.templates, t => t.subworkId === s.id)], ['自主檢查紀錄', n(d.selfChecks, x => x.subworkId === s.id)], ['抽查紀錄', n(d.spotChecks, x => x.subworkId === s.id)], ['會驗申請', n(d.requests, x => x.subworkId === s.id)], ['缺失', n(d.defects, x => x.subworkId === s.id)]].filter(x => x[1]); }
+    async function delSw(s) {
+      const refs = swRefs(s); if (refs.length) return toast(`「${s.name}」已有 ${refs.map(r => r[0] + ' ' + r[1] + ' 筆').join('、')}，不可刪除；不再使用請將狀態改為「已完工」`, true);
+      if (!confirm(`刪除分項工程「${s.name}」？`)) return; await Q.del('subworks', s.id); await load();
+    }
     function newTender() { tenderForm.value = { id: Q.uid('T'), code: '', name: '', status: '施工中', contractor: '', supervisor: '', site: '', start: '', end: '', external: '', desc: '', members: 0 }; }
 
     /* ---------- 表單範本 ---------- */
@@ -141,7 +161,12 @@ createApp({
     const tplHistory = computed(() => edit.value ? d.templates.filter(t => t.code === edit.value.code && t.subworkId === edit.value.subworkId && t.kind === edit.value.kind).sort((a, b) => b.version - a.version) : []);
     function pickTpl(t) { selTplId.value = t.id; edit.value = Q.clone(t); tplTab.value = t.fillMode === 'pdf' ? 'file' : 'items'; }
     const isPdf = t => !!t && t.fillMode === 'pdf';
-    watch(() => edit.value && edit.value.fillMode, m => { if (m === 'pdf') tplTab.value = 'file'; else if (tplTab.value === 'file') tplTab.value = 'items'; });
+    // 自主檢查表含 ☆停留點時不可改為 PDF（PDF 無逐項判定，無法申請會驗）
+    const pdfBlockedHolds = t => t && t.kind === 'self' ? t.items.filter(i => i.hold) : [];
+    watch(() => edit.value && edit.value.fillMode, m => {
+      if (m === 'pdf' && pdfBlockedHolds(edit.value).length) { edit.value.fillMode = 'online'; toast(`此表含 ${pdfBlockedHolds(edit.value).length} 個 ☆停留點，PDF 範本無法逐項判定與申請會驗；請維持線上表單，或先取消停留點勾選`, true); return; }
+      if (m === 'pdf') tplTab.value = 'file'; else if (tplTab.value === 'file') tplTab.value = 'items';
+    });
     watch(tplSw, () => { const l = tplList('self')[0] || tplList('spot')[0]; if (l) pickTpl(l); else { selTplId.value = null; edit.value = null; } });
     watch(() => d.templates.length, () => { if (!edit.value && loaded.value) { const l = tplList('self')[0]; if (l) pickTpl(l); } });
     const editUsed = computed(() => edit.value ? usedCount(edit.value) : 0);
@@ -156,24 +181,31 @@ createApp({
       if (j < 0 || j >= arr.length) return; arr.splice(idx, 1); arr.splice(j, 0, it);
     }
     function addField(it) { it.fields.push(Q.F('f' + (it.fields.length + 1), '實測值', '', null, null)); }
-    function onType(it) { if (it.type === 'number' && !it.fields.length) addField(it); if (it.type !== 'linked') it.linked = ''; else if (!it.linked) it.linked = '5-4'; }
+    function onType(it) { if (it.type === 'number' && !it.fields.length) addField(it); if (it.type !== 'linked') it.linked = ''; else if (!it.linked) it.linked = (linkOpts.value[0] || {}).code || ''; }
+    // 連結表單選項：同分項工程、已發布的其他自主檢查表（取代寫死的表5-4～5-9）
+    const linkOpts = computed(() => !edit.value ? [] : [...new Map(d.templates.filter(t => t.kind === 'self' && t.status === 'published' && t.subworkId === edit.value.subworkId && t.code !== edit.value.code).map(t => [t.code, { code: t.code, name: t.name }])).values()]);
+    const adminUser = computed(() => d.users.find(u => u.role === '系統管理員') || { name: '系統管理員', org: '' });
     function finalizeItems(t) {
       const order = { pre: 0, during: 1, post: 2 };
       t.items = t.items.map((x, i) => [x, i]).sort((a, b) => order[a[0].stage] - order[b[0].stage] || a[1] - b[1]).map(x => x[0]);
-      t.items.forEach((x, i) => { x.no = i + 1; if (t.kind === 'self' || !x.srcNo) x.srcNo = x.srcNo || x.no; });
+      t.items.forEach((x, i) => { x.no = i + 1; if (t.kind === 'self' || !x.srcNo) x.srcNo = x.srcNo || x.no; if (!x.key) x.key = Q.uid('K'); });
       return t;
     }
     async function saveEdit() {
       if (!edit.value.name.trim()) return toast('請輸入表單名稱', true);
       if (edit.value.fillMode === 'pdf' && !edit.value.pdf) return toast('請上傳空白範本 PDF', true);
+      if (edit.value.fillMode === 'pdf' && pdfBlockedHolds(edit.value).length) return toast('含 ☆停留點的自主檢查表不可設為 PDF', true);
       const t = finalizeItems(Q.clone(edit.value)); const asNew = editUsed.value > 0;
       const saved = await Q.saveTemplate(t, asNew); await load(); pickTpl(d.templates.find(x => x.id === saved.id));
       toast(asNew ? `已另存為 v${saved.version}，舊版紀錄保留原內容` : '範本已儲存');
     }
     function syncFromSelf() {
-      const self = d.templates.find(t => t.id === edit.value.pairedSelf); if (!self) return toast('此抽查表未對應自主檢查表', true);
+      const paired = d.templates.find(t => t.id === edit.value.pairedSelf); if (!paired) return toast('此抽查表未對應自主檢查表', true);
+      // 永遠對應自主檢查表的「最新發布版本」，以項目永久代碼（key）比對，不受項次重排影響
+      const self = d.templates.filter(t => t.kind === 'self' && t.status === 'published' && t.code === paired.code && t.subworkId === paired.subworkId).sort((a, b) => b.version - a.version)[0] || paired;
+      edit.value.pairedSelf = self.id;
       let added = 0;
-      self.items.forEach(si => { if (!edit.value.items.find(x => x.srcNo === si.no)) { const c = Q.clone(si); c.srcNo = si.no; c.hold = false; edit.value.items.push(c); added++; } });
+      self.items.forEach(si => { const hit = edit.value.items.find(x => (si.key && x.srcKey === si.key) || (!x.srcKey && x.srcNo === si.no)); if (hit) { hit.srcKey = si.key; hit.srcNo = si.no; return; } const c = Q.clone(si); c.srcNo = si.no; c.srcKey = si.key; c.key = Q.uid('K'); c.hold = false; edit.value.items.push(c); added++; });
       toast(added ? `已同步 ${added} 項` : '已與自主檢查表同步，無新增項目');
     }
     // 新增範本：先選「線上表單」或「空白範本 PDF」
@@ -192,7 +224,7 @@ createApp({
       if (f.fillMode === 'pdf' && !f.pdf) return toast('請上傳空白範本 PDF', true);
       const sw = swById(tplSw.value);
       const t = { id: Q.uid('TP-'), tenderId: sw.tenderId, subworkId: sw.id, kind: f.kind, code: f.code.trim() || (f.kind === 'self' ? '新表' : 'SP-新'), name: f.name.trim(), version: 1, status: 'published', source: f.fillMode === 'pdf' ? '空白範本 PDF' : '', fillMode: f.fillMode, pdf: f.fillMode === 'pdf' ? f.pdf : null, items: f.fillMode === 'pdf' ? [] : [Q.I(1, 'pre', '新檢查項目', '')], used: 0 };
-      await Q.put('templates', t); newTplForm.value = null; await load(); pickTpl(d.templates.find(x => x.id === t.id)); toast('已建立表單範本');
+      await Q.put('templates', Q.ensureKeys(t)); newTplForm.value = null; await load(); pickTpl(d.templates.find(x => x.id === t.id)); toast('已建立表單範本');
     }
     // PDF 預覽（Blob URL）
     const pdfUrl = ref(''); let pdfUrlSrc = null;
@@ -214,8 +246,11 @@ createApp({
     }
     const csvCell = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
     const CSV_HEAD = ['範本名稱', '階段', '項次', '檢查項目', '檢查標準', '判定類型', '停留點', '必填', '引用文件編號'];
+    const OPT_HEAD = ['表單類型', '表號', '連結表號']; // 選填：表單類型＝自主檢查表／抽查紀錄表；連結表號＝判定類型為「連結表單」時必填
+    const KIND = { 自主檢查表: 'self', 抽查紀錄表: 'spot' };
+    const linkErr = (type, code, extra) => type !== 'linked' ? '' : !code ? '判定類型為「連結表單」時，須填「連結表號」' : (d.templates.some(t => t.kind === 'self' && t.status === 'published' && t.code === code) || (extra || []).includes(code)) ? '' : `連結表號「${code}」不存在（需為已發布的自主檢查表表號）`;
     function exportCsv() {
-      const t = edit.value, rows = [CSV_HEAD].concat(t.items.map(i => [t.name, Q.STAGES[i.stage], i.no, i.name, i.std, TYPES[i.type] || '選項', i.hold ? 'Y' : 'N', i.photo ? 'Y' : 'N', i.ref || '']));
+      const t = edit.value, rows = [CSV_HEAD.concat(OPT_HEAD)].concat(t.items.map(i => [t.name, Q.STAGES[i.stage], i.no, i.name, i.std, TYPES[i.type] || '選項', i.hold ? 'Y' : 'N', i.photo ? 'Y' : 'N', i.ref || '', t.kind === 'spot' ? '抽查紀錄表' : '自主檢查表', t.code, i.linked || '']));
       download(`${t.code}_${t.name}.csv`, rows.map(r => r.map(csvCell).join(',')).join('\r\n'));
     }
 
@@ -224,7 +259,7 @@ createApp({
     const ITEM_REQ = ['階段', '檢查項目', '判定類型'];
     function openItemImp() { itemImp.value = { fileName: '', rows: [], groups: [], sel: '', mode: 'append', err: '', done: false }; }
     function itemSample() {
-      const t = edit.value; return [CSV_HEAD].concat((t.items.length ? t.items : [Q.I(1, 'pre', '施工圖', '是否核准')]).map(i => [t.name, Q.STAGES[i.stage], i.no, i.name, i.std, TYPES[i.type] || '選項', i.hold ? 'Y' : 'N', i.photo ? 'Y' : 'N', i.ref || '']));
+      const t = edit.value; return [CSV_HEAD.concat(OPT_HEAD)].concat((t.items.length ? t.items : [Q.I(1, 'pre', '施工圖', '是否核准')]).map(i => [t.name, Q.STAGES[i.stage], i.no, i.name, i.std, TYPES[i.type] || '選項', i.hold ? 'Y' : 'N', i.photo ? 'Y' : 'N', i.ref || '', t.kind === 'spot' ? '抽查紀錄表' : '自主檢查表', t.code, i.linked || '']));
     }
     function parseItemSheets(sheets) {
       const m = itemImp.value; m.err = ''; m.rows = []; let usable = 0, lastMiss = '';
@@ -239,7 +274,8 @@ createApp({
           if (!type) errs.push('判定類型「' + cell(r, '判定類型') + '」不在代碼表內（選項／數值／照片／文字／連結表單）');
           if (!cell(r, '檢查項目')) errs.push('檢查項目不可空白');
           if (ref && !d.docs.find(x => x.code === ref)) errs.push('引用文件編號「' + ref + '」不存在於參考文件庫');
-          m.rows.push({ line: k + 2, sheet: sh.name, group: cell(r, '範本名稱') || '（未命名）', stage, type, name: cell(r, '檢查項目'), std: ix('檢查標準') < 0 ? '' : String(r[ix('檢查標準')] == null ? '' : r[ix('檢查標準')]), hold: /^y/i.test(cell(r, '停留點')), photo: /^y/i.test(cell(r, '必填')), ref, stageText: cell(r, '階段'), typeText: cell(r, '判定類型'), errs });
+          const lk = cell(r, '連結表號'), le = linkErr(type, lk); if (le) errs.push(le);
+          m.rows.push({ line: k + 2, sheet: sh.name, group: cell(r, '範本名稱') || '（未命名）', stage, type, linked: lk, name: cell(r, '檢查項目'), std: ix('檢查標準') < 0 ? '' : String(r[ix('檢查標準')] == null ? '' : r[ix('檢查標準')]), hold: /^y/i.test(cell(r, '停留點')), photo: /^y/i.test(cell(r, '必填')), ref, stageText: cell(r, '階段'), typeText: cell(r, '判定類型'), errs });
         });
       });
       if (!usable) { m.err = lastMiss || '沒有資料列，請確認第一列為欄位標題'; return; }
@@ -257,7 +293,7 @@ createApp({
     const itemImpBad = computed(() => itemImpRows.value.filter(r => r.errs.length).length);
     function doItemImp() {
       const m = itemImp.value, ok = itemImpRows.value.filter(r => !r.errs.length); if (!ok.length) return toast('沒有可匯入的列', true);
-      const items = ok.map(r => Q.I(0, r.stage, r.name, r.std, { type: r.type, hold: r.hold, photo: r.photo || r.type === 'photo', ref: r.ref, fields: r.type === 'number' ? [Q.F('v', '實測值', '', null, null)] : [], linked: r.type === 'linked' ? '5-4' : '' }));
+      const items = ok.map(r => Q.I(0, r.stage, r.name, r.std, { type: r.type, hold: r.hold, photo: r.photo || r.type === 'photo', ref: r.ref, fields: r.type === 'number' ? [Q.F('v', '實測值', '', null, null)] : [], linked: r.type === 'linked' ? r.linked : '' }));
       edit.value.items = m.mode === 'replace' ? items : edit.value.items.concat(items);
       toast(`已匯入 ${items.length} 項${itemImpBad.value ? `（略過 ${itemImpBad.value} 列錯誤）` : ''}，請按「儲存」生效`); itemImp.value = null;
     }
@@ -285,7 +321,7 @@ createApp({
         const head = rows[0].map(x => String(x).trim()), miss = CSV_HEAD.filter(h => !head.includes(h));
         if (miss.length) { lastMiss = `工作表「${sh.name}」缺少欄位：` + miss.join('、'); return; }
         usable++;
-        const idx = Object.fromEntries(CSV_HEAD.map(h => [h, head.indexOf(h)])), cell = (r, h) => String(r[idx[h]] == null ? '' : r[idx[h]]).trim();
+        const idx = Object.fromEntries(CSV_HEAD.concat(OPT_HEAD).map(h => [h, head.indexOf(h)])), cell = (r, h) => idx[h] < 0 ? '' : String(r[idx[h]] == null ? '' : r[idx[h]]).trim();
         rows.slice(1).forEach((r, k) => {
           const g = cell(r, '範本名稱') || '（未命名）', errs = [];
           const stage = SR[cell(r, '階段')], type = RT[cell(r, '判定類型')], ref = cell(r, '引用文件編號');
@@ -293,10 +329,14 @@ createApp({
           if (!type) errs.push('判定類型「' + cell(r, '判定類型') + '」不在代碼表內（選項／數值／照片／文字／連結表單）');
           if (!cell(r, '檢查項目')) errs.push('檢查項目不可空白');
           if (ref && !d.docs.find(x => x.code === ref)) errs.push('引用文件編號「' + ref + '」不存在於參考文件庫');
-          (groups[g] = groups[g] || { name: g, rows: [] }).rows.push({ line: k + 2, sheet: sh.name, stage, type, name: cell(r, '檢查項目'), std: String(r[idx['檢查標準']] == null ? '' : r[idx['檢查標準']]), hold: /^y/i.test(cell(r, '停留點')), photo: /^y/i.test(cell(r, '必填')), ref, raw: r, idx, errs });
+          const kt = cell(r, '表單類型'); if (kt && !KIND[kt]) errs.push(`表單類型「${kt}」須為 自主檢查表／抽查紀錄表`);
+          const grp = (groups[g] = groups[g] || { name: g, rows: [], kind: 'self', code: '' }); if (KIND[kt]) grp.kind = KIND[kt]; if (cell(r, '表號') && !grp.code) grp.code = cell(r, '表號');
+          grp.rows.push({ line: k + 2, sheet: sh.name, stage, type, linked: cell(r, '連結表號'), name: cell(r, '檢查項目'), std: String(r[idx['檢查標準']] == null ? '' : r[idx['檢查標準']]), hold: /^y/i.test(cell(r, '停留點')), photo: /^y/i.test(cell(r, '必填')), ref, raw: r, idx, errs });
         });
       });
       if (!usable) { imp.err = lastMiss || '沒有資料列，請上傳 Excel／CSV 或貼上內容'; return; }
+      const newCodes = Object.values(groups).map(g => g.code).filter(Boolean);
+      Object.values(groups).forEach(g => g.rows.forEach(r => { const le = linkErr(r.type, r.linked, newCodes); if (le) r.errs.push(le); }));
       imp.groups = Object.values(groups).map(g => Object.assign(g, { bad: g.rows.filter(r => r.errs.length).length })); imp.selGroup = 0; imp.step = 3;
     }
     function onFile(e) {
@@ -314,27 +354,30 @@ createApp({
         rd.readAsArrayBuffer(f);
       } else { rd.onload = () => { imp.text = rd.result; imp.step = 2; }; rd.readAsText(f, 'utf-8'); }
     }
-    const SAMPLE_ROWS = () => [CSV_HEAD, ['表5-6 鋼筋籠自主檢查表', '施工前', 1, '施工圖', '是否核准', '選項', 'Y', 'Y', 'CF671-PL-0032'], ['表5-6 鋼筋籠自主檢查表', '施工中', 2, '焊條使用是否符合要求', '使用 AWS D1.4 E8016', '選項', 'N', 'N', ''], ['表5-6 鋼筋籠自主檢查表', '施工中', 3, '鋼筋剪力筋是否依設計數量安放', '依施工圖標示', 'Y/N', 'N', 'N', ''], ['表5-6 鋼筋籠自主檢查表', '施工中', 4, '鋼筋籠端板是否牢固', '端板厚度 6mm', '數值', 'N', 'N', 'CF671-DW-9999'], ['表5-6 鋼筋籠自主檢查表', '施工後', 5, '場地清理', '是否清理完成', '選項', 'N', 'N', '']];
+    const SAMPLE_ROWS = () => [CSV_HEAD.concat(OPT_HEAD), ['表5-6 鋼筋籠自主檢查表', '施工前', 1, '施工圖', '是否核准', '選項', 'Y', 'Y', 'CF671-PL-0032'], ['表5-6 鋼筋籠自主檢查表', '施工中', 2, '焊條使用是否符合要求', '使用 AWS D1.4 E8016', '選項', 'N', 'N', ''], ['表5-6 鋼筋籠自主檢查表', '施工中', 3, '鋼筋剪力筋是否依設計數量安放', '依施工圖標示', 'Y/N', 'N', 'N', ''], ['表5-6 鋼筋籠自主檢查表', '施工中', 4, '鋼筋籠端板是否牢固', '端板厚度 6mm', '數值', 'N', 'N', 'CF671-DW-9999'], ['表5-6 鋼筋籠自主檢查表', '施工後', 5, '場地清理', '是否清理完成', '選項', 'N', 'N', '']];
     function sampleCsv() { return SAMPLE_ROWS().map(r => r.map(csvCell).join(',')).join('\r\n'); }
     function loadSample() { imp.fileName = '範本匯入樣本.xlsx'; imp.sheets = [{ name: '範本', rows: SAMPLE_ROWS() }]; imp.step = 2; validate(); }
     function writeXlsx(name, rows, sheetName) {
-      const ws = XLSX.utils.aoa_to_sheet(rows); ws['!cols'] = CSV_HEAD.map((h, i) => ({ wch: [26, 8, 6, 28, 36, 10, 8, 6, 16][i] }));
+      const ws = XLSX.utils.aoa_to_sheet(rows); ws['!cols'] = CSV_HEAD.concat(OPT_HEAD).map((h, i) => ({ wch: [26, 8, 6, 28, 36, 10, 8, 6, 16, 12, 8, 10][i] }));
       const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, sheetName || '範本'); XLSX.writeFile(wb, name);
     }
     function downloadSample() { writeXlsx('範本匯入樣本.xlsx', SAMPLE_ROWS()); }
     function exportXlsx() {
-      const t = edit.value; writeXlsx(`${t.code}_${t.name}.xlsx`, [CSV_HEAD].concat(t.items.map(i => [t.name, Q.STAGES[i.stage], i.no, i.name, i.std, TYPES[i.type] || '選項', i.hold ? 'Y' : 'N', i.photo ? 'Y' : 'N', i.ref || ''])), t.code);
+      const t = edit.value; writeXlsx(`${t.code}_${t.name}.xlsx`, [CSV_HEAD.concat(OPT_HEAD)].concat(t.items.map(i => [t.name, Q.STAGES[i.stage], i.no, i.name, i.std, TYPES[i.type] || '選項', i.hold ? 'Y' : 'N', i.photo ? 'Y' : 'N', i.ref || '', t.kind === 'spot' ? '抽查紀錄表' : '自主檢查表', t.code, i.linked || ''])), t.code);
     }
-    const impOk = computed(() => imp.groups.filter(g => !g.bad));
+    // 建立新範本時：同一分項工程已有相同表號 → 須改用「匯入為新版本」
+    const impDup = g => imp.mode === 'new' && !!g.code && d.templates.some(t => t.status === 'published' && t.subworkId === imp.targetSw && t.kind === g.kind && t.code === g.code);
+    const impOk = computed(() => imp.groups.filter(g => !g.bad && !impDup(g)));
     async function doImport() {
       let n = 0;
       for (const g of impOk.value) {
-        const items = g.rows.map((r, i) => Q.I(i + 1, r.stage, r.name, r.std, { type: r.type, hold: r.hold, photo: r.photo, ref: r.ref || '', fields: r.type === 'number' ? [Q.F('v', '實測值', '', null, null)] : [], linked: r.type === 'linked' ? '5-4' : '' }));
+        const items = g.rows.map((r, i) => Q.I(i + 1, r.stage, r.name, r.std, { type: r.type, hold: r.hold, photo: r.photo, ref: r.ref || '', fields: r.type === 'number' ? [Q.F('v', '實測值', '', null, null)] : [], linked: r.type === 'linked' ? r.linked : '' }));
         if (imp.mode === 'version' && imp.existing) {
           const old = d.templates.find(t => t.id === imp.existing); const nt = Q.clone(old); nt.items = items; await Q.saveTemplate(nt, true);
         } else {
           const sw = swById(imp.targetSw);
-          await Q.put('templates', { id: Q.uid('TP-'), tenderId: sw.tenderId, subworkId: sw.id, kind: 'self', code: '匯入', name: g.name, version: 1, status: 'published', source: '匯入：' + (imp.fileName || '貼上內容'), fillMode: 'online', items, used: 0 });
+          let code = g.code; if (!code) { let k = 1; while (d.templates.some(t => t.subworkId === sw.id && t.code === `IMP-${k}`)) k++; code = `IMP-${k}`; }
+          await Q.put('templates', Q.ensureKeys({ id: Q.uid('TP-'), tenderId: sw.tenderId, subworkId: sw.id, kind: g.kind || 'self', code, name: g.name, version: 1, status: 'published', source: '匯入：' + (imp.fileName || '貼上內容'), fillMode: 'online', items, used: 0 }));
         }
         n++;
       }
@@ -346,7 +389,10 @@ createApp({
     const docForm = ref(null), userForm = ref(null);
     async function saveDoc() { const x = docForm.value; if (!x.code.trim()) return toast('請輸入文件編號', true); x.id = x.code; await Q.put('docs', x); docForm.value = null; await load(); }
     async function saveUser() { const x = userForm.value; if (!x.name.trim()) return toast('請輸入姓名', true); if (!x.id) x.id = Q.uid('U'); await Q.put('users', x); userForm.value = null; await load(); }
-    async function delRow(store, id) { if (!confirm('確定刪除？')) return; await Q.del(store, id); await load(); }
+    async function delRow(store, id) {
+      if (store === 'docs') { const used = d.templates.filter(t => t.status === 'published' && (t.items || []).some(i => i.ref === id)); if (used.length) return toast(`文件 ${id} 仍被 ${used.length} 張範本引用（${used.slice(0, 3).map(t => '表' + t.code).join('、')}${used.length > 3 ? '…' : ''}），請先移除引用`, true); }
+      if (!confirm('確定刪除？')) return; await Q.del(store, id); await load();
+    }
     async function saveParams() {
       const p = d.params; ['holdAdvanceHours', 'replyHours', 'photoMaxKB', 'defectDueDays'].forEach(k => { p[k] = Number(p[k]) || 0; });
       await Q.put('meta', Object.assign({ id: 'params' }, p)); toast('參數已儲存');
@@ -368,12 +414,12 @@ createApp({
     });
 
     return {
-      Q, d, now, loaded, page, menuOpen, toastMsg, toastNg, toast, go, tenderById, swById, tenderFilter, supervisors, reqCls, rel, openReqs, overdueReqs, openDefects, overdueDefects, weekHolds, spotRate, todayAgenda, tplOf, usedCount,
-      progTender, progFilter, progRows, progCount, holdTab, holdTabs, holdCount, holdList, holdByDate, selReqId, selReq, calView, sched, reqChips, lockedAfter, hoursBefore, doSchedule, doReject, doStart,
-      showSC, showSP, itemsOf, judgeText, valuesText, spotCount, defCls, defText, defTab, defList, defAct,
+      Q, d, now, loaded, page, menuOpen, toastMsg, toastNg, toast, go, tenderById, swById, tenderFilter, supervisors, reqCls, rel, openReqs, overdueReqs, openDefects, overdueDefects, weekHolds, spotRate, kpiSelf, todayAgenda, tplOf, usedCount,
+      progTender, progFilter, progRows, progCount, holdTab, holdTabs, holdCount, holdList, holdByDate, selReqId, selReq, calView, sched, reqChips, lockedAfter, hoursBefore, doSchedule, doReject, doStart, doCancel,
+      showSC, showSP, itemsOf, judgeText, valuesText, spotCount, defCls, defText, defTab, defList, defAct, defShow, defReview,
       selTenderId, selTender, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, tenderForm, swForm, saveTender, saveSw, moveSw, delSw, newTender,
       tplSw, swGroups, selTplId, tplTab, edit, previewOn, fieldIdx, tplList, tplHistory, pickTpl, editUsed, editStages, isPdf, newTplForm, onNewPdf, onEditPdf, createTpl, pdfUrl, downloadFile, wfCls, readPdf, TYPES, holdN, addItem, delItem, moveItem, addField, onType, saveEdit, delTpl, syncFromSelf, newTpl, exportCsv, exportXlsx, dragId, dragOver, onDragStart, onDragEnd, onDrop, itemImp, openItemImp, itemSample, downloadItemSample, onItemFile, itemImpRows, itemImpBad, doItemImp,
-      imp, validate, onFile, sampleCsv, loadSample, downloadSample, impOk, doImport, impReset, download,
+      imp, impDup, linkOpts, adminUser, validate, onFile, sampleCsv, loadSample, downloadSample, impOk, doImport, impReset, download,
       docForm, userForm, saveDoc, saveUser, delRow, saveParams, resetDemo, navItems, navTree, collapsed, toggleGroup, titles, todayStr
     };
   }
