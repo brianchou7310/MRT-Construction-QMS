@@ -71,3 +71,11 @@
 .dropzone { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 28px; border: 2px dashed #9fd4e6; border-radius: 12px; cursor: pointer; color: var(--gray); text-align: center; } .dropzone:hover { background: #f0f9fc; }
 .choice { display: grid; gap: 10px; } .choice label { display: grid; gap: 2px; padding: 12px 14px 12px 38px; border: 1px solid #c4cdd9; border-radius: 10px; cursor: pointer; position: relative; } .choice label input { position: absolute; left: 14px; top: 16px; }
 .choice label span { font-size: 12px; color: var(--gray); } .choice label.on { border-color: var(--primary); background: var(--primary-l); }
+
+/* 標案架構樹：可收合、分項工程完整顯示 */
+.tree .l1 { font-size: 15px; }
+.tree a > span:first-child { display: flex; align-items: center; min-width: 0; gap: 4px; }
+.tree .tw { display: inline-block; width: 16px; text-align: center; font-style: normal; color: var(--muted, #64748b); flex: none; cursor: pointer; }
+.tree .l3 { padding-left: 38px; }
+.tree .ell { white-space: normal; word-break: break-all; line-height: 1.4; }
+.table tr.picked td { background: var(--primary-l); }

@@ -210,9 +210,13 @@
   <div class="page-head"><div><h1>標案與分項工程</h1></div></div>
   <div class="cols2">
     <div class="card"><div class="row mb"><h3 class="grow">標案架構</h3><button class="btn sm" @click="newTender">＋ 新增標案</button></div>
-      <div class="tree"><a><b>CF670A 區段標工程</b></a>
-        <template v-for="t in d.tenders" :key="t.id"><a class="l2" :class="{on: selTenderId===t.id}" @click="selTenderId=t.id"><span>{{ t.name }}</span><span class="muted small">{{ d.subworks.filter(s=>s.tenderId===t.id).length }} 項</span></a>
-          <a class="l3" v-for="s in d.subworks.filter(s=>s.tenderId===t.id).sort((a,b)=>a.order-b.order).slice(0,4)" :key="s.id">{{ s.name }}</a></template></div></div>
+      <div class="row small mb" style="gap:10px"><a @click="treeAll(true)">全部展開</a><a @click="treeAll(false)">全部收合</a></div>
+      <div class="tree">
+        <a class="l1" @click="treeRoot=!treeRoot"><span><i class="tw">{{ treeRoot ? '▾' : '▸' }}</i><b>CF670A 區段標工程</b></span><span class="muted small">{{ d.tenders.length }} 標</span></a>
+        <template v-if="treeRoot"><template v-for="t in d.tenders" :key="t.id">
+          <a class="l2" :class="{on: selTenderId===t.id && !swPick}" @click="pickTender(t)"><span><i class="tw" @click.stop="treeOpen[t.id]=!treeOpen[t.id]">{{ treeOpen[t.id] ? '▾' : '▸' }}</i>{{ t.name }}</span><span class="muted small">{{ d.subworks.filter(s=>s.tenderId===t.id).length }} 項</span></a>
+          <template v-if="treeOpen[t.id]"><a class="l3" v-for="s in d.subworks.filter(s=>s.tenderId===t.id).sort((a,b)=>a.order-b.order)" :key="s.id" :class="{on: swPick===s.id}" @click="pickSw(s)" :title="s.no + '、' + s.name"><span class="ell">{{ s.no }}、{{ s.name }}</span></a></template>
+        </template></template></div></div>
     <div>
       <div class="card mb" v-if="selTender.id">
         <div class="row"><h2 class="grow">{{ selTender.name }} <span class="chip ok">{{ selTender.status }}</span></h2><button class="btn primary" @click="tenderForm=Q.clone(selTender)">編輯標案</button></div>
@@ -221,9 +225,10 @@
       </div>
       <div class="card">
         <h3>分項工程（主要施工項目）</h3><div class="muted small mb">共 {{ swAll.length }} 項・已設定檢查表 {{ swAll.filter(s=>swTplText(s,'self')!=='未設定').length }} 項・以 ▲▼ 調整工序順序</div>
+        <div class="alert info mb row" v-if="swPick"><span class="grow">已篩選分項工程：<b>{{ (d.subworks.find(s=>s.id===swPick)||{}).name }}</b></span><a @click="swPick=null">✕ 顯示全部</a></div>
         <div class="row wrap mb"><input type="search" v-model="swSearch" placeholder="搜尋分項工程" style="max-width:240px"><select v-model="swStatus" style="width:auto"><option value="">全部狀態</option><option>施工中</option><option>未開始</option><option>已完成</option></select><span class="grow"></span><button class="btn" @click="go('import')">匯入範本</button><button class="btn primary" @click="swForm={id:'',name:'',no:'',qty:1,unit:'式',status:'施工中'}">＋ 新增分項工程</button></div>
         <div class="tbl-scroll"><table class="table"><thead><tr><th></th><th>項次</th><th>分項工程</th><th class="right">數量</th><th>自主檢查表</th><th>抽查紀錄表</th><th>停留點</th><th></th></tr></thead><tbody>
-          <tr v-for="s in swPaged" :key="s.id"><td class="nowrap"><a @click="moveSw(s,-1)">▲</a> <a @click="moveSw(s,1)">▼</a></td><td>{{ s.no }}</td><td><b>{{ s.name }}</b></td><td class="right nowrap">{{ s.qty.toLocaleString() }} {{ s.unit }}</td>
+          <tr v-for="s in swPaged" :key="s.id" :class="{picked: swPick===s.id}"><td class="nowrap"><a @click="moveSw(s,-1)">▲</a> <a @click="moveSw(s,1)">▼</a></td><td>{{ s.no }}</td><td><b>{{ s.name }}</b></td><td class="right nowrap">{{ s.qty.toLocaleString() }} {{ s.unit }}</td>
             <td><span class="chip" :class="swTplText(s,'self')==='未設定'?'':'blue'">{{ swTplText(s,'self') }}</span></td><td><span class="chip" :class="swTplText(s,'spot')==='未設定'?'':'blue'">{{ swTplText(s,'spot') }}</span></td><td><span class="star" v-if="swHold(s)">★ {{ swHold(s) }}</span></td>
             <td class="nowrap"><button class="btn sm" @click="tplSw=s.id; go('templates')">範本</button> <button class="btn sm" @click="swForm=Q.clone(s)">編輯</button> <button class="btn sm danger" @click="delSw(s)">刪</button></td></tr>
         </tbody></table></div>

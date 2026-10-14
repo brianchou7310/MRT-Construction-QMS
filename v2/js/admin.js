@@ -117,10 +117,16 @@ createApp({
     /* ---------- 標案與分項工程 ---------- */
     const selTenderId = ref('T671'), swSearch = ref(''), swStatus = ref(''), swPage = ref(1);
     const selTender = computed(() => tenderById(selTenderId.value));
-    const swAll = computed(() => d.subworks.filter(s => s.tenderId === selTenderId.value).sort((a, b) => a.order - b.order).filter(s => (!swSearch.value || s.name.includes(swSearch.value)) && (!swStatus.value || s.status === swStatus.value)));
+    // 左側樹狀：各層可收合；點分項工程時右側直接篩選到該項
+    const treeRoot = ref(true), treeOpen = reactive({ T671: true }), swPick = ref(null);
+    function treeAll(open) { treeRoot.value = true; d.tenders.forEach(t => { treeOpen[t.id] = open; }); }
+    function pickTender(t) { if (selTenderId.value === t.id && !swPick.value) { treeOpen[t.id] = !treeOpen[t.id]; return; } selTenderId.value = t.id; swPick.value = null; treeOpen[t.id] = true; }
+    function pickSw(s) { selTenderId.value = s.tenderId; swSearch.value = ''; swStatus.value = ''; swPick.value = s.id; swPage.value = 1; }
+    const swAll = computed(() => d.subworks.filter(s => s.tenderId === selTenderId.value).sort((a, b) => a.order - b.order).filter(s => (!swPick.value || s.id === swPick.value) && (!swSearch.value || s.name.includes(swSearch.value)) && (!swStatus.value || s.status === swStatus.value)));
     const swPaged = computed(() => swAll.value.slice((swPage.value - 1) * 15, swPage.value * 15));
     const swPages = computed(() => Math.max(1, Math.ceil(swAll.value.length / 15)));
     watch([swSearch, swStatus, selTenderId], () => { swPage.value = 1; });
+    watch(selTenderId, id => { if (swPick.value && (d.subworks.find(s => s.id === swPick.value) || {}).tenderId !== id) swPick.value = null; });
     const swTplText = (s, kind) => { const l = d.templates.filter(t => t.subworkId === s.id && t.kind === kind && t.status === 'published'); const p = l.filter(t => t.fillMode === 'pdf').length; return l.length ? l.length + ' 張' + (p ? `（PDF ${p}）` : '') : '未設定'; };
     const swHold = s => d.templates.filter(t => t.subworkId === s.id && t.kind === 'self' && t.status === 'published').reduce((n, t) => n + (t.fillMode === 'pdf' ? 0 : t.items.filter(i => i.hold).length), 0);
     const tenderForm = ref(null), swForm = ref(null);
@@ -417,7 +423,7 @@ createApp({
       Q, d, now, loaded, page, menuOpen, toastMsg, toastNg, toast, go, tenderById, swById, tenderFilter, supervisors, reqCls, rel, openReqs, overdueReqs, openDefects, overdueDefects, weekHolds, spotRate, kpiSelf, todayAgenda, tplOf, usedCount,
       progTender, progFilter, progRows, progCount, holdTab, holdTabs, holdCount, holdList, holdByDate, selReqId, selReq, calView, sched, reqChips, lockedAfter, hoursBefore, doSchedule, doReject, doStart, doCancel,
       showSC, showSP, itemsOf, judgeText, valuesText, spotCount, defCls, defText, defTab, defList, defAct, defShow, defReview,
-      selTenderId, selTender, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, tenderForm, swForm, saveTender, saveSw, moveSw, delSw, newTender,
+      selTenderId, selTender, treeRoot, treeOpen, swPick, treeAll, pickTender, pickSw, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, tenderForm, swForm, saveTender, saveSw, moveSw, delSw, newTender,
       tplSw, swGroups, selTplId, tplTab, edit, previewOn, fieldIdx, tplList, tplHistory, pickTpl, editUsed, editStages, isPdf, newTplForm, onNewPdf, onEditPdf, createTpl, pdfUrl, downloadFile, wfCls, readPdf, TYPES, holdN, addItem, delItem, moveItem, addField, onType, saveEdit, delTpl, syncFromSelf, newTpl, exportCsv, exportXlsx, dragId, dragOver, onDragStart, onDragEnd, onDrop, itemImp, openItemImp, itemSample, downloadItemSample, onItemFile, itemImpRows, itemImpBad, doItemImp,
       imp, impDup, linkOpts, adminUser, validate, onFile, sampleCsv, loadSample, downloadSample, impOk, doImport, impReset, download,
       docForm, userForm, saveDoc, saveUser, delRow, saveParams, resetDemo, navItems, navTree, collapsed, toggleGroup, titles, todayStr
