@@ -4,20 +4,23 @@ const { createApp, reactive, ref, computed, watch, onMounted, nextTick } = Vue;
 createApp({
   setup() {
     const Q = QMS;
-    const d = reactive({ tenders: [], subworks: [], templates: [], selfChecks: [], requests: [], spotChecks: [], defects: [], docs: [], params: {} });
+    const d = reactive({ tenders: [], subworks: [], templates: [], selfChecks: [], requests: [], spotChecks: [], defects: [], docs: [], users: [], params: {} });
     const loaded = ref(false), now = ref(Date.now());
     const view = ref('todo'), todoTab = ref('hold'), tenderSel = ref('all');
     const role = ref((() => { try { return localStorage.getItem('qms2-role') || 'contractor'; } catch (e) { return 'contractor'; } })());
     const isSup = computed(() => role.value !== 'contractor'), isDirector = computed(() => role.value === 'director');
     watch(role, v => { try { localStorage.setItem('qms2-role', v); } catch (e) { /* ignore */ } });
-    const me = computed(() => isDirector.value ? { name: '示範工務所主任', org: '捷運局工務所', title: '捷運局工務所主任' } : isSup.value ? { name: '示範工務所同仁', org: '捷運局工務所', title: '捷運局工務所同仁' } : { name: '示範品管', org: '大陸工程股份有限公司', title: '廠商品管人員' });
+    // 目前身分 → 對應「帳號與權限」中的使用者（不再寫死姓名與單位）
+    const ROLE_NAME = { contractor: '廠商品管人員', supervisor: '捷運局工務所同仁', director: '捷運局工務所主任' };
+    const userOf = (roleName, org) => d.users.find(u => u.role === roleName && (!org || u.org === org)) || d.users.find(u => u.role === roleName) || null;
+    const me = computed(() => { const t = ROLE_NAME[role.value], u = userOf(t); return { id: u ? u.id : '', name: u ? u.name : `（未設定${t}帳號）`, org: u ? u.org : '', title: t }; });
     const wide = ref(window.matchMedia('(min-width: 900px)').matches);
     window.matchMedia('(min-width: 900px)').addEventListener('change', e => { wide.value = e.matches; });
     const toastMsg = ref(''), toastNg = ref(false); let tt;
     function toast(m, ng) { toastMsg.value = m; toastNg.value = !!ng; clearTimeout(tt); tt = setTimeout(() => { toastMsg.value = ''; }, 2800); }
 
     async function load() {
-      const names = ['tenders', 'subworks', 'templates', 'selfChecks', 'requests', 'spotChecks', 'defects', 'docs'];
+      const names = ['tenders', 'subworks', 'templates', 'selfChecks', 'requests', 'spotChecks', 'defects', 'docs', 'users'];
       const res = await Promise.all(names.map(s => Q.all(s)).concat([Q.getParams()]));
       names.forEach((n, i) => { d[n] = res[i]; }); d.params = res[names.length]; now.value = Date.now(); loaded.value = true;
     }
@@ -67,16 +70,39 @@ createApp({
       const tpl = tplOf(sc.templateId); if (!tpl) return [];
       return tpl.items.filter(i => i.hold && ['none', 'failed'].includes(Q.holdState(sc, i.no))).map(i => ({ sc, i, reason: Q.lockReason(sc, tpl, i) })).filter(x => x.reason && x.reason.startsWith('待'));
     }));
-    const draftSpots = computed(() => d.spotChecks.filter(s => s.status === 'draft'));
+    const draftSpots = computed(() => isSup.value ? d.spotChecks.filter(s => s.status === 'draft' && s.fillMode !== 'pdf' && inTender(s)) : []);
     const openDefects = computed(() => d.defects.filter(x => x.status !== 'closed' && inTender(x)));
-    const todoCount = computed(() => todoReqs.value.length + lockedCards.value.length + draftSpots.value.length + openDefects.value.length);
+    // PDF 表單簽辦待辦：依目前身分，只列出「輪到我」的表單
+    const pdfTodos = computed(() => {
+      const out = [], nm = me.value.name, push = (kind, rec, act) => out.push({ kind, rec, act });
+      d.selfChecks.filter(s => s.fillMode === 'pdf' && inTender(s) && s.wfStatus !== '已結案').forEach(s => {
+        if (role.value !== 'contractor') return; const st = s.wfStatus;
+        if (st === '鎖定中') { if (s.lockedBy === nm) push('self', s, '您已鎖定，請上傳並簽名'); }
+        else if (st === '待流轉') push('self', s, s.lastUpdatedBy === nm ? '請辦理憑證加簽結案' : '可下載續填');
+        else if (st === '未開始') push('self', s, '請下載空白範本並鎖定');
+      });
+      d.spotChecks.filter(s => s.fillMode === 'pdf' && inTender(s) && s.wfStatus !== '已結案').forEach(s => {
+        const st = s.wfStatus;
+        if (role.value === 'contractor') { if (st === '待廠商簽名') push('spot', s, '請簽名後上傳'); return; }
+        if (st === '鎖定中') { if (s.lockedBy === nm) push('spot', s, '您已鎖定，請上傳並簽名'); }
+        else if (st === '未開始') push('spot', s, '請下載空白範本並鎖定');
+        else if (st === '待流轉') push('spot', s, '待局內人員續填');
+        else if (st === '待主任加簽' && isDirector.value) push('spot', s, '請以憑證加簽結案');
+      });
+      return out.sort((a, b) => (b.rec.updatedAt || b.rec.createdAt) - (a.rec.updatedAt || a.rec.createdAt));
+    });
+    // 廠商：被退回、尚未重新申請的停留點
+    const rejectedCards = computed(() => isSup.value ? [] : d.requests.filter(r => r.status === 'rejected' && r.scId && inTender(r)).map(r => ({ r, sc: d.selfChecks.find(s => s.id === r.scId) })).filter(x => x.sc && x.sc.status === 'draft' && ((x.sc.hold || {})[x.r.itemNo] || {}).requestId === x.r.id && Q.holdState(x.sc, x.r.itemNo) === 'none'));
+    const defTodos = computed(() => openDefects.value.filter(x => isSup.value ? x.status === 'review' : x.status === 'open'));
+    const todoCount = computed(() => todoReqs.value.length + lockedCards.value.length + rejectedCards.value.length + draftSpots.value.length + pdfTodos.value.length + defTodos.value.length);
+    const openPdfTodo = x => x.kind === 'self' ? openSc(x.rec.id) : openSpot(x.rec.id);
     const holdFilter = ref('all');
     const holdsList = computed(() => d.requests.filter(r => holdFilter.value === 'all' || r.status === holdFilter.value).sort((a, b) => b.appliedAt - a.appliedAt));
 
     /* 請求詳情面板 */
-    const selReqId = ref(null), sched = reactive({ dt: '', reason: '', rejecting: false });
+    const selReqId = ref(null), sched = reactive({ dt: '', reason: '', rejecting: false, cancelling: false, tplId: '', tplOpts: [] });
     const selReq = computed(() => d.requests.find(r => r.id === selReqId.value));
-    function selectReq(r) { selReqId.value = r.id; sched.dt = Q.toLocalInput(r.scheduledAt); sched.reason = ''; sched.rejecting = false; }
+    function selectReq(r) { selReqId.value = r.id; sched.dt = Q.toLocalInput(r.scheduledAt); sched.reason = ''; sched.rejecting = false; sched.cancelling = false; sched.tplOpts = []; sched.tplId = ''; Q.spotOptions(r.id).then(o => { if (selReqId.value !== r.id) return; sched.tplOpts = o.tpls.map(t => ({ id: t.id, name: t.name, pdf: t.fillMode === 'pdf' })); sched.tplId = o.def ? o.def.id : ''; }); }
     const reqChips = r => {
       const sc = d.selfChecks.find(s => s.id === r.scId), tpl = sc && tplOf(sc.templateId), it = tpl && tpl.items.find(i => i.no === r.itemNo); if (!it) return [];
       return it.fields.filter(f => (r.values || {})[f.key] !== undefined && r.values[f.key] !== '').map(f => ({ label: f.label, v: r.values[f.key], unit: f.unit }));
@@ -85,34 +111,82 @@ createApp({
     const lockedAfter = r => { const sc = d.selfChecks.find(s => s.id === r.scId), tpl = sc && tplOf(sc.templateId); return tpl ? tpl.items.filter(i => i.hold && i.no > r.itemNo && Q.holdState(sc, i.no) !== 'passed').map(i => i.name) : []; };
     async function doSchedule() { const ts = Q.fromLocalInput(sched.dt); if (!ts) return toast('請選擇時間', true); const r = selReq.value; await Q.schedule(r.id, ts, me.value.name, r.status === 'scheduled'); await load(); toast('已排定並通知廠商'); }
     async function doReject() { if (!sched.reason.trim()) return toast('請填寫退回原因', true); await Q.reject(selReq.value.id, sched.reason); sched.rejecting = false; await load(); toast('已退回申請'); }
-    async function doStart(r) { const sp = await Q.startInspection((r || selReq.value).id); await load(); openSpot(sp.id); }
+    async function doCancel() { try { await Q.cancelInspection(selReq.value.id, sched.reason, me.value.name); sched.cancelling = false; sched.reason = ''; await load(); toast('已取消會驗，抽查紀錄草稿已作廢'); } catch (e) { toast(e.message, true); } }
+    async function doStart(r) { try { const req = r || selReq.value; const sp = await Q.startInspection(req.id, !r && sched.tplId ? sched.tplId : undefined); await load(); openSpot(sp.id); } catch (e) { toast(e.message, true); } }
 
     /* ---------- 自主檢查清單 / 新增 ---------- */
-    const scList = computed(() => d.selfChecks.filter(inTender).sort((a, b) => b.updatedAt - a.updatedAt));
+    /* ---------- 自主檢查／抽查紀錄清單的篩選：標號 → 工項 → 單元 → 表單（選項只列清單中實際有的資料） ---------- */
+    const NO_UNIT = '__none__';
+    const fc = reactive({ tender: '', sw: '', unit: '', tpl: '' }), fsp = reactive({ tender: '', sw: '', unit: '', tpl: '' });
+    const tplKey = x => (tplOf(x.templateId) || {}).code || x.templateCode || x.templateName;
+    const tplLabel = x => { const t = tplOf(x.templateId); return x.templateCode || (t && t.kind === 'self') ? `表${tplKey(x)} ${x.templateName}` : x.templateName; };
+    const passF = (f, x, upto) => { const lv = ['tender', 'sw', 'unit', 'tpl'], n = upto === 'all' ? 4 : lv.indexOf(upto);
+      return (n <= 0 || !f.tender || x.tenderId === f.tender) && (n <= 1 || !f.sw || x.subworkId === f.sw) && (n <= 2 || !f.unit || (f.unit === NO_UNIT ? !x.unit : x.unit === f.unit)) && (n <= 3 || !f.tpl || tplKey(x) === f.tpl); };
+    const uniq = (arr, key) => { const m = new Map(); arr.forEach(x => { const k = key(x); if (k[0] !== undefined && k[0] !== '' && !m.has(k[0])) m.set(k[0], k[1]); }); return [...m].map(([v, l]) => ({ v, l })); };
+    function filterOpts(list, f) {
+      const swName = id => { const s = d.subworks.find(x => x.id === id); return s ? `${s.no}、${s.name}` : id; };
+      const tenders = d.tenders.map(t => ({ v: t.id, l: t.name.includes(t.code) ? t.name : `${t.code} ${t.name}` })).sort((a, b) => a.l.localeCompare(b.l));   // 標號列出全部標案，與上方標號選單一致
+      const sws = uniq(list.filter(x => passF(f, x, 'sw')), x => [x.subworkId, swName(x.subworkId)]).sort((a, b) => ((d.subworks.find(s => s.id === a.v) || {}).order ?? 99) - ((d.subworks.find(s => s.id === b.v) || {}).order ?? 99));
+      const l3 = list.filter(x => passF(f, x, 'unit')), units = uniq(l3.filter(x => x.unit), x => [x.unit, x.unit]).sort((a, b) => a.v.localeCompare(b.v, 'zh-Hant', { numeric: true }));
+      if (units.length && l3.some(x => !x.unit)) units.push({ v: NO_UNIT, l: '（無單元）' });
+      const tpls = uniq(list.filter(x => passF(f, x, 'tpl')), x => [tplKey(x), tplLabel(x)]).sort((a, b) => a.v.localeCompare(b.v, 'zh-Hant', { numeric: true }));
+      return { tenders, sws, units, tpls };
+    }
+    // 上層改變時，清掉已經不存在的下層選擇
+    function fixF(f, o) { if (f.sw && !o.sws.some(x => x.v === f.sw)) f.sw = ''; if (f.unit && !o.units.some(x => x.v === f.unit)) f.unit = ''; if (f.tpl && !o.tpls.some(x => x.v === f.tpl)) f.tpl = ''; }
+    function setF(f, lv, v) { f[lv] = v; const order = ['tender', 'sw', 'unit', 'tpl']; order.slice(order.indexOf(lv) + 1).forEach(k => { f[k] = ''; }); if (lv === 'tender') tenderSel.value = v || 'all'; }
+    const clearF = f => { f.tender = ''; f.sw = ''; f.unit = ''; f.tpl = ''; tenderSel.value = 'all'; };
+    watch(tenderSel, v => { const t = v === 'all' ? '' : v; [fc, fsp].forEach(f => { if (f.tender !== t) setF(f, 'tender', t); }); }, { immediate: true });
+    const scAll = computed(() => d.selfChecks.slice().sort((a, b) => b.updatedAt - a.updatedAt));
+    const scOpts = computed(() => { const o = filterOpts(scAll.value, fc); fixF(fc, o); return o; });
+    const scList = computed(() => scAll.value.filter(x => passF(fc, x, 'all')));
     const scProgress = sc => { if (sc.fillMode === 'pdf') return { n: sc.pdfFile ? 1 : 0, total: 1 }; const t = tplOf(sc.templateId); return { n: Object.values(sc.answers).filter(a => a.judge).length, total: t ? t.items.length : 0 }; };
     const newForm = ref(null), qrForm = ref(null);
     // 新增表單的三層選擇：標號 → 工項(分項工程) → 表單
     const byOrder = (a, b) => (a.order == null ? 1e9 : a.order) - (b.order == null ? 1e9 : b.order);
-    const tplOpts = (sid, kind) => d.templates.filter(t => t.subworkId === sid && t.kind === kind && t.status === 'published').sort((a, b) => byOrder(a, b) || b.items.length - a.items.length);
-    const swOpts = (tid, kind) => d.subworks.filter(s => s.tenderId === tid && tplOpts(s.id, kind).length).sort(byOrder);
+    // 標號 → 工項 → 單元（工項有設定單元才出現）→ 表單；表單只列「該單元」的範本，未指定單元則列分項工程層的範本
+    const tplAll = (sid, kind) => d.templates.filter(t => t.subworkId === sid && t.kind === kind && t.status === 'published');
+    const tplOpts = (sid, kind, unit) => tplAll(sid, kind).filter(t => (t.unitNo || '') === (unit || '')).sort((a, b) => byOrder(a, b) || b.items.length - a.items.length);
+    const swOpts = (tid, kind) => d.subworks.filter(s => s.tenderId === tid && tplAll(s.id, kind).length).sort(byOrder);
+    // 單元選單：只列有該類表單的單元；若分項工程層也有範本，多一個「不指定單元」
+    const unitOpts = (sid, kind) => { const sw = d.subworks.find(s => s.id === sid), l = ((sw && sw.unitList) || []).filter(u => tplOpts(sid, kind, u).length); return l.length && tplOpts(sid, kind, '').length ? [''].concat(l) : l; };
+    const ut = (u, pre) => u ? (pre || '') + '單元 ' + u : '';
+    const where = (unit, swName) => unit ? '單元 ' + unit : swName;
     const tenderOpts = () => d.tenders.slice().sort((a, b) => a.code.localeCompare(b.code));
     function cascade(f, kind, from) {
       if (from === 'tender') f.subworkId = (swOpts(f.tenderId, kind)[0] || {}).id || '';
-      if (from !== 'tpl') f.templateId = (tplOpts(f.subworkId, kind)[0] || {}).id || '';
+      if (from === 'tender' || from === 'sw') { const u = unitOpts(f.subworkId, kind); f.unit = u.includes(f.unit) ? f.unit : (u[0] || ''); }
+      if (from !== 'tpl') f.templateId = (tplOpts(f.subworkId, kind, f.unit)[0] || {}).id || '';
+      f.dupWarn = ''; f.forceDup = false;
     }
     function newFormInit(kind, unit) {
-      const ts = tenderOpts().filter(x => swOpts(x.id, kind).length), t = ts.find(x => x.id === tenderSel.value) || ts[0] || tenderOpts()[0] || {}; const f = { tenderId: t.id || '', subworkId: '', templateId: '', unit: unit || '', location: '' }; cascade(f, kind, 'tender'); return f;
+      const ts = tenderOpts().filter(x => swOpts(x.id, kind).length), t = ts.find(x => x.id === tenderSel.value) || ts[0] || tenderOpts()[0] || {}; const f = { tenderId: t.id || '', subworkId: '', templateId: '', unit: unit || '', location: '', dupWarn: '', forceDup: false }; cascade(f, kind, 'tender');
+      // 由 QR 帶入的單元：找出設定了該單元的工項並預先選好
+      if (unit) { const hit = d.subworks.find(s => (s.unitList || []).includes(unit) && unitOpts(s.id, kind).includes(unit)); if (hit) { f.tenderId = hit.tenderId; f.subworkId = hit.id; f.unit = unit; cascade(f, kind, 'unit'); } else toast(`後台尚未設定單元 ${unit} 的表單，請手動選擇`, true); }
+      return f;
     }
     function openNew(unit) { newForm.value = newFormInit('self', unit); }
     async function createSc() {
-      const f = newForm.value; if (!f.unit.trim()) return toast('請輸入單元編號', true); if (!f.tenderId || !f.subworkId || !f.templateId) return toast('請依序選擇標號、工項、表單', true);
-      const sc = await Q.newSelfCheck({ templateId: f.templateId, unit: f.unit.trim().toUpperCase(), location: f.location.trim() }); newForm.value = null; await load(); openSc(sc.id);
+      const f = newForm.value; if (!f.tenderId || !f.subworkId || !f.templateId) return toast('請依序選擇標號、工項、表單', true);
+      if (unitOpts(f.subworkId, 'self').length && !unitOpts(f.subworkId, 'self').includes(f.unit)) return toast('請選擇單元', true);
+      // 重複檢查：有單元＝分項工程＋單元＋表單；沒有單元＝分項工程＋表單
+      const tpl = tplOf(f.templateId), unit = f.unit || '', sw = d.subworks.find(s => s.id === f.subworkId) || {}, w = where(unit, sw.name);
+      const same = d.selfChecks.filter(s => s.subworkId === f.subworkId && s.templateCode === tpl.code && (s.unit || '') === unit);
+      const draft = same.find(s => s.status !== 'signed');
+      if (draft) { newForm.value = null; await openSc(draft.id); return toast(`${w} 已有填寫中的表${tpl.code}（${draft.id}），已直接開啟`); }
+      if (same.length && !f.forceDup) { f.dupWarn = `${w} 已有 ${same.length} 張已簽認的表${tpl.code}（${same.map(s => s.id).join('、')}）。若為重新檢查，請按「仍要建立」。`; return; }
+      const sc = await Q.newSelfCheck({ templateId: f.templateId, unit, location: f.location.trim() }); newForm.value = null; await load(); openSc(sc.id);
     }
+    // 掃描單元 QR：該單元有多張表時列出讓使用者選，不再只開第一張
     function scanQr() {
-      const code = (qrForm.value.code || '').trim().toUpperCase(); if (!code) return toast('請輸入單元編號', true); qrForm.value = null;
-      const sc = d.selfChecks.find(s => s.unit === code && s.status === 'draft');
-      if (sc) { openSc(sc.id); toast('已掃描單元 ' + code); } else { openNew(code); }
+      const raw = (qrForm.value.code || '').trim(); if (!raw) return toast('請輸入單元編號', true);
+      const code = (d.subworks.flatMap(s => s.unitList || []).find(u => u.toUpperCase() === raw.toUpperCase())) || raw.toUpperCase();
+      const list = d.selfChecks.filter(s => s.unit && s.unit.toUpperCase() === code.toUpperCase() && inTender(s)).sort((a, b) => (a.status === 'signed') - (b.status === 'signed') || b.updatedAt - a.updatedAt);
+      if (!list.length) { qrForm.value = null; openNew(code); return; }
+      if (list.length === 1) { qrForm.value = null; openSc(list[0].id); toast('已掃描單元 ' + code); return; }
+      qrForm.value = { code, matches: list };
     }
+    function pickQr(sc) { qrForm.value = null; openSc(sc.id); }
 
     /* ---------- 自主檢查表單 ---------- */
     const cur = ref(null), stageTab = ref('pre'), itemNo = ref(1), saveMsg = ref(''), docShow = ref(null), linkShow = ref(null), applyForm = ref(null);
@@ -143,10 +217,10 @@ createApp({
     async function openSc(id) {
       const sc = await Q.get('selfChecks', id);
       if (sc.fillMode === 'pdf') return openPdf('self', sc);
-      cur.value = reactive(Q.clone(sc)); stageTab.value = 'pre'; saveMsg.value = '';
+      cur.value = reactive(Q.clone(sc)); stageTab.value = Q.stagesOf(tplOf(sc.templateId))[0].key; saveMsg.value = '';
       const t0 = tplOf(sc.templateId); if (t0) t0.items.forEach(i => { if (!cur.value.answers[i.no]) cur.value.answers[i.no] = { judge: null, values: {}, photos: [], note: '' }; });
       const t = tplOf(sc.templateId); if (t) { const first = t.items.find(i => !(sc.answers[i.no] || {}).judge) || t.items[0]; itemNo.value = first.no; stageTab.value = first.stage; }
-      view.value = 'form'; window.scrollTo(0, 0);
+      syncLinked(); view.value = 'form'; window.scrollTo(0, 0);
     }
     function gotoItem(it) { itemNo.value = it.no; stageTab.value = it.stage; }
     function setStage(st) { stageTab.value = st; const l = Q.stageItems(curTpl.value, st); const f = l.find(i => !ans(i.no).judge) || l[0]; if (f) itemNo.value = f.no; }
@@ -161,15 +235,45 @@ createApp({
         if (it.type === 'linked' && !cur.value.linked[it.linked]) return toast(`請先完成並確認表${it.linked}，才能判定 ○`, true);
         if (it.photo && !a.photos.length) return toast('此項必須拍照後才能判定 ○', true);
       }
-      a.judge = j; queueSave();
-      if (j === 'ng') toast('已判定缺失；送出後系統將自動建立缺失追蹤');
+      const prev = a.judge; a.judge = j; queueSave();
+      if (it.hold && j === 'ng' && !a.defectId) {
+        // 停留點判缺失：立即建立缺失追蹤；改善後重新判定 ○ 再申請會驗，會驗合格時缺失自動結案
+        const c = cur.value;
+        Q.createDefect({ tenderCode: c.tenderCode, title: it.name, location: `${c.tenderCode}｜${c.subworkName} ${c.unit}`, source: '自主檢查（停留點）', refId: c.id, itemNo: it.no, subworkId: c.subworkId, scId: c.id, scItemNo: it.no }).then(df => { a.defectId = df.id; queueSave(); load(); });
+        toast('停留點判定缺失，已建立缺失追蹤；改善後請重新判定 ○ 並申請會驗');
+      } else if (it.hold && j === 'ok' && prev === 'ng' && a.defectId) {
+        a.fixedAt = Date.now(); Q.setDefectStatus(a.defectId, 'review', '廠商改善後重新判定 ○，待停留點會驗複查').then(load);
+        toast('已改善並重新判定 ○，請申請會驗；會驗合格後缺失自動結案');
+      } else if (j === 'ng') toast('已判定缺失；送出後系統將自動建立缺失追蹤');
       if (wide.value && j && curTpl.value) { /* 判定後不自動跳項，讓使用者可申請會驗 */ }
     }
-    function addPhoto(it) { if (!itemEditable(it)) return toast('此項目目前不可編輯', true); pickPhoto(`${cur.value.tenderCode}・單元 ${cur.value.unit}・${it.name}`, url => { ensure(it.no).photos.push(url); queueSave(); }); }
-    function addDemoPhoto(it) { if (!itemEditable(it)) return toast('此項目目前不可編輯', true); demoPhoto(`${cur.value.tenderCode}・單元 ${cur.value.unit}・${it.name}`, url => { ensure(it.no).photos.push(url); queueSave(); }); }
+    function addPhoto(it) { if (!itemEditable(it)) return toast('此項目目前不可編輯', true); pickPhoto(`${cur.value.tenderCode}・${where(cur.value.unit, cur.value.subworkName)}・${it.name}`, url => { ensure(it.no).photos.push(url); queueSave(); }); }
+    function addDemoPhoto(it) { if (!itemEditable(it)) return toast('此項目目前不可編輯', true); demoPhoto(`${cur.value.tenderCode}・${where(cur.value.unit, cur.value.subworkName)}・${it.name}`, url => { ensure(it.no).photos.push(url); queueSave(); }); }
     function delPhoto(it, i) { if (!itemEditable(it)) return; ensure(it.no).photos.splice(i, 1); const a = ensure(it.no); if (it.photo && !a.photos.length && a.judge === 'ok') a.judge = null; queueSave(); }
     function useSuggest(it) { const s = sugg(it); if (s) setJudge(it, s); }
-    function markLinked(code) { cur.value.linked[code] = true; linkShow.value = null; queueSave(); toast(`表${code} 已完成`); }
+    /* 關聯子表單：連到同一單元的真實紀錄，簽認／結案後才算完成 */
+    const returnTo = ref(null);
+    const linkedRec = code => !cur.value ? null : d.selfChecks.filter(s => s.tenderId === cur.value.tenderId && (s.unit || '') === (cur.value.unit || '') && (cur.value.unit || s.subworkId === cur.value.subworkId) && s.templateCode === code && s.id !== cur.value.id).sort((a, b) => (b.status === 'signed') - (a.status === 'signed') || b.updatedAt - a.updatedAt)[0] || null;
+    const linkedDone = code => { const r = linkedRec(code); return !!(r && r.status === 'signed'); };
+    const linkedTpl = code => { const l = d.templates.filter(t => t.kind === 'self' && t.status === 'published' && t.code === code); return l.find(t => curTpl.value && t.subworkId === curTpl.value.subworkId) || l[0] || null; };
+    const linkName = code => { const t = linkedTpl(code); return t ? t.name : (Q.LINKED[code] || ''); };
+    const preLinked = computed(() => curTpl.value ? [...new Set(curTpl.value.items.filter(i => i.type === 'linked' && i.linked && i.stage === firstStage.value).map(i => i.linked))] : []);
+    const linkStatus = code => { const r = linkedRec(code); return !r ? '尚未建立' : r.status === 'signed' ? (r.fillMode === 'pdf' ? '已結案' : '已簽認') : (r.fillMode === 'pdf' ? r.wfStatus : '填寫中'); };
+    function syncLinked() {
+      if (!cur.value || cur.value.status === 'signed' || !curTpl.value) return; let ch = false; cur.value.linkedRefs = cur.value.linkedRefs || {};
+      curTpl.value.items.filter(i => i.type === 'linked' && i.linked).forEach(i => {
+        const r = linkedRec(i.linked), done = !!(r && r.status === 'signed');
+        if (!!cur.value.linked[i.linked] !== done) { cur.value.linked[i.linked] = done; ch = true; }
+        if (r && cur.value.linkedRefs[i.linked] !== r.id) { cur.value.linkedRefs[i.linked] = r.id; ch = true; }
+      });
+      if (ch) queueSave();
+    }
+    async function openLinked(code) { const r = linkedRec(code); if (!r) return; returnTo.value = cur.value.id; linkShow.value = null; await flush(); openSc(r.id); }
+    async function createLinked(code) {
+      const t = linkedTpl(code); if (!t) return toast(`後台尚未設定表${code} 範本`, true);
+      const c = cur.value; returnTo.value = c.id; linkShow.value = null; await flush();
+      const sc = await Q.newSelfCheck({ templateId: t.id, unit: c.unit, location: c.location }); await load(); openSc(sc.id); toast(`已建立表${code}（${where(c.unit, c.subworkName)}），完成後回主表即自動帶入`);
+    }
     function confirmQr() { cur.value.qrConfirmed = true; queueSave(); toast(`已掃描確認單元 ${cur.value.unit} 位置`); }
 
     /* 申請停留點會驗 */
@@ -179,27 +283,37 @@ createApp({
     const applyHours = computed(() => applyForm.value ? Math.max(0, Math.round((Q.fromLocalInput(applyForm.value.dt) - now.value) / Q.H)) : 0);
     async function submitApply() {
       const f = applyForm.value; const ts = Q.fromLocalInput(f.dt); if (!ts) return toast('請選擇預定會驗時間', true);
-      try { await flush(); const r = await Q.applyHold(cur.value.id, f.itemNo, { scheduledAt: ts, reason: f.reason, location: f.location }); const sc = await Q.get('selfChecks', cur.value.id); cur.value.hold = sc.hold; applyForm.value = null; await load(); toast(`已送出會驗申請 ${r.id}，Email 已通知監造`); } catch (e) { toast(e.message, true); }
+      try { await flush(); const r = await Q.applyHold(cur.value.id, f.itemNo, { scheduledAt: ts, reason: f.reason, location: f.location, applicant: `${me.value.org} ${me.value.name}`.trim() }); const sc = await Q.get('selfChecks', cur.value.id); cur.value.hold = sc.hold; applyForm.value = null; await load(); toast(`已送出會驗申請 ${r.id}，Email 已通知監造`); } catch (e) { toast(e.message, true); }
     }
-    const holdText = it => Q.HOLD_TEXT[hstate(it)];
+    const wasRejected = it => { const r = hstate(it) === 'none' && hreq(it); return r && r.status === 'rejected' ? r : null; };
+    const holdText = it => wasRejected(it) ? '已退回' : Q.HOLD_TEXT[hstate(it)];
 
     /* 送出前總覽 */
     const summary = computed(() => { const a = cur.value ? Object.values(cur.value.answers) : []; return { ok: a.filter(x => x.judge === 'ok').length, ng: a.filter(x => x.judge === 'ng').length, na: a.filter(x => x.judge === 'na').length, photos: a.reduce((n, x) => n + (x.photos || []).length, 0) }; });
     const holdItems = computed(() => curTpl.value ? curTpl.value.items.filter(i => i.hold) : []);
     const attachCodes = computed(() => cur.value ? Object.keys(cur.value.linked).filter(k => cur.value.linked[k]).sort() : []);
-    const canSubmit = computed(() => judged.value === total.value && total.value > 0);
+    const holdPending = computed(() => cur.value ? holdItems.value.filter(i => ans(i.no).judge !== 'na' && hstate(i) !== 'passed') : []);
+    const canSubmit = computed(() => judged.value === total.value && total.value > 0 && !holdPending.value.length);
     async function goSign() {
-      if (!canSubmit.value) return toast(`尚有 ${total.value - judged.value} 項未判定`, true);
+      if (judged.value < total.value) return toast(`尚有 ${total.value - judged.value} 項未判定`, true);
+      if (holdPending.value.length) { stageTab.value = 'sum'; return toast(`尚有 ${holdPending.value.length} 個停留點未經監造放行：${holdPending.value.map(i => i.name).join('、')}`, true); }
       if (summary.value.ng && !cur.value.recovery) { stageTab.value = 'sum'; return toast('有缺失項目，請先選擇缺失複查結果', true); }
+      if (cur.value.recovery === 'done') { const miss = curTpl.value.items.filter(i => ans(i.no).judge === 'ng' && !(ans(i.no).photos || []).length); if (miss.length) { gotoItem(miss[0]); return toast(`勾選「已完成改善」須檢附改善照片：${miss.map(i => i.name).join('、')}`, true); } }
       await flush(); openSign('self', cur.value.id);
     }
     function finishStage() {
-      const order = ['pre', 'during', 'post', 'sum'], i = order.indexOf(stageTab.value); if (!stageDone(stageTab.value)) return toast('本階段尚有項目未判定', true);
+      const order = stageTabs.value.map(s => s[0]), i = order.indexOf(stageTab.value); if (!stageDone(stageTab.value)) return toast('本階段尚有項目未判定', true);
       if (order[i + 1] === 'sum') { stageTab.value = 'sum'; } else setStage(order[i + 1]);
     }
-    const stageTabs = [['pre', '施工前'], ['during', '施工中'], ['post', '施工後'], ['sum', '總覽']];
-    const stageNext = computed(() => ({ pre: '完成施工前檢查，進入施工中', during: '完成施工中，進入施工後', post: '送出前總覽 ›', sum: '' })[stageTab.value]);
-    async function leaveForm() { await flush(); cur.value = null; view.value = 'checks'; await load(); }
+    // 階段頁籤依表單範本設定（預設施工前／中／後，可自訂如挖掘前／中／後）
+    const tabsOf = t => Q.stagesOf(t).map(s => [s.key, s.name]).concat([['sum', '總覽']]);
+    const stageTabs = computed(() => tabsOf(curTpl.value));
+    const firstStage = computed(() => Q.stagesOf(curTpl.value)[0].key);
+    const stageNext = computed(() => {
+      const l = stageTabs.value, i = l.findIndex(s => s[0] === stageTab.value); if (i < 0 || l[i][0] === 'sum') return '';
+      return l[i + 1][0] === 'sum' ? '送出前總覽 ›' : `完成${l[i][1]}檢查，進入${l[i + 1][1]}`;
+    });
+    async function leaveForm() { await flush(); const back = returnTo.value; returnTo.value = null; cur.value = null; view.value = 'checks'; await load(); if (back) openSc(back); }
 
     /* ---------- 抽查紀錄（與自主檢查相同：分階段、逐項判定）---------- */
     const sp = ref(null), spStage = ref('pre'), spItemNo = ref(1), spSaveMsg = ref(''), spNew = ref(null);
@@ -215,11 +329,13 @@ createApp({
     const spTotal = computed(() => spTpl.value ? spTpl.value.items.length : 0);
     const spSummary = computed(() => { const a = sp.value ? Object.values(sp.value.answers) : []; return { ok: a.filter(x => x.judge === 'ok').length, ng: a.filter(x => x.judge === 'ng').length, na: a.filter(x => x.judge === 'na').length, none: a.filter(x => !x.judge).length, photos: a.reduce((n, x) => n + (x.photos || []).length, 0) }; });
     const spStageStat = st => { const l = spTpl.value ? Q.stageItems(spTpl.value, st) : []; return `${l.filter(i => spA(i.no).judge).length}/${l.length}`; };
-    const spSelfVals = it => { const a = spSc.value && spSc.value.answers[it.srcNo || it.no]; return (a && a.values) || {}; };
+    const spSelfVals = it => { const sc = spSc.value; if (!sc) return {}; const st = tplOf(sc.templateId), si = st && it.srcKey && st.items.find(x => x.key === it.srcKey); const a = sc.answers[si ? si.no : (it.srcNo || it.no)]; return (a && a.values) || {}; };
     const spSugg = it => Q.suggest(it, spA(it.no).values);
     const spArea = computed(() => { const l = Number(sp.value && sp.value.calc.length), dp = Number(sp.value && sp.value.calc.depth); return l && dp ? (l * dp).toFixed(2) : ''; });
     const spLocked = computed(() => spReq.value ? lockedAfter(spReq.value) : []);
-    const spList = computed(() => d.spotChecks.filter(x => tenderSel.value === 'all' || x.tenderId === tenderSel.value).sort((a, b) => b.createdAt - a.createdAt));
+    const spAll = computed(() => d.spotChecks.slice().sort((a, b) => b.createdAt - a.createdAt));
+    const spOpts = computed(() => { const o = filterOpts(spAll.value, fsp); fixF(fsp, o); return o; });
+    const spList = computed(() => spAll.value.filter(x => passF(fsp, x, 'all')));
     const spProgress = x => x.fillMode === 'pdf' ? { n: x.pdfFile ? 1 : 0, total: 1 } : ({ n: Object.values(x.answers || {}).filter(a => a.judge).length, total: Object.keys(x.answers || {}).length });
     let spTimer = null;
     function spSave() { if (!sp.value || sp.value.status === 'signed') return; spSaveMsg.value = '儲存中…'; clearTimeout(spTimer); spTimer = setTimeout(spFlush, 500); }
@@ -232,6 +348,8 @@ createApp({
       if (first) { spItemNo.value = first.no; spStage.value = first.stage; } view.value = 'spot'; window.scrollTo(0, 0);
     }
     function spGoto(it) { spItemNo.value = it.no; spStage.value = it.stage; }
+    const spStageTabs = computed(() => tabsOf(spTpl.value));
+    function spNextStage() { const l = spStageTabs.value, i = l.findIndex(s => s[0] === spStage.value); const n = l[Math.min(i + 1, l.length - 1)][0]; if (n === 'sum') spStage.value = 'sum'; else spSetStage(n); }
     function spSetStage(st) { spStage.value = st; const l = Q.stageItems(spTpl.value, st); const f = l.find(i => i.no === sp.value.focusNo) || l.find(i => !spA(i.no).judge) || l[0]; if (f) spItemNo.value = f.no; }
     function spJudge(it, j) {
       if (!spEditable.value) return toast(isSup.value ? '表單已簽認，不可修改' : '抽查紀錄由監造人員填寫（請於「我的」切換為監造）', true);
@@ -240,7 +358,7 @@ createApp({
       a.judge = j; spSave(); if (j === 'ng') toast('已判定缺失；簽認後系統將自動建立缺失追蹤');
     }
     function spUseSuggest(it) { const s = spSugg(it); if (s) spJudge(it, s); }
-    const spLabel = it => `${sp.value.tenderCode}・單元 ${sp.value.unit}・${it.name}`;
+    const spLabel = it => `${sp.value.tenderCode}・${where(sp.value.unit, sp.value.subworkName)}・${it.name}`;
     function spPhoto(it) { if (!spEditable.value) return toast('目前不可編輯', true); pickPhoto(spLabel(it), u => { sp.value.answers[it.no].photos.push(u); spSave(); }); }
     function spDemoPhoto(it) { if (!spEditable.value) return toast('目前不可編輯', true); demoPhoto(spLabel(it), u => { sp.value.answers[it.no].photos.push(u); spSave(); }); }
     function spDelPhoto(it, i) { if (!spEditable.value) return; const a = sp.value.answers[it.no]; a.photos.splice(i, 1); if (it.photo && !a.photos.length && a.judge === 'ok') a.judge = null; spSave(); }
@@ -253,8 +371,9 @@ createApp({
     async function leaveSpot() { await spFlush(); sp.value = null; view.value = 'spots'; await load(); }
     function openSpotNew() { spNew.value = newFormInit('spot'); }
     async function createSpot() {
-      const f = spNew.value; if (!f.tenderId || !f.subworkId || !f.templateId) return toast('請依序選擇標號、工項、表單', true); if (!f.unit.trim()) return toast('請輸入單元編號', true);
-      const rec = await Q.newSpotCheck({ templateId: f.templateId, unit: f.unit.trim().toUpperCase(), location: f.location.trim() }); spNew.value = null; await load(); openSpot(rec.id);
+      const f = spNew.value; if (!f.tenderId || !f.subworkId || !f.templateId) return toast('請依序選擇標號、工項、表單', true);
+      if (unitOpts(f.subworkId, 'spot').length && !unitOpts(f.subworkId, 'spot').includes(f.unit)) return toast('請選擇單元', true);
+      const rec = await Q.newSpotCheck({ templateId: f.templateId, unit: f.unit || '', location: f.location.trim() }); spNew.value = null; await load(); openSpot(rec.id);
     }
 
     /* ---------- 空白範本（PDF）工作流程：下載鎖定 → 上傳續填 → 現地手寫簽名 → 憑證加簽結案 ---------- */
@@ -293,7 +412,7 @@ createApp({
     }
     const pfCancel = () => pfRun(() => Q.wfCancel(pf.value.kind, pfRec.value.id, me.value.name), '已取消鎖定，釋放表單控制權');
     // 上傳並簽名（含現地手寫簽名）
-    async function openWfUp() { wfUp.value = { file: null, next: 'vendor', result: pfRec.value.pdfResult || null }; drawn.value = false; await nextTick(); initCanvas(); }
+    async function openWfUp() { wfUp.value = { file: null, next: 'vendor' }; drawn.value = false; await nextTick(); initCanvas(); }
     async function readPdfFile(e) {
       const file = e.target.files[0]; e.target.value = ''; if (!file) return null;
       if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') { toast('請選擇 PDF 檔案', true); return null; }
@@ -303,8 +422,8 @@ createApp({
     async function onWfUpFile(e) { const f = await readPdfFile(e); if (f) wfUp.value.file = f; }
     async function submitWfUp() {
       const u = wfUp.value; if (!u.file) return toast('請上傳填寫後的 PDF 成果檔', true);
-      if (!pfSelf.value && !u.result) return toast('請選擇抽查判定結果', true); if (!drawn.value) return toast('請於畫布完成手寫簽名', true);
-      const sig = canvasEl.value.toDataURL('image/png'); const args = { file: u.file, sig, next: u.next, result: u.result };
+      if (!drawn.value) return toast('請於畫布完成手寫簽名', true);
+      const sig = canvasEl.value.toDataURL('image/png'); const args = { file: u.file, sig, next: u.next };
       await pfRun(() => Q.wfUpload(pf.value.kind, pfRec.value.id, me.value.name, args), pfSelf.value ? '成果上傳與現地手寫簽名完成，待憑證加簽結案' : { relay: '已轉下一位局內人員續填', vendor: '已轉施工廠商簽名', supervisor: '已轉工務所主任加簽結案' }[u.next]); wfUp.value = null;
     }
     // 廠商簽名後上傳（抽查表）
@@ -323,14 +442,19 @@ createApp({
     function openWfUnf() { wfUnf.value = { reason: '' }; }
     async function submitWfUnf() { if (!wfUnf.value.reason.trim()) return toast('請填寫解除結案原因', true); await pfRun(() => Q.wfUnfreeze(pf.value.kind, pfRec.value.id, me.value.name, wfUnf.value.reason.trim()), '已解除結案'); wfUnf.value = null; }
     function dlLog(l) { Q.downloadPdf(l.file); }
-    function leavePdf() { const k = pf.value.kind; pf.value = null; view.value = k === 'self' ? 'checks' : 'spots'; load(); }
+    async function leavePdf() { const k = pf.value.kind, back = k === 'self' ? returnTo.value : null; returnTo.value = null; pf.value = null; view.value = k === 'self' ? 'checks' : 'spots'; await load(); if (back) openSc(back); }
 
     /* ---------- 簽認 ---------- */
     const signCtx = ref(null), signHash = ref(''), signAgree = ref(false), canvasEl = ref(null);
     let drawn = ref(false), drawing = false, lastPt = null;
-    const signers = computed(() => !signCtx.value ? [] : signCtx.value.kind === 'self'
-      ? [{ key: 'site', title: '現場工程師（檢查人員）', org: '示範品管・大陸工程股份有限公司', name: '示範品管' }, { key: 'rep', title: '工地授權代表或其授權主管', org: '示範工地主任・大陸工程股份有限公司', name: '示範工地主任' }]
-      : [{ key: 'insp', title: '監造工務所（抽查人員）', org: '示範工務所同仁・捷運局工務所', name: '示範工務所同仁' }, { key: 'att', title: '施工廠商隨同人員', org: '示範品管・大陸工程股份有限公司', name: '示範品管' }]);
+    // 簽認人依「帳號與權限」帶入：廠商人員對應該標案承包商
+    const signer = (key, title, u, roleName) => ({ key, title, name: u ? u.name : `（未設定${roleName}帳號）`, org: u ? `${u.name}・${u.org}` : '請至後台「帳號與權限」新增' });
+    const signers = computed(() => {
+      if (!signCtx.value) return []; const rec = signCtx.value.rec, tender = d.tenders.find(t => t.id === rec.tenderId) || {}, co = rec.contractor || tender.contractor;
+      if (signCtx.value.kind === 'self') return [signer('site', '現場工程師（檢查人員）', userOf('廠商品管人員', co), '廠商品管人員'), signer('rep', '工地授權代表或其授權主管', userOf('工地授權代表', co), '工地授權代表')];
+      const insp = isSup.value ? userOf(me.value.title) : userOf('捷運局工務所同仁');
+      return [signer('insp', '監造工務所（抽查人員）', insp, '捷運局工務所同仁'), signer('att', '施工廠商隨同人員', userOf('廠商品管人員', co), '廠商品管人員')];
+    });
     const signRec = computed(() => signCtx.value && (signCtx.value.kind === 'self' ? signCtx.value.rec : signCtx.value.rec));
     const signIdx = ref(0);
     const curSigner = computed(() => signers.value[signIdx.value]);
@@ -375,7 +499,12 @@ createApp({
     /* ---------- 缺失、參考文件、我的 ---------- */
     const defCls = x => x.due < now.value ? 'ng' : x.status === 'review' ? 'warn' : 'blue';
     const defText = x => x.status === 'review' ? '待複查' : x.due < now.value ? `逾期 ${Math.ceil((now.value - x.due) / Q.D)} 天` : `期限 ${Q.fmtD(x.due)}`;
-    async function defAct(x) { await Q.setDefectStatus(x.id, isSup.value ? 'closed' : 'review'); await load(); toast(isSup.value ? '複查合格，缺失已結案' : '已回報改善完成，待監造複查'); }
+    // 缺失：廠商回報改善（說明＋照片）／工務所複查（合格結案或退回）
+    const defForm = ref(null);
+    function defAct(x) { defForm.value = { x, note: '', photos: [], reason: '', rejecting: false }; }
+    function defPhoto(demo) { const f = defForm.value, label = `${f.x.tenderCode}・缺失 ${f.x.id}・改善後`; (demo ? demoPhoto : pickPhoto)(label, u => f.photos.push(u)); }
+    async function submitFix() { const f = defForm.value; try { await Q.reportFix(f.x.id, { note: f.note, photos: f.photos, by: me.value.name }); defForm.value = null; await load(); toast('已回報改善完成，待工務所複查'); } catch (e) { toast(e.message, true); } }
+    async function submitReview(pass) { const f = defForm.value; try { await Q.reviewDefect(f.x.id, pass, f.reason, me.value.name); defForm.value = null; await load(); toast(pass ? '複查合格，缺失已結案' : '已退回廠商重新改善'); } catch (e) { toast(e.message, true); } }
     async function resetDemo() { if (!confirm('將清除所有資料並還原示範資料，確定？')) return; await Q.seed(true); cur.value = null; sp.value = null; view.value = 'todo'; await load(); toast('已還原示範資料'); }
     async function clearSigs() { for (const k of ['site', 'rep', 'insp', 'att']) await Q.del('meta', 'sig-' + k); toast('已清除已存簽名'); }
     const navItems = computed(() => [['todo', '待辦', todoCount.value], ['checks', '自主檢查', 0], ['spots', '抽查紀錄', 0], ['holds', '停留點', 0], ['docs', '參考文件', 0], ['me', '我的', 0]]);
@@ -387,21 +516,21 @@ createApp({
     onMounted(async () => {
       await Q.ready; await load();
       const q = new URLSearchParams(location.search); if (q.get('role')) role.value = q.get('role');
-      Q.onChange(async () => { await load(); if (cur.value && cur.value.status !== 'signed') { const sc = await Q.get('selfChecks', cur.value.id); if (sc) cur.value.hold = sc.hold; } });
+      Q.onChange(async () => { await load(); if (cur.value && cur.value.status !== 'signed') { const sc = await Q.get('selfChecks', cur.value.id); if (sc) cur.value.hold = sc.hold; syncLinked(); } });
       setInterval(async () => { await Q.tickOverdue(); await load(); }, 30000);
       window.addEventListener('beforeunload', () => { if (saveTimer) flush(); });
     });
 
     return {
-      Q, d, loaded, now, view, todoTab, tenderSel, role, isSup, me, wide, toastMsg, toastNg, toast, tplOf, rel, hh, todayLabel, reqCls,
-      todoReqs, lockedCards, draftSpots, openDefects, todoCount, holdFilter, holdsList, selReqId, selReq, sched, selectReq, reqChips, reqPhotos, lockedAfter, doSchedule, doReject, doStart,
-      pf, pfPreview, pfUrl, pfTpl, pfRec, pfSelf, pfSt, wfCls, pfCanLock, pfIsLocker, pfCanClose, pfCanVendor, pfCanUnfreeze, pfHint, pfDownloadBlank, pfDownloadCur, pfLock, pfCancel, wfUp, wfCert, wfVen, wfUnf, openWfUp, onWfUpFile, submitWfUp, openWfVen, onWfVenFile, submitWfVen, openWfCert, submitWfCert, openWfUnf, submitWfUnf, dlLog, leavePdf, isDirector, scList, scProgress, newForm, qrForm, tenderOpts, swOpts, tplOpts, cascade, openNew, createSc, scanQr,
+      Q, d, loaded, now, view, todoTab, tenderSel, fc, fsp, scOpts, spOpts, setF, clearF, NO_UNIT, scAll, spAll, role, isSup, me, wide, toastMsg, toastNg, toast, tplOf, rel, hh, todayLabel, reqCls,
+      todoReqs, lockedCards, rejectedCards, defTodos, draftSpots, pdfTodos, openPdfTodo, openDefects, todoCount, holdFilter, holdsList, selReqId, selReq, sched, selectReq, reqChips, reqPhotos, lockedAfter, doSchedule, doReject, doStart, doCancel,
+      pf, pfPreview, pfUrl, pfTpl, pfRec, pfSelf, pfSt, wfCls, pfCanLock, pfIsLocker, pfCanClose, pfCanVendor, pfCanUnfreeze, pfHint, pfDownloadBlank, pfDownloadCur, pfLock, pfCancel, wfUp, wfCert, wfVen, wfUnf, openWfUp, onWfUpFile, submitWfUp, openWfVen, onWfVenFile, submitWfVen, openWfCert, submitWfCert, openWfUnf, submitWfUnf, dlLog, leavePdf, isDirector, scList, scProgress, newForm, qrForm, tenderOpts, swOpts, tplOpts, unitOpts, ut, cascade, openNew, createSc, scanQr, pickQr,
       cur, curTpl, stageTab, itemNo, saveMsg, docShow, linkShow, applyForm, readonly, stageList, curItem, shownItems, judged, total, stageStat, stageDone, ans, ensure, lockOf, hstate, hreq, itemEditable, sugg, itemIcon,
-      flush, queueSave, openSc, gotoItem, setStage, step, setJudge, addPhoto, addDemoPhoto, delPhoto, useSuggest, markLinked, confirmQr, canApply, openApply, applyShort, applyHours, submitApply, holdText,
-      summary, holdItems, attachCodes, canSubmit, goSign, finishStage, stageTabs, stageNext, leaveForm,
+      flush, queueSave, openSc, gotoItem, setStage, step, setJudge, addPhoto, addDemoPhoto, delPhoto, useSuggest, linkName, preLinked, linkedRec, linkedDone, linkedTpl, linkStatus, openLinked, createLinked, returnTo, confirmQr, canApply, openApply, applyShort, applyHours, submitApply, holdText, wasRejected,
+      summary, holdItems, holdPending, attachCodes, canSubmit, goSign, finishStage, stageTabs, firstStage, stageNext, spStageTabs, spNextStage, leaveForm,
       sp, spStage, spItemNo, spSaveMsg, spNew, spTpl, spReq, spSc, spEditable, spStageList, spCurItem, spShown, spA, spJudged, spTotal, spSummary, spStageStat, spSelfVals, spSugg, spArea, spLocked, spList, spProgress, spSave, spFlush, openSpot, spGoto, spSetStage, spJudge, spUseSuggest, spPhoto, spDemoPhoto, spDelPhoto, spGoSign, leaveSpot, openSpotNew, createSpot,
       signCtx, signHash, signAgree, canvasEl, drawn, signers, signIdx, curSigner, signSummary, sDown, sMove, sUp, clearSign, applySaved, saveSig, confirmSign, cancelSign,
-      defCls, defText, defAct, resetDemo, clearSigs, navItems, nav, navActive, printForm
+      defCls, defText, defAct, defForm, defPhoto, submitFix, submitReview, resetDemo, clearSigs, navItems, nav, navActive, printForm
     };
   }
 }).mount('#app');
