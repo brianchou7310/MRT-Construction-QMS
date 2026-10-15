@@ -115,7 +115,31 @@ createApp({
     async function doStart(r) { try { const req = r || selReq.value; const sp = await Q.startInspection(req.id, !r && sched.tplId ? sched.tplId : undefined); await load(); openSpot(sp.id); } catch (e) { toast(e.message, true); } }
 
     /* ---------- 自主檢查清單 / 新增 ---------- */
-    const scList = computed(() => d.selfChecks.filter(inTender).sort((a, b) => b.updatedAt - a.updatedAt));
+    /* ---------- 自主檢查／抽查紀錄清單的篩選：標號 → 工項 → 單元 → 表單（選項只列清單中實際有的資料） ---------- */
+    const NO_UNIT = '__none__';
+    const fc = reactive({ tender: '', sw: '', unit: '', tpl: '' }), fsp = reactive({ tender: '', sw: '', unit: '', tpl: '' });
+    const tplKey = x => (tplOf(x.templateId) || {}).code || x.templateCode || x.templateName;
+    const tplLabel = x => { const t = tplOf(x.templateId); return x.templateCode || (t && t.kind === 'self') ? `表${tplKey(x)} ${x.templateName}` : x.templateName; };
+    const passF = (f, x, upto) => { const lv = ['tender', 'sw', 'unit', 'tpl'], n = upto === 'all' ? 4 : lv.indexOf(upto);
+      return (n <= 0 || !f.tender || x.tenderId === f.tender) && (n <= 1 || !f.sw || x.subworkId === f.sw) && (n <= 2 || !f.unit || (f.unit === NO_UNIT ? !x.unit : x.unit === f.unit)) && (n <= 3 || !f.tpl || tplKey(x) === f.tpl); };
+    const uniq = (arr, key) => { const m = new Map(); arr.forEach(x => { const k = key(x); if (k[0] !== undefined && k[0] !== '' && !m.has(k[0])) m.set(k[0], k[1]); }); return [...m].map(([v, l]) => ({ v, l })); };
+    function filterOpts(list, f) {
+      const swName = id => { const s = d.subworks.find(x => x.id === id); return s ? `${s.no}、${s.name}` : id; };
+      const tenders = d.tenders.map(t => ({ v: t.id, l: t.name.includes(t.code) ? t.name : `${t.code} ${t.name}` })).sort((a, b) => a.l.localeCompare(b.l));   // 標號列出全部標案，與上方標號選單一致
+      const sws = uniq(list.filter(x => passF(f, x, 'sw')), x => [x.subworkId, swName(x.subworkId)]).sort((a, b) => ((d.subworks.find(s => s.id === a.v) || {}).order ?? 99) - ((d.subworks.find(s => s.id === b.v) || {}).order ?? 99));
+      const l3 = list.filter(x => passF(f, x, 'unit')), units = uniq(l3.filter(x => x.unit), x => [x.unit, x.unit]).sort((a, b) => a.v.localeCompare(b.v, 'zh-Hant', { numeric: true }));
+      if (units.length && l3.some(x => !x.unit)) units.push({ v: NO_UNIT, l: '（無單元）' });
+      const tpls = uniq(list.filter(x => passF(f, x, 'tpl')), x => [tplKey(x), tplLabel(x)]).sort((a, b) => a.v.localeCompare(b.v, 'zh-Hant', { numeric: true }));
+      return { tenders, sws, units, tpls };
+    }
+    // 上層改變時，清掉已經不存在的下層選擇
+    function fixF(f, o) { if (f.sw && !o.sws.some(x => x.v === f.sw)) f.sw = ''; if (f.unit && !o.units.some(x => x.v === f.unit)) f.unit = ''; if (f.tpl && !o.tpls.some(x => x.v === f.tpl)) f.tpl = ''; }
+    function setF(f, lv, v) { f[lv] = v; const order = ['tender', 'sw', 'unit', 'tpl']; order.slice(order.indexOf(lv) + 1).forEach(k => { f[k] = ''; }); if (lv === 'tender') tenderSel.value = v || 'all'; }
+    const clearF = f => { f.tender = ''; f.sw = ''; f.unit = ''; f.tpl = ''; tenderSel.value = 'all'; };
+    watch(tenderSel, v => { const t = v === 'all' ? '' : v; [fc, fsp].forEach(f => { if (f.tender !== t) setF(f, 'tender', t); }); }, { immediate: true });
+    const scAll = computed(() => d.selfChecks.slice().sort((a, b) => b.updatedAt - a.updatedAt));
+    const scOpts = computed(() => { const o = filterOpts(scAll.value, fc); fixF(fc, o); return o; });
+    const scList = computed(() => scAll.value.filter(x => passF(fc, x, 'all')));
     const scProgress = sc => { if (sc.fillMode === 'pdf') return { n: sc.pdfFile ? 1 : 0, total: 1 }; const t = tplOf(sc.templateId); return { n: Object.values(sc.answers).filter(a => a.judge).length, total: t ? t.items.length : 0 }; };
     const newForm = ref(null), qrForm = ref(null);
     // 新增表單的三層選擇：標號 → 工項(分項工程) → 表單
@@ -309,7 +333,9 @@ createApp({
     const spSugg = it => Q.suggest(it, spA(it.no).values);
     const spArea = computed(() => { const l = Number(sp.value && sp.value.calc.length), dp = Number(sp.value && sp.value.calc.depth); return l && dp ? (l * dp).toFixed(2) : ''; });
     const spLocked = computed(() => spReq.value ? lockedAfter(spReq.value) : []);
-    const spList = computed(() => d.spotChecks.filter(x => tenderSel.value === 'all' || x.tenderId === tenderSel.value).sort((a, b) => b.createdAt - a.createdAt));
+    const spAll = computed(() => d.spotChecks.slice().sort((a, b) => b.createdAt - a.createdAt));
+    const spOpts = computed(() => { const o = filterOpts(spAll.value, fsp); fixF(fsp, o); return o; });
+    const spList = computed(() => spAll.value.filter(x => passF(fsp, x, 'all')));
     const spProgress = x => x.fillMode === 'pdf' ? { n: x.pdfFile ? 1 : 0, total: 1 } : ({ n: Object.values(x.answers || {}).filter(a => a.judge).length, total: Object.keys(x.answers || {}).length });
     let spTimer = null;
     function spSave() { if (!sp.value || sp.value.status === 'signed') return; spSaveMsg.value = '儲存中…'; clearTimeout(spTimer); spTimer = setTimeout(spFlush, 500); }
@@ -496,7 +522,7 @@ createApp({
     });
 
     return {
-      Q, d, loaded, now, view, todoTab, tenderSel, role, isSup, me, wide, toastMsg, toastNg, toast, tplOf, rel, hh, todayLabel, reqCls,
+      Q, d, loaded, now, view, todoTab, tenderSel, fc, fsp, scOpts, spOpts, setF, clearF, NO_UNIT, scAll, spAll, role, isSup, me, wide, toastMsg, toastNg, toast, tplOf, rel, hh, todayLabel, reqCls,
       todoReqs, lockedCards, rejectedCards, defTodos, draftSpots, pdfTodos, openPdfTodo, openDefects, todoCount, holdFilter, holdsList, selReqId, selReq, sched, selectReq, reqChips, reqPhotos, lockedAfter, doSchedule, doReject, doStart, doCancel,
       pf, pfPreview, pfUrl, pfTpl, pfRec, pfSelf, pfSt, wfCls, pfCanLock, pfIsLocker, pfCanClose, pfCanVendor, pfCanUnfreeze, pfHint, pfDownloadBlank, pfDownloadCur, pfLock, pfCancel, wfUp, wfCert, wfVen, wfUnf, openWfUp, onWfUpFile, submitWfUp, openWfVen, onWfVenFile, submitWfVen, openWfCert, submitWfCert, openWfUnf, submitWfUnf, dlLog, leavePdf, isDirector, scList, scProgress, newForm, qrForm, tenderOpts, swOpts, tplOpts, unitOpts, ut, cascade, openNew, createSc, scanQr, pickQr,
       cur, curTpl, stageTab, itemNo, saveMsg, docShow, linkShow, applyForm, readonly, stageList, curItem, shownItems, judged, total, stageStat, stageDone, ans, ensure, lockOf, hstate, hreq, itemEditable, sugg, itemIcon,

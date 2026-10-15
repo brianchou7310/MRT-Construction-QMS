@@ -730,7 +730,124 @@ createApp({
       await Q.put('meta', Object.assign({ id: 'params' }, p)); toast('參數已儲存');
     }
     async function resetDemo() { if (!confirm('將清除所有資料並還原示範資料，確定？')) return; await Q.seed(true); await load(); toast('已還原示範資料'); }
-    const navItems = [['dashboard', '查驗總覽'], ['g', '查驗作業'], ['holds', '停留點會驗', 'badge'], ['selfchecks', '自主檢查紀錄'], ['spots', '抽查紀錄'], ['defects', '缺失追蹤', 'dbadge'], ['g', '基本資料'], ['projects', '標案與分項工程'], ['templates', '表單範本'], ['docs', '參考文件'], ['g', '系統'], ['users', '帳號與權限'], ['params', '參數設定']];
+    /* ---------- 查詢統計：批次下載（表單版面 PDF） ---------- */
+    const JS = { ok: '○', ng: '╳', na: '╱' };
+    const isImg = u => typeof u === 'string' && /^data:image\//.test(u);
+    // 依表單內容排出紙本版面（HTML），交給 FormPDF 轉成 A4 PDF
+    function formHtml(kind, r) {
+      const E = FormPDF.esc, t = tplOf(r.templateId) || { items: [] }, tender = d.tenders.find(x => x.id === r.tenderId) || {}, sw = d.subworks.find(x => x.id === r.subworkId) || {};
+      const self = kind === 'self', ans = r.answers || {}, sig = r.signatures || {};
+      const title = self ? `表${r.templateCode} ${r.templateName}` : r.templateName;
+      const kv = rows => `<table class="fp-kv"><colgroup><col style="width:15%"><col style="width:35%"><col style="width:15%"><col style="width:35%"></colgroup>${rows.map(row => `<tr data-brk>${row.map(([k, v]) => `<td class="k">${E(k)}</td><td>${v}</td>`).join('')}</tr>`).join('')}</table>`;
+      const stText = r.status === 'signed' ? '已簽認' : '填寫中（草稿）';
+      let h = `<h1 data-brk>${E(tender.name || '')}</h1><div class="sub" data-brk>${E(title)}　<span class="mut">${self ? '自主檢查表' : '抽查紀錄表'}・v${E(r.templateVer)}</span></div>`;
+      h += kv([
+        [['工程名稱', E(tender.name)], ['標號', E(tender.code)]],
+        [['施工廠商', E(r.contractor || tender.contractor)], ['分項工程', E(sw.no ? sw.no + '、' + sw.name : r.subworkName)]],
+        [['單元', E(r.unit || '—')], [self ? '檢查位置' : '抽查位置', E(r.location || '—')]],
+        [[self ? '檢查日期' : '抽查日期', E(Q.fmtD(r.date || r.createdAt))], ['紀錄編號', E(r.id)]],
+        self ? [['施工圖核准文號', E(r.drawingNo || '—')], ['狀態', stText]]
+             : [['抽查時機', r.kind === 'hold' ? `<span class="star">檢驗停留點</span>：★${E(r.title)}${r.requestId ? `<div class="mut">會驗申請 ${E(r.requestId)}</div>` : ''}` : '隨機抽查'], ['狀態', stText]]
+      ]);
+      if (r.fillMode === 'pdf') {
+        h += `<div class="blk" data-brk>此表單以「空白範本 PDF」填寫，辦理狀態：${E(r.wfStatus || '—')}。${r.pdfFile ? '' : '尚未上傳簽名後的 PDF。'}</div>`;
+        return h;
+      }
+      // 抽查：帶入同單元廠商自檢的實測值做對照
+      const sc = !self && r.scId ? d.selfChecks.find(x => x.id === r.scId) : null, st = sc && tplOf(sc.templateId);
+      const selfAns = it => { if (!sc) return null; const si = st && it.srcKey && st.items.find(x => x.key === it.srcKey); return sc.answers[si ? si.no : (it.srcNo || it.no)] || null; };
+      const valTxt = (it, a) => (it.fields || []).filter(f => a && a.values && a.values[f.key] !== undefined && a.values[f.key] !== '').map(f => `${E(f.label)} <b>${E(a.values[f.key])}</b>${E(f.unit || '')}${Q.rangeText(f) ? ` <span class="mut">（${E(Q.rangeText(f))}）</span>` : ''}`).join('<br>');
+      const cols = self ? [6, 22, 25, 37, 10] : [6, 20, 22, 18, 24, 10];
+      h += `<div class="ttl" data-brk>${self ? '檢查項目' : '抽查項目'}</div><table><colgroup>${cols.map(w => `<col style="width:${w}%">`).join('')}</colgroup>`;
+      h += `<tr data-brk><th>序</th><th>${self ? '檢查項目' : '抽查項目'}</th><th>檢查標準</th>${self ? '' : '<th>廠商自檢</th>'}<th>${self ? '實際檢查情形' : '抽查情形'}</th><th>判定</th></tr>`;
+      const cnt = { ok: 0, ng: 0, na: 0 }, photos = [];
+      Q.stagesOf(t).forEach(stg => {
+        const items = t.items.filter(i => i.stage === stg.key); if (!items.length) return;
+        h += `<tr class="stage" data-brk><td colspan="${cols.length}">${E(stg.name)}</td></tr>`;
+        items.forEach(it => {
+          const a = ans[it.no] || {}; if (a.judge) cnt[a.judge]++;
+          (a.photos || []).filter(isImg).forEach((u, k) => photos.push({ u, cap: `第 ${it.no} 項 ${it.name}${(a.photos || []).length > 1 ? `（${k + 1}）` : ''}` }));
+          let info = valTxt(it, a);
+          if (self && it.type === 'linked' && it.linked) info += `${info ? '<br>' : ''}表${E(it.linked)}：${(r.linked || {})[it.linked] ? '已完成' : '未完成'}`;
+          if (a.note) info += `${info ? '<br>' : ''}<span class="mut">備註：</span>${E(a.note)}`;
+          if ((a.photos || []).length) info += `${info ? '<br>' : ''}<span class="mut">照片 ${(a.photos || []).length} 張</span>`;
+          let name = `${it.hold ? '<span class="star">★</span>' : ''}${E(it.name)}`;
+          if (self && it.hold) { const hs = ((r.hold || {})[it.no] || {}).state; if (hs) name += `<div class="mut">停留點：${E(Q.HOLD_TEXT[hs] || hs)}</div>`; }
+          if (!self && r.focusNo === it.no) name += '<div class="mut star">本次會驗項目</div>';
+          const sa = !self ? selfAns(it) : null;
+          const selfCell = !self ? `<td>${sa ? (valTxt(it, sa) || '') + (sa.judge ? `${valTxt(it, sa) ? '<br>' : ''}判定 ${JS[sa.judge]}` : '') : '<span class="mut">—</span>'}</td>` : '';
+          h += `<tr data-brk><td class="c">${it.no}</td><td>${name}</td><td>${E(it.std || '').replace(/\n/g, '<br>')}</td>${selfCell}<td>${info}</td><td class="j${a.judge === 'ng' ? ' ng' : ''}">${a.judge ? JS[a.judge] : ''}</td></tr>`;
+        });
+      });
+      h += `<tr data-brk><td colspan="${cols.length}">判定統計：○ 合格 ${cnt.ok}　╳ 缺失 <span class="ng">${cnt.ng}</span>　╱ 無此項 ${cnt.na}　（已判定 ${cnt.ok + cnt.ng + cnt.na} / ${t.items.length} 項）</td></tr></table>`;
+      if (self && cnt.ng) h += `<div class="blk" data-brk><b>缺失複查：</b>${r.recovery === 'done' ? '☑ 已完成改善（檢附改善前、中、後照片）' : r.recovery === 'open' ? '☑ 未改善完成，另填「缺失改善追蹤表」' : '（未選擇）'}</div>`;
+      if (!self && r.calc && (r.calc.thickness || r.calc.length || r.calc.depth)) {
+        const area = Number(r.calc.length) && Number(r.calc.depth) ? (Number(r.calc.length) * Number(r.calc.depth)).toFixed(2) : '—';
+        h += `<div class="ttl" data-brk>單元計價資料</div>` + kv([[['單元厚度', `${E(r.calc.thickness || '—')} m`], ['單元長度', `${E(r.calc.length || '—')} m`]], [['計價深度', `${E(r.calc.depth || '—')} m`], ['計價面積', `${area} m²`]]]);
+      }
+      // 簽認
+      const who = self ? [['site', '現場工程師（檢查人員）'], ['rep', '工地授權代表或其授權主管']] : [['insp', '監造工務所（抽查人員）'], ['att', '施工廠商隨同人員']];
+      h += `<div class="ttl" data-brk>簽認</div><table data-brk><tr>${who.map(([, l]) => `<th>${l}</th>`).join('')}</tr><tr>${who.map(([k]) => { const g = sig[k] || {}; return `<td class="sig">${isImg(g.img) ? `<img src="${g.img}">` : `<div class="mut" style="padding-top:20px">${g.name ? '（已簽認）' : '（未簽名）'}</div>`}</td>`; }).join('')}</tr><tr>${who.map(([k]) => { const g = sig[k] || {}; return `<td class="c">${E(g.name || '')}<div class="mut">${g.at ? E(Q.fmtFull(g.at)) : ''}</div></td>`; }).join('')}</tr></table>`;
+      if (photos.length) {
+        h += `<div class="ttl" data-brk>照片紀錄（${photos.length} 張）</div>`;
+        for (let i = 0; i < photos.length; i += 4) h += `<div data-brk>${photos.slice(i, i + 4).map(p => `<div class="ph"><img src="${p.u}"><div style="width:150px">${E(p.cap)}</div></div>`).join('')}</div>`;
+      }
+      h += `<div class="blk" data-brk><ol class="note"><li>★ 為檢驗停留點。</li><li>檢查結果合格者註明「○」，不合格者註明「╳」，如無需檢查之項目則打「╱」。</li>${r.hash ? `<li>內容雜湊：${E(r.hash)}</li>` : ''}<li>本文件由捷運施工查驗系統於 ${E(Q.fmtFull(Date.now()))} 產生。</li></ol></div>`;
+      return h;
+    }
+    const recCode = r => (tplOf(r.templateId) || {}).code || r.templateCode || '';
+    const recFile = (kind, r) => FormPDF.safeName(`${kind === 'self' ? '自主檢查' : '抽查'}_${r.tenderCode || ''}_${recCode(r)}${r.unit ? '_' + r.unit : ''}_${r.id}.pdf`);
+    // 單筆 PDF：空白範本 PDF 填寫且已上傳 → 直接用簽名後的 PDF；其餘依表單版面產生
+    async function recPdf(kind, r) {
+      if (r.fillMode === 'pdf' && r.pdfFile && r.pdfFile.data) return new Blob([FormPDF.dataUrlToBytes(r.pdfFile.data)], { type: 'application/pdf' });
+      return (await FormPDF.render(formHtml(kind, r))).blob;
+    }
+    const ex = reactive({ tender: '', sw: '', unit: '', kind: '', tpl: '', status: '', busy: '' });
+    const EX_LV = ['tender', 'sw', 'unit', 'kind', 'tpl', 'status'];
+    const exRows = computed(() => d.selfChecks.map(r => ({ kind: 'self', r })).concat(d.spotChecks.map(r => ({ kind: 'spot', r })))
+      .map(x => Object.assign(x, { key: x.kind + ':' + recCode(x.r), date: x.r.date || x.r.createdAt || 0 })).sort((a, b) => b.date - a.date));
+    const exPass = (x, upto) => { const n = upto === 'all' ? 99 : EX_LV.indexOf(upto), r = x.r;
+      return (n <= 0 || !ex.tender || r.tenderId === ex.tender) && (n <= 1 || !ex.sw || r.subworkId === ex.sw) && (n <= 2 || !ex.unit || (ex.unit === '__none__' ? !r.unit : r.unit === ex.unit))
+        && (n <= 3 || !ex.kind || x.kind === ex.kind) && (n <= 4 || !ex.tpl || x.key === ex.tpl) && (n <= 5 || !ex.status || (ex.status === 'signed' ? r.status === 'signed' : r.status !== 'signed')); };
+    const exOpts = computed(() => {
+      const L = exRows.value, uq = (arr, f) => { const m = new Map(); arr.forEach(x => { const [k, l] = f(x); if (k && !m.has(k)) m.set(k, l); }); return [...m].map(([v, l]) => ({ v, l })); };
+      const swOrder = id => (d.subworks.find(s => s.id === id) || {}).order ?? 99;
+      const sws = uq(L.filter(x => exPass(x, 'sw')), x => { const s = d.subworks.find(y => y.id === x.r.subworkId); return [x.r.subworkId, s ? `${s.no}、${s.name}` : x.r.subworkName]; }).sort((a, b) => swOrder(a.v) - swOrder(b.v));
+      const L3 = L.filter(x => exPass(x, 'unit')), units = uq(L3.filter(x => x.r.unit), x => [x.r.unit, x.r.unit]).sort((a, b) => a.v.localeCompare(b.v, 'zh-Hant', { numeric: true }));
+      if (units.length && L3.some(x => !x.r.unit)) units.push({ v: '__none__', l: '（無單元）' });
+      const tpls = uq(L.filter(x => exPass(x, 'tpl')), x => [x.key, x.kind === 'self' ? `表${recCode(x.r)} ${x.r.templateName}` : `${x.r.templateName}（${recCode(x.r)}）`]).sort((a, b) => a.v.localeCompare(b.v, 'zh-Hant', { numeric: true }));
+      const o = { sws, units, tpls };
+      if (ex.sw && !sws.some(x => x.v === ex.sw)) ex.sw = ''; if (ex.unit && !units.some(x => x.v === ex.unit)) ex.unit = ''; if (ex.tpl && !tpls.some(x => x.v === ex.tpl)) ex.tpl = '';
+      return o;
+    });
+    const exList = computed(() => exRows.value.filter(x => exPass(x, 'all')));
+    function exSet(lv, v) { ex[lv] = v; EX_LV.slice(EX_LV.indexOf(lv) + 1).filter(k => k !== 'status').forEach(k => { ex[k] = ''; }); }
+    function exClear() { EX_LV.forEach(k => { ex[k] = ''; }); }
+    async function downloadRec(kind, r) {
+      try { toast('產生 PDF 中…'); FormPDF.save(await recPdf(kind, r), recFile(kind, r)); toast('已下載 ' + recFile(kind, r)); }
+      catch (e) { console.error(e); toast('PDF 產生失敗：' + e.message, true); }
+    }
+    async function downloadBatch() {
+      const list = exList.value; if (!list.length) return toast('沒有符合條件的表單', true); if (ex.busy) return;
+      const zip = new JSZip(), stamp = new Date(), pad = n => String(n).padStart(2, '0');
+      const idx = [['類別', '紀錄編號', '標號', '分項工程', '單元', '表號', '表單名稱', '版本', '日期', '填寫方式', '狀態', '檔案']];
+      try {
+        for (let i = 0; i < list.length; i++) {
+          const { kind, r } = list[i]; ex.busy = `${i + 1} / ${list.length}`;
+          const folder = kind === 'self' ? '自主檢查表/' : '抽查紀錄表/', name = recFile(kind, r);
+          zip.file(folder + name, await recPdf(kind, r));
+          idx.push([kind === 'self' ? '自主檢查表' : '抽查紀錄表', r.id, r.tenderCode || '', r.subworkName || '', r.unit || '', recCode(r), r.templateName, 'v' + r.templateVer, Q.fmtD(r.date || r.createdAt), r.fillMode === 'pdf' ? '空白範本 PDF' : '線上表單', r.status === 'signed' ? '已簽認' : '填寫中', folder + name]);
+        }
+        ex.busy = '壓縮中…';
+        const ws = XLSX.utils.aoa_to_sheet(idx); ws['!cols'] = [12, 22, 8, 22, 8, 8, 30, 6, 11, 12, 8, 50].map(w => ({ wch: w }));
+        const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '下載清單'); zip.file('下載清單.xlsx', XLSX.write(wb, { type: 'array', bookType: 'xlsx' }));
+        const blob = await zip.generateAsync({ type: 'blob' });
+        FormPDF.save(blob, `表單批次下載_${stamp.getFullYear()}${pad(stamp.getMonth() + 1)}${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}.zip`);
+        toast(`已下載 ${list.length} 筆表單（ZIP）`);
+      } catch (e) { console.error(e); toast('批次下載失敗：' + e.message, true); }
+      finally { ex.busy = ''; }
+    }
+    const navItems = [['dashboard', '查驗總覽'], ['g', '查驗作業'], ['holds', '停留點會驗', 'badge'], ['defects', '缺失追蹤', 'dbadge'], ['g', '查詢統計'], ['selfchecks', '自主檢查紀錄'], ['spots', '抽查紀錄'], ['export', '批次下載'], ['g', '基本資料'], ['projects', '標案與分項工程'], ['templates', '表單範本'], ['docs', '參考文件'], ['g', '系統'], ['users', '帳號與權限'], ['params', '參數設定']];
     // 側邊選單：分組可收合（狀態記在 localStorage）
     const navTree = (() => { const t = []; navItems.forEach(n => { if (n[0] === 'g') t.push({ group: n[1], items: [] }); else if (t.length) t[t.length - 1].items.push(n); else t.push({ link: n }); }); return t; })();
     const collapsed = reactive((() => { try { return JSON.parse(localStorage.getItem('qms-nav-collapsed') || '{}'); } catch (e) { return {}; } })());
@@ -751,7 +868,7 @@ createApp({
       showSC, showSP, itemsOf, judgeText, valuesText, spotCount, defCls, defText, defTab, defList, defAct, defShow, defReview,
       selTenderId, selTender, treeRoot, treeOpen, swPick, treeAll, pickTender, pickSw, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, tenderForm, swForm, saveTender, saveSw, moveSw, delSw, newTender, swImp, openSwImp, downloadSwSample, onSwFile, swImpOk, swImpBad, doSwImp,
       tplSw, tplUnit, tplUnits, unitForm, unitTplN, openUnitForm, addUnit, delUnit, swGroups, selTplId, tplTab, edit, previewOn, fieldIdx, tplList, tplHistory, pickTpl, editUsed, editStages, isPdf, newTplForm, onNewPdf, onEditPdf, createTpl, pdfUrl, downloadFile, wfCls, readPdf, TYPES, holdN, addItem, delItem, moveItem, addField, onType, saveEdit, delTpl, syncFromSelf, bulk, openBulk, onBulkFile, bulkOk, bulkView, doBulk, downloadBulkSample, exportSubwork, stageForm, stageItemN, openStageForm, stageAdd, stageMove, stageDel, stagePreset, applyStages, STAGE_PRESETS, newTpl, exportXlsx, dragId, dragOver, onDragStart, onDragEnd, onDrop, itemImp, openItemImp, onItemFile, itemImpForm, itemImpView, itemImpErrs, doItemImp,
-      linkOpts, adminUser,
+      linkOpts, adminUser, ex, exOpts, exList, exRows, exSet, exClear, downloadRec, downloadBatch, recCode,
       docForm, userForm, saveDoc, newDoc, editDoc, onDocFile, saveUser, delRow, saveParams, resetDemo, navItems, navTree, collapsed, toggleGroup, titles, todayStr
     };
   }

@@ -182,6 +182,28 @@
       <td><span class="chip" :class="s.status==='signed'?'ok':'warn'">{{ s.status==='signed'?'已簽認':'填寫中' }}</span></td></tr>
   </tbody></table></div>
 </template>
+<template v-if="page==='export'">
+  <div class="page-head"><div><h1>批次下載</h1><div class="muted">依查詢條件下載自主檢查表、抽查紀錄表的填寫內容（表單版面 PDF）。批次下載會打包成 ZIP，並附「下載清單.xlsx」；以空白範本 PDF 填寫的紀錄附簽名後的 PDF。</div></div></div>
+  <div class="card mb"><div class="row wrap" style="gap:8px">
+    <select :value="ex.tender" @change="exSet('tender',$event.target.value)" style="width:auto"><option value="">全部標號</option><option v-for="t in d.tenders" :key="t.id" :value="t.id">{{ t.name }}</option></select>
+    <select :value="ex.sw" @change="exSet('sw',$event.target.value)" style="width:auto;max-width:240px"><option value="">全部工項</option><option v-for="o in exOpts.sws" :key="o.v" :value="o.v">{{ o.l }}</option></select>
+    <select :value="ex.unit" @change="exSet('unit',$event.target.value)" style="width:auto" :disabled="!exOpts.units.length"><option value="">{{ exOpts.units.length ? '全部單元' : '（無單元）' }}</option><option v-for="o in exOpts.units" :key="o.v" :value="o.v">{{ o.l }}</option></select>
+    <select :value="ex.kind" @change="exSet('kind',$event.target.value)" style="width:auto"><option value="">全部表單類別</option><option value="self">自主檢查表</option><option value="spot">抽查紀錄表</option></select>
+    <select :value="ex.tpl" @change="exSet('tpl',$event.target.value)" style="width:auto;max-width:280px"><option value="">全部表單</option><option v-for="o in exOpts.tpls" :key="o.v" :value="o.v">{{ o.l }}</option></select>
+    <select v-model="ex.status" style="width:auto"><option value="">全部狀態</option><option value="signed">已簽認</option><option value="draft">填寫中</option></select>
+    <a class="small" v-if="ex.tender||ex.sw||ex.unit||ex.kind||ex.tpl||ex.status" @click="exClear">清除條件</a>
+    <span class="grow"></span><span class="muted small">共 {{ exList.length }} 筆<template v-if="exList.length!==exRows.length"> ／ {{ exRows.length }}</template></span>
+    <button class="btn primary" :disabled="!exList.length || !!ex.busy" @click="downloadBatch">{{ ex.busy ? '產生中 ' + ex.busy : '⬇ 批次下載（' + exList.length + ' 筆，ZIP）' }}</button>
+  </div></div>
+  <div class="card tbl-scroll"><table class="table"><thead><tr><th>類別</th><th>紀錄編號</th><th>表單</th><th>標號</th><th>分項工程</th><th>單元</th><th>日期</th><th>狀態</th><th></th></tr></thead><tbody>
+    <tr v-for="x in exList" :key="x.kind+x.r.id"><td class="nowrap"><span class="chip" :class="x.kind==='self'?'blue':'warn'">{{ x.kind==='self'?'自主檢查表':'抽查紀錄表' }}</span></td><td class="nowrap">{{ x.r.id }}</td>
+      <td>{{ x.kind==='self' ? '表'+recCode(x.r)+' ' : '' }}{{ x.r.templateName }} <span class="chip">v{{ x.r.templateVer }}</span> <span class="chip warn" v-if="x.r.fillMode==='pdf'">PDF</span><span class="chip warn" v-if="x.kind==='spot' && x.r.kind==='hold'">★停留點</span></td>
+      <td class="nowrap">{{ x.r.tenderCode }}</td><td>{{ x.r.subworkName }}</td><td class="nowrap">{{ x.r.unit || '—' }}</td><td class="nowrap">{{ Q.fmtD(x.date) }}</td>
+      <td><span class="chip" :class="x.r.status==='signed'?'ok':'warn'">{{ x.r.status==='signed'?'已簽認':'填寫中' }}</span></td>
+      <td class="nowrap"><button class="btn sm" @click="downloadRec(x.kind, x.r)">⬇ PDF</button></td></tr>
+    <tr v-if="!exList.length"><td colspan="9" class="muted">沒有符合條件的表單</td></tr>
+  </tbody></table></div>
+</template>
 <template v-if="page==='defects'">
   <div class="page-head"><div><h1>缺失追蹤</h1><div class="muted">自主檢查或抽查判定「╳ 缺失」時自動建立，改善期限 {{ d.params.defectDueDays }} 天</div></div>
     <select v-model="tenderFilter" style="width:auto"><option value="all">全部標別</option><option v-for="t in d.tenders" :value="t.id">{{ t.name }}</option></select></div>
@@ -456,7 +478,7 @@
   <div class="tbl-scroll" v-if="showSC.fillMode!=='pdf'"><table class="table"><thead><tr><th>序</th><th>檢查項目</th><th>實測</th><th>判定</th><th>照片</th><th>停留點</th></tr></thead><tbody>
     <tr v-for="x in itemsOf(showSC)"><td>{{ x.it.no }}</td><td><span class="star" v-if="x.it.hold">★</span>{{ x.it.name }}</td><td>{{ valuesText(x.it, x.a) }}</td><td><span class="chip" :class="x.a.judge==='ok'?'ok':x.a.judge==='ng'?'ng':''">{{ judgeText(x.a.judge) }}</span></td><td>{{ (x.a.photos||[]).length || '' }}</td><td><span v-if="x.it.hold" class="chip" :class="Q.holdState(showSC,x.it.no)==='passed'?'ok':''">{{ Q.HOLD_TEXT[Q.holdState(showSC,x.it.no)] }}</span></td></tr></tbody></table></div>
   <div class="mt small muted" v-if="showSC.status==='signed'">已簽認：現場工程師 {{ (showSC.signatures.site||{}).name }}／工地授權代表 {{ (showSC.signatures.rep||{}).name }}｜內容雜湊 {{ (showSC.hash||'').slice(0,16) }}…</div>
-  <div class="foot"><button class="btn primary" @click="showSC=null">關閉</button></div></div></div>
+  <div class="foot"><button class="btn" @click="downloadRec('self', showSC)">⬇ 下載 PDF</button><button class="btn primary" @click="showSC=null">關閉</button></div></div></div>
 <div class="modal-bg" v-if="showSP" @click.self="showSP=null"><div class="modal wide"><h3>{{ showSP.templateName }} v{{ showSP.templateVer }}｜{{ showSP.id }}</h3>
   <div class="muted mb">{{ showSP.location }}｜{{ showSP.kind==='hold' ? '檢驗停留點會驗 '+showSP.requestId : '隨機抽查' }}｜{{ Q.fmtD(showSP.date||showSP.createdAt) }}</div>
   <div class="filecard mb" v-if="showSP.fillMode==='pdf'"><div class="fic">PDF</div><div class="grow"><template v-if="showSP.pdfFile"><b>{{ showSP.pdfFile.name }}</b><div class="muted small">簽名後 PDF・{{ Q.fmtSize(showSP.pdfFile.size) }}（一般表格紀錄，不做合格判定）</div></template><span class="muted" v-else>尚未上傳簽名後 PDF</span></div><button class="btn sm" v-if="showSP.pdfFile" @click="downloadFile(showSP.pdfFile)">下載</button></div>
@@ -464,7 +486,7 @@
   <div class="tbl-scroll" v-if="showSP.fillMode!=='pdf'"><table class="table"><thead><tr><th>序</th><th>檢查項目</th><th>實測</th><th>判定</th><th>照片</th></tr></thead><tbody>
     <tr v-for="x in itemsOf(showSP)" :style="showSP.focusNo===x.it.no?'font-weight:600':''"><td>{{ x.it.no }}</td><td><span class="star" v-if="x.it.hold">★</span>{{ x.it.name }} <span class="chip warn" v-if="showSP.focusNo===x.it.no">本次會驗</span></td><td>{{ valuesText(x.it, x.a) }}</td><td><span class="chip" :class="x.a.judge==='ok'?'ok':x.a.judge==='ng'?'ng':''">{{ judgeText(x.a.judge) }}</span></td><td>{{ (x.a.photos||[]).length || '' }}</td></tr></tbody></table></div>
   <div class="mt small muted">計價：厚 {{ showSP.calc.thickness||'—' }} m × 長 {{ showSP.calc.length||'—' }} m × 深 {{ showSP.calc.depth||'—' }} m<template v-if="showSP.status==='signed'">｜內容雜湊 {{ (showSP.hash||'').slice(0,16) }}…</template></div>
-  <div class="foot"><button class="btn primary" @click="showSP=null">關閉</button></div></div></div>
+  <div class="foot"><button class="btn" @click="downloadRec('spot', showSP)">⬇ 下載 PDF</button><button class="btn primary" @click="showSP=null">關閉</button></div></div></div>
 
 <div class="toast" :class="{ng: toastNg}" v-if="toastMsg">{{ toastMsg }}</div>
 </div>
@@ -473,6 +495,10 @@
 <script src="templates/export-template.js"></script>
 <script src="js/drawer.js"></script>
 <script src="js/sample-pdfs.js"></script>
+<script src="lib/html2canvas.min.js"></script>
+<script src="lib/jspdf.umd.min.js"></script>
+<script src="lib/jszip.min.js"></script>
+<script src="js/formpdf.js"></script>
 <script src="js/db.js"></script>
 <script src="js/admin.js"></script>
 </body>
