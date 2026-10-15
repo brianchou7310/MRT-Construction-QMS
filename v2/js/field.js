@@ -120,31 +120,44 @@ createApp({
     const newForm = ref(null), qrForm = ref(null);
     // 新增表單的三層選擇：標號 → 工項(分項工程) → 表單
     const byOrder = (a, b) => (a.order == null ? 1e9 : a.order) - (b.order == null ? 1e9 : b.order);
-    const tplOpts = (sid, kind) => d.templates.filter(t => t.subworkId === sid && t.kind === kind && t.status === 'published').sort((a, b) => byOrder(a, b) || b.items.length - a.items.length);
-    const swOpts = (tid, kind) => d.subworks.filter(s => s.tenderId === tid && tplOpts(s.id, kind).length).sort(byOrder);
+    // 標號 → 工項 → 單元（工項有設定單元才出現）→ 表單；表單只列「該單元」的範本，未指定單元則列分項工程層的範本
+    const tplAll = (sid, kind) => d.templates.filter(t => t.subworkId === sid && t.kind === kind && t.status === 'published');
+    const tplOpts = (sid, kind, unit) => tplAll(sid, kind).filter(t => (t.unitNo || '') === (unit || '')).sort((a, b) => byOrder(a, b) || b.items.length - a.items.length);
+    const swOpts = (tid, kind) => d.subworks.filter(s => s.tenderId === tid && tplAll(s.id, kind).length).sort(byOrder);
+    // 單元選單：只列有該類表單的單元；若分項工程層也有範本，多一個「不指定單元」
+    const unitOpts = (sid, kind) => { const sw = d.subworks.find(s => s.id === sid), l = ((sw && sw.unitList) || []).filter(u => tplOpts(sid, kind, u).length); return l.length && tplOpts(sid, kind, '').length ? [''].concat(l) : l; };
+    const ut = (u, pre) => u ? (pre || '') + '單元 ' + u : '';
+    const where = (unit, swName) => unit ? '單元 ' + unit : swName;
     const tenderOpts = () => d.tenders.slice().sort((a, b) => a.code.localeCompare(b.code));
     function cascade(f, kind, from) {
       if (from === 'tender') f.subworkId = (swOpts(f.tenderId, kind)[0] || {}).id || '';
-      if (from !== 'tpl') f.templateId = (tplOpts(f.subworkId, kind)[0] || {}).id || '';
+      if (from === 'tender' || from === 'sw') { const u = unitOpts(f.subworkId, kind); f.unit = u.includes(f.unit) ? f.unit : (u[0] || ''); }
+      if (from !== 'tpl') f.templateId = (tplOpts(f.subworkId, kind, f.unit)[0] || {}).id || '';
+      f.dupWarn = ''; f.forceDup = false;
     }
     function newFormInit(kind, unit) {
-      const ts = tenderOpts().filter(x => swOpts(x.id, kind).length), t = ts.find(x => x.id === tenderSel.value) || ts[0] || tenderOpts()[0] || {}; const f = { tenderId: t.id || '', subworkId: '', templateId: '', unit: unit || '', location: '', dupWarn: '', forceDup: false }; cascade(f, kind, 'tender'); return f;
+      const ts = tenderOpts().filter(x => swOpts(x.id, kind).length), t = ts.find(x => x.id === tenderSel.value) || ts[0] || tenderOpts()[0] || {}; const f = { tenderId: t.id || '', subworkId: '', templateId: '', unit: unit || '', location: '', dupWarn: '', forceDup: false }; cascade(f, kind, 'tender');
+      // 由 QR 帶入的單元：找出設定了該單元的工項並預先選好
+      if (unit) { const hit = d.subworks.find(s => (s.unitList || []).includes(unit) && unitOpts(s.id, kind).includes(unit)); if (hit) { f.tenderId = hit.tenderId; f.subworkId = hit.id; f.unit = unit; cascade(f, kind, 'unit'); } else toast(`後台尚未設定單元 ${unit} 的表單，請手動選擇`, true); }
+      return f;
     }
     function openNew(unit) { newForm.value = newFormInit('self', unit); }
     async function createSc() {
-      const f = newForm.value; if (!f.unit.trim()) return toast('請輸入單元編號', true); if (!f.tenderId || !f.subworkId || !f.templateId) return toast('請依序選擇標號、工項、表單', true);
-      // 重複檢查：同標案＋同表號＋同單元
-      const tpl = tplOf(f.templateId), unit = f.unit.trim().toUpperCase();
-      const same = d.selfChecks.filter(s => s.tenderId === f.tenderId && s.templateCode === tpl.code && s.unit === unit);
+      const f = newForm.value; if (!f.tenderId || !f.subworkId || !f.templateId) return toast('請依序選擇標號、工項、表單', true);
+      if (unitOpts(f.subworkId, 'self').length && !unitOpts(f.subworkId, 'self').includes(f.unit)) return toast('請選擇單元', true);
+      // 重複檢查：有單元＝分項工程＋單元＋表單；沒有單元＝分項工程＋表單
+      const tpl = tplOf(f.templateId), unit = f.unit || '', sw = d.subworks.find(s => s.id === f.subworkId) || {}, w = where(unit, sw.name);
+      const same = d.selfChecks.filter(s => s.subworkId === f.subworkId && s.templateCode === tpl.code && (s.unit || '') === unit);
       const draft = same.find(s => s.status !== 'signed');
-      if (draft) { newForm.value = null; await openSc(draft.id); return toast(`單元 ${unit} 已有填寫中的表${tpl.code}（${draft.id}），已直接開啟`); }
-      if (same.length && !f.forceDup) { f.dupWarn = `單元 ${unit} 已有 ${same.length} 張已簽認的表${tpl.code}（${same.map(s => s.id).join('、')}）。若為重新檢查，請按「仍要建立」。`; return; }
+      if (draft) { newForm.value = null; await openSc(draft.id); return toast(`${w} 已有填寫中的表${tpl.code}（${draft.id}），已直接開啟`); }
+      if (same.length && !f.forceDup) { f.dupWarn = `${w} 已有 ${same.length} 張已簽認的表${tpl.code}（${same.map(s => s.id).join('、')}）。若為重新檢查，請按「仍要建立」。`; return; }
       const sc = await Q.newSelfCheck({ templateId: f.templateId, unit, location: f.location.trim() }); newForm.value = null; await load(); openSc(sc.id);
     }
     // 掃描單元 QR：該單元有多張表時列出讓使用者選，不再只開第一張
     function scanQr() {
-      const code = (qrForm.value.code || '').trim().toUpperCase(); if (!code) return toast('請輸入單元編號', true);
-      const list = d.selfChecks.filter(s => s.unit === code && inTender(s)).sort((a, b) => (a.status === 'signed') - (b.status === 'signed') || b.updatedAt - a.updatedAt);
+      const raw = (qrForm.value.code || '').trim(); if (!raw) return toast('請輸入單元編號', true);
+      const code = (d.subworks.flatMap(s => s.unitList || []).find(u => u.toUpperCase() === raw.toUpperCase())) || raw.toUpperCase();
+      const list = d.selfChecks.filter(s => s.unit && s.unit.toUpperCase() === code.toUpperCase() && inTender(s)).sort((a, b) => (a.status === 'signed') - (b.status === 'signed') || b.updatedAt - a.updatedAt);
       if (!list.length) { qrForm.value = null; openNew(code); return; }
       if (list.length === 1) { qrForm.value = null; openSc(list[0].id); toast('已掃描單元 ' + code); return; }
       qrForm.value = { code, matches: list };
@@ -180,7 +193,7 @@ createApp({
     async function openSc(id) {
       const sc = await Q.get('selfChecks', id);
       if (sc.fillMode === 'pdf') return openPdf('self', sc);
-      cur.value = reactive(Q.clone(sc)); stageTab.value = 'pre'; saveMsg.value = '';
+      cur.value = reactive(Q.clone(sc)); stageTab.value = Q.stagesOf(tplOf(sc.templateId))[0].key; saveMsg.value = '';
       const t0 = tplOf(sc.templateId); if (t0) t0.items.forEach(i => { if (!cur.value.answers[i.no]) cur.value.answers[i.no] = { judge: null, values: {}, photos: [], note: '' }; });
       const t = tplOf(sc.templateId); if (t) { const first = t.items.find(i => !(sc.answers[i.no] || {}).judge) || t.items[0]; itemNo.value = first.no; stageTab.value = first.stage; }
       syncLinked(); view.value = 'form'; window.scrollTo(0, 0);
@@ -210,17 +223,17 @@ createApp({
       } else if (j === 'ng') toast('已判定缺失；送出後系統將自動建立缺失追蹤');
       if (wide.value && j && curTpl.value) { /* 判定後不自動跳項，讓使用者可申請會驗 */ }
     }
-    function addPhoto(it) { if (!itemEditable(it)) return toast('此項目目前不可編輯', true); pickPhoto(`${cur.value.tenderCode}・單元 ${cur.value.unit}・${it.name}`, url => { ensure(it.no).photos.push(url); queueSave(); }); }
-    function addDemoPhoto(it) { if (!itemEditable(it)) return toast('此項目目前不可編輯', true); demoPhoto(`${cur.value.tenderCode}・單元 ${cur.value.unit}・${it.name}`, url => { ensure(it.no).photos.push(url); queueSave(); }); }
+    function addPhoto(it) { if (!itemEditable(it)) return toast('此項目目前不可編輯', true); pickPhoto(`${cur.value.tenderCode}・${where(cur.value.unit, cur.value.subworkName)}・${it.name}`, url => { ensure(it.no).photos.push(url); queueSave(); }); }
+    function addDemoPhoto(it) { if (!itemEditable(it)) return toast('此項目目前不可編輯', true); demoPhoto(`${cur.value.tenderCode}・${where(cur.value.unit, cur.value.subworkName)}・${it.name}`, url => { ensure(it.no).photos.push(url); queueSave(); }); }
     function delPhoto(it, i) { if (!itemEditable(it)) return; ensure(it.no).photos.splice(i, 1); const a = ensure(it.no); if (it.photo && !a.photos.length && a.judge === 'ok') a.judge = null; queueSave(); }
     function useSuggest(it) { const s = sugg(it); if (s) setJudge(it, s); }
     /* 關聯子表單：連到同一單元的真實紀錄，簽認／結案後才算完成 */
     const returnTo = ref(null);
-    const linkedRec = code => !cur.value ? null : d.selfChecks.filter(s => s.tenderId === cur.value.tenderId && s.unit === cur.value.unit && s.templateCode === code && s.id !== cur.value.id).sort((a, b) => (b.status === 'signed') - (a.status === 'signed') || b.updatedAt - a.updatedAt)[0] || null;
+    const linkedRec = code => !cur.value ? null : d.selfChecks.filter(s => s.tenderId === cur.value.tenderId && (s.unit || '') === (cur.value.unit || '') && (cur.value.unit || s.subworkId === cur.value.subworkId) && s.templateCode === code && s.id !== cur.value.id).sort((a, b) => (b.status === 'signed') - (a.status === 'signed') || b.updatedAt - a.updatedAt)[0] || null;
     const linkedDone = code => { const r = linkedRec(code); return !!(r && r.status === 'signed'); };
     const linkedTpl = code => { const l = d.templates.filter(t => t.kind === 'self' && t.status === 'published' && t.code === code); return l.find(t => curTpl.value && t.subworkId === curTpl.value.subworkId) || l[0] || null; };
     const linkName = code => { const t = linkedTpl(code); return t ? t.name : (Q.LINKED[code] || ''); };
-    const preLinked = computed(() => curTpl.value ? [...new Set(curTpl.value.items.filter(i => i.type === 'linked' && i.linked && i.stage === 'pre').map(i => i.linked))] : []);
+    const preLinked = computed(() => curTpl.value ? [...new Set(curTpl.value.items.filter(i => i.type === 'linked' && i.linked && i.stage === firstStage.value).map(i => i.linked))] : []);
     const linkStatus = code => { const r = linkedRec(code); return !r ? '尚未建立' : r.status === 'signed' ? (r.fillMode === 'pdf' ? '已結案' : '已簽認') : (r.fillMode === 'pdf' ? r.wfStatus : '填寫中'); };
     function syncLinked() {
       if (!cur.value || cur.value.status === 'signed' || !curTpl.value) return; let ch = false; cur.value.linkedRefs = cur.value.linkedRefs || {};
@@ -235,7 +248,7 @@ createApp({
     async function createLinked(code) {
       const t = linkedTpl(code); if (!t) return toast(`後台尚未設定表${code} 範本`, true);
       const c = cur.value; returnTo.value = c.id; linkShow.value = null; await flush();
-      const sc = await Q.newSelfCheck({ templateId: t.id, unit: c.unit, location: c.location }); await load(); openSc(sc.id); toast(`已建立表${code}（單元 ${c.unit}），完成後回主表即自動帶入`);
+      const sc = await Q.newSelfCheck({ templateId: t.id, unit: c.unit, location: c.location }); await load(); openSc(sc.id); toast(`已建立表${code}（${where(c.unit, c.subworkName)}），完成後回主表即自動帶入`);
     }
     function confirmQr() { cur.value.qrConfirmed = true; queueSave(); toast(`已掃描確認單元 ${cur.value.unit} 位置`); }
 
@@ -265,11 +278,17 @@ createApp({
       await flush(); openSign('self', cur.value.id);
     }
     function finishStage() {
-      const order = ['pre', 'during', 'post', 'sum'], i = order.indexOf(stageTab.value); if (!stageDone(stageTab.value)) return toast('本階段尚有項目未判定', true);
+      const order = stageTabs.value.map(s => s[0]), i = order.indexOf(stageTab.value); if (!stageDone(stageTab.value)) return toast('本階段尚有項目未判定', true);
       if (order[i + 1] === 'sum') { stageTab.value = 'sum'; } else setStage(order[i + 1]);
     }
-    const stageTabs = [['pre', '施工前'], ['during', '施工中'], ['post', '施工後'], ['sum', '總覽']];
-    const stageNext = computed(() => ({ pre: '完成施工前檢查，進入施工中', during: '完成施工中，進入施工後', post: '送出前總覽 ›', sum: '' })[stageTab.value]);
+    // 階段頁籤依表單範本設定（預設施工前／中／後，可自訂如挖掘前／中／後）
+    const tabsOf = t => Q.stagesOf(t).map(s => [s.key, s.name]).concat([['sum', '總覽']]);
+    const stageTabs = computed(() => tabsOf(curTpl.value));
+    const firstStage = computed(() => Q.stagesOf(curTpl.value)[0].key);
+    const stageNext = computed(() => {
+      const l = stageTabs.value, i = l.findIndex(s => s[0] === stageTab.value); if (i < 0 || l[i][0] === 'sum') return '';
+      return l[i + 1][0] === 'sum' ? '送出前總覽 ›' : `完成${l[i][1]}檢查，進入${l[i + 1][1]}`;
+    });
     async function leaveForm() { await flush(); const back = returnTo.value; returnTo.value = null; cur.value = null; view.value = 'checks'; await load(); if (back) openSc(back); }
 
     /* ---------- 抽查紀錄（與自主檢查相同：分階段、逐項判定）---------- */
@@ -303,6 +322,8 @@ createApp({
       if (first) { spItemNo.value = first.no; spStage.value = first.stage; } view.value = 'spot'; window.scrollTo(0, 0);
     }
     function spGoto(it) { spItemNo.value = it.no; spStage.value = it.stage; }
+    const spStageTabs = computed(() => tabsOf(spTpl.value));
+    function spNextStage() { const l = spStageTabs.value, i = l.findIndex(s => s[0] === spStage.value); const n = l[Math.min(i + 1, l.length - 1)][0]; if (n === 'sum') spStage.value = 'sum'; else spSetStage(n); }
     function spSetStage(st) { spStage.value = st; const l = Q.stageItems(spTpl.value, st); const f = l.find(i => i.no === sp.value.focusNo) || l.find(i => !spA(i.no).judge) || l[0]; if (f) spItemNo.value = f.no; }
     function spJudge(it, j) {
       if (!spEditable.value) return toast(isSup.value ? '表單已簽認，不可修改' : '抽查紀錄由監造人員填寫（請於「我的」切換為監造）', true);
@@ -311,7 +332,7 @@ createApp({
       a.judge = j; spSave(); if (j === 'ng') toast('已判定缺失；簽認後系統將自動建立缺失追蹤');
     }
     function spUseSuggest(it) { const s = spSugg(it); if (s) spJudge(it, s); }
-    const spLabel = it => `${sp.value.tenderCode}・單元 ${sp.value.unit}・${it.name}`;
+    const spLabel = it => `${sp.value.tenderCode}・${where(sp.value.unit, sp.value.subworkName)}・${it.name}`;
     function spPhoto(it) { if (!spEditable.value) return toast('目前不可編輯', true); pickPhoto(spLabel(it), u => { sp.value.answers[it.no].photos.push(u); spSave(); }); }
     function spDemoPhoto(it) { if (!spEditable.value) return toast('目前不可編輯', true); demoPhoto(spLabel(it), u => { sp.value.answers[it.no].photos.push(u); spSave(); }); }
     function spDelPhoto(it, i) { if (!spEditable.value) return; const a = sp.value.answers[it.no]; a.photos.splice(i, 1); if (it.photo && !a.photos.length && a.judge === 'ok') a.judge = null; spSave(); }
@@ -324,8 +345,9 @@ createApp({
     async function leaveSpot() { await spFlush(); sp.value = null; view.value = 'spots'; await load(); }
     function openSpotNew() { spNew.value = newFormInit('spot'); }
     async function createSpot() {
-      const f = spNew.value; if (!f.tenderId || !f.subworkId || !f.templateId) return toast('請依序選擇標號、工項、表單', true); if (!f.unit.trim()) return toast('請輸入單元編號', true);
-      const rec = await Q.newSpotCheck({ templateId: f.templateId, unit: f.unit.trim().toUpperCase(), location: f.location.trim() }); spNew.value = null; await load(); openSpot(rec.id);
+      const f = spNew.value; if (!f.tenderId || !f.subworkId || !f.templateId) return toast('請依序選擇標號、工項、表單', true);
+      if (unitOpts(f.subworkId, 'spot').length && !unitOpts(f.subworkId, 'spot').includes(f.unit)) return toast('請選擇單元', true);
+      const rec = await Q.newSpotCheck({ templateId: f.templateId, unit: f.unit || '', location: f.location.trim() }); spNew.value = null; await load(); openSpot(rec.id);
     }
 
     /* ---------- 空白範本（PDF）工作流程：下載鎖定 → 上傳續填 → 現地手寫簽名 → 憑證加簽結案 ---------- */
@@ -364,7 +386,7 @@ createApp({
     }
     const pfCancel = () => pfRun(() => Q.wfCancel(pf.value.kind, pfRec.value.id, me.value.name), '已取消鎖定，釋放表單控制權');
     // 上傳並簽名（含現地手寫簽名）
-    async function openWfUp() { wfUp.value = { file: null, next: 'vendor', result: pfRec.value.pdfResult || null }; drawn.value = false; await nextTick(); initCanvas(); }
+    async function openWfUp() { wfUp.value = { file: null, next: 'vendor' }; drawn.value = false; await nextTick(); initCanvas(); }
     async function readPdfFile(e) {
       const file = e.target.files[0]; e.target.value = ''; if (!file) return null;
       if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') { toast('請選擇 PDF 檔案', true); return null; }
@@ -374,8 +396,8 @@ createApp({
     async function onWfUpFile(e) { const f = await readPdfFile(e); if (f) wfUp.value.file = f; }
     async function submitWfUp() {
       const u = wfUp.value; if (!u.file) return toast('請上傳填寫後的 PDF 成果檔', true);
-      if (!u.result) return toast(pfSelf.value ? '請選擇檢查結果' : '請選擇抽查判定結果', true); if (!drawn.value) return toast('請於畫布完成手寫簽名', true);
-      const sig = canvasEl.value.toDataURL('image/png'); const args = { file: u.file, sig, next: u.next, result: u.result };
+      if (!drawn.value) return toast('請於畫布完成手寫簽名', true);
+      const sig = canvasEl.value.toDataURL('image/png'); const args = { file: u.file, sig, next: u.next };
       await pfRun(() => Q.wfUpload(pf.value.kind, pfRec.value.id, me.value.name, args), pfSelf.value ? '成果上傳與現地手寫簽名完成，待憑證加簽結案' : { relay: '已轉下一位局內人員續填', vendor: '已轉施工廠商簽名', supervisor: '已轉工務所主任加簽結案' }[u.next]); wfUp.value = null;
     }
     // 廠商簽名後上傳（抽查表）
@@ -476,10 +498,10 @@ createApp({
     return {
       Q, d, loaded, now, view, todoTab, tenderSel, role, isSup, me, wide, toastMsg, toastNg, toast, tplOf, rel, hh, todayLabel, reqCls,
       todoReqs, lockedCards, rejectedCards, defTodos, draftSpots, pdfTodos, openPdfTodo, openDefects, todoCount, holdFilter, holdsList, selReqId, selReq, sched, selectReq, reqChips, reqPhotos, lockedAfter, doSchedule, doReject, doStart, doCancel,
-      pf, pfPreview, pfUrl, pfTpl, pfRec, pfSelf, pfSt, wfCls, pfCanLock, pfIsLocker, pfCanClose, pfCanVendor, pfCanUnfreeze, pfHint, pfDownloadBlank, pfDownloadCur, pfLock, pfCancel, wfUp, wfCert, wfVen, wfUnf, openWfUp, onWfUpFile, submitWfUp, openWfVen, onWfVenFile, submitWfVen, openWfCert, submitWfCert, openWfUnf, submitWfUnf, dlLog, leavePdf, isDirector, scList, scProgress, newForm, qrForm, tenderOpts, swOpts, tplOpts, cascade, openNew, createSc, scanQr, pickQr,
+      pf, pfPreview, pfUrl, pfTpl, pfRec, pfSelf, pfSt, wfCls, pfCanLock, pfIsLocker, pfCanClose, pfCanVendor, pfCanUnfreeze, pfHint, pfDownloadBlank, pfDownloadCur, pfLock, pfCancel, wfUp, wfCert, wfVen, wfUnf, openWfUp, onWfUpFile, submitWfUp, openWfVen, onWfVenFile, submitWfVen, openWfCert, submitWfCert, openWfUnf, submitWfUnf, dlLog, leavePdf, isDirector, scList, scProgress, newForm, qrForm, tenderOpts, swOpts, tplOpts, unitOpts, ut, cascade, openNew, createSc, scanQr, pickQr,
       cur, curTpl, stageTab, itemNo, saveMsg, docShow, linkShow, applyForm, readonly, stageList, curItem, shownItems, judged, total, stageStat, stageDone, ans, ensure, lockOf, hstate, hreq, itemEditable, sugg, itemIcon,
       flush, queueSave, openSc, gotoItem, setStage, step, setJudge, addPhoto, addDemoPhoto, delPhoto, useSuggest, linkName, preLinked, linkedRec, linkedDone, linkedTpl, linkStatus, openLinked, createLinked, returnTo, confirmQr, canApply, openApply, applyShort, applyHours, submitApply, holdText, wasRejected,
-      summary, holdItems, holdPending, attachCodes, canSubmit, goSign, finishStage, stageTabs, stageNext, leaveForm,
+      summary, holdItems, holdPending, attachCodes, canSubmit, goSign, finishStage, stageTabs, firstStage, stageNext, spStageTabs, spNextStage, leaveForm,
       sp, spStage, spItemNo, spSaveMsg, spNew, spTpl, spReq, spSc, spEditable, spStageList, spCurItem, spShown, spA, spJudged, spTotal, spSummary, spStageStat, spSelfVals, spSugg, spArea, spLocked, spList, spProgress, spSave, spFlush, openSpot, spGoto, spSetStage, spJudge, spUseSuggest, spPhoto, spDemoPhoto, spDelPhoto, spGoSign, leaveSpot, openSpotNew, createSpot,
       signCtx, signHash, signAgree, canvasEl, drawn, signers, signIdx, curSigner, signSummary, sDown, sMove, sUp, clearSign, applySaved, saveSig, confirmSign, cancelSign,
       defCls, defText, defAct, defForm, defPhoto, submitFix, submitReview, resetDemo, clearSigs, navItems, nav, navActive, printForm

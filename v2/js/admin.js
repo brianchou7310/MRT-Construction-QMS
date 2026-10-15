@@ -7,7 +7,8 @@ createApp({
     const d = reactive({ tenders: [], subworks: [], templates: [], selfChecks: [], requests: [], spotChecks: [], defects: [], docs: [], users: [], params: {} });
     const now = ref(Date.now());
     const loaded = ref(false);
-    const page = ref((location.hash || '#dashboard').slice(1));
+    const fixPage = p => (p === 'import' ? 'templates' : p); // 範本匯入頁已移除，舊連結改到表單範本
+    const page = ref(fixPage((location.hash || '#dashboard').slice(1)));
     const menuOpen = ref(false);
     const toastMsg = ref(''), toastNg = ref(false);
     function toast(m, ng) { toastMsg.value = m; toastNg.value = !!ng; setTimeout(() => { toastMsg.value = ''; }, 2600); }
@@ -19,7 +20,7 @@ createApp({
       now.value = Date.now(); loaded.value = true;
     }
     function go(p) { page.value = p; location.hash = p; menuOpen.value = false; window.scrollTo(0, 0); }
-    window.addEventListener('hashchange', () => { page.value = (location.hash || '#dashboard').slice(1); });
+    window.addEventListener('hashchange', () => { page.value = fixPage((location.hash || '#dashboard').slice(1)); });
 
     /* ---------- 共用 ---------- */
     const tenderById = id => d.tenders.find(t => t.id === id) || {};
@@ -37,7 +38,7 @@ createApp({
     const weekHolds = computed(() => ft(d.requests).filter(r => ['scheduled', 'pending', 'inspecting'].includes(r.status) && r.scheduledAt >= today0() && r.scheduledAt < today0() + 7 * Q.D));
     // 抽查統計：只計「已簽認／已結案」的抽查紀錄；PDF 抽查依上傳時的判定結果
     const spotDone = p => p.status === 'signed';
-    const spotNg = p => p.fillMode === 'pdf' ? p.pdfResult === 'ng' : Object.values(p.answers || {}).some(a => a.judge === 'ng');
+    const spotNg = p => p.fillMode === 'pdf' ? false : Object.values(p.answers || {}).some(a => a.judge === 'ng');
     // 抽查率 ＝ 有完成抽查的自主檢查表張數 ÷ 自主檢查表總張數（同一張表被抽查多次只算一次，不會超過 100%）
     const kpiSelf = computed(() => {
       const scs = ft(d.selfChecks), done = ft(d.spotChecks).filter(spotDone), ids = new Set(done.map(p => p.scId).filter(Boolean));
@@ -136,6 +137,57 @@ createApp({
       if (!s.id) { s.id = Q.uid('S'); s.order = d.subworks.length; s.tenderId = selTenderId.value; }
       s.qty = Number(s.qty) || 0; await Q.put('subworks', s); swForm.value = null; await load(); toast('分項工程已儲存');
     }
+    /* ---------- 分項工程匯入（Excel／CSV） ---------- */
+    const SW_HEAD = ['項次', '分項工程', '數量', '單位', '狀態'], SW_ST = ['施工中', '未開始', '已完成'];
+    const swImp = ref(null);
+    function openSwImp() { if (!selTenderId.value) return toast('請先選擇標案', true); swImp.value = { fileName: '', rows: [], err: '', mode: 'upsert' }; }
+    function swSample() {
+      const cur = d.subworks.filter(s => s.tenderId === selTenderId.value).sort((a, b) => a.order - b.order).slice(0, 2).map(s => [s.no, s.name, s.qty, s.unit, s.status]);
+      return [SW_HEAD].concat(cur, [['99', '（範例）新增分項工程名稱', 100, 'M', '未開始']]);
+    }
+    function downloadSwSample() {
+      const ws = XLSX.utils.aoa_to_sheet(swSample()); ws['!cols'] = [8, 36, 10, 8, 10].map(w => ({ wch: w }));
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '分項工程'); XLSX.writeFile(wb, `${selTender.value.code || '標案'}_分項工程匯入樣本.xlsx`);
+    }
+    function parseSwRows(rows) {
+      const m = swImp.value; m.rows = []; m.err = '';
+      if (!rows.length) { m.err = '檔案沒有資料'; return; }
+      const head = rows[0].map(h => String(h).trim()), ix = n => head.indexOf(n);
+      const miss = ['分項工程'].filter(n => ix(n) < 0); if (miss.length) { m.err = '找不到必要欄位：' + miss.join('、') + '（第一列須為欄位標題：' + SW_HEAD.join('、') + '）'; return; }
+      const cell = (r, n) => ix(n) < 0 ? '' : String(r[ix(n)] == null ? '' : r[ix(n)]).trim();
+      const exist = d.subworks.filter(s => s.tenderId === selTenderId.value), seen = {};
+      rows.slice(1).forEach((r, k) => {
+        if (!r.some(x => String(x).trim())) return;
+        const errs = [], name = cell(r, '分項工程'), no = cell(r, '項次'), qtyT = cell(r, '數量').replace(/,/g, ''), unit = cell(r, '單位') || '式', st = cell(r, '狀態') || '施工中';
+        if (!name) errs.push('分項工程名稱不可空白');
+        if (qtyT && isNaN(Number(qtyT))) errs.push('數量「' + qtyT + '」不是數字');
+        if (!SW_ST.includes(st)) errs.push('狀態「' + st + '」須為 施工中／未開始／已完成');
+        if (name && seen[name]) errs.push('與第 ' + seen[name] + ' 列名稱重複'); else if (name) seen[name] = k + 2;
+        const hit = exist.find(s => s.name === name) || (no && exist.find(s => s.no === no));
+        m.rows.push({ line: k + 2, no, name, qty: qtyT && !isNaN(Number(qtyT)) ? Number(qtyT) : 0, qtyText: qtyT, unit, status: st, hit: hit ? hit.id : '', errs });
+      });
+      if (!m.rows.length) m.err = '沒有資料列，請確認第一列為欄位標題';
+    }
+    function onSwFile(e) {
+      const f = e.target.files[0]; if (!f) return; const m = swImp.value; m.fileName = f.name; const rd = new FileReader();
+      if (/\.xlsx?$/i.test(f.name)) {
+        rd.onload = () => { try { const wb = XLSX.read(rd.result, { type: 'array' }); parseSwRows(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: '' })); } catch (ex) { m.err = '無法讀取 Excel：' + ex.message; } };
+        rd.readAsArrayBuffer(f);
+      } else { rd.onload = () => parseSwRows(parseCsv(String(rd.result).replace(/^\ufeff/, ''))); rd.readAsText(f, 'utf-8'); }
+    }
+    const swImpOk = computed(() => swImp.value ? swImp.value.rows.filter(r => !r.errs.length) : []);
+    const swImpBad = computed(() => swImp.value ? swImp.value.rows.length - swImpOk.value.length : 0);
+    async function doSwImp() {
+      const m = swImp.value, ok = swImpOk.value; if (!ok.length) return toast('沒有可匯入的列', true);
+      let order = Math.max(-1, ...d.subworks.filter(s => s.tenderId === selTenderId.value).map(s => s.order || 0)) + 1, add = 0, upd = 0;
+      for (const r of ok) {
+        const old = m.mode === 'upsert' && r.hit ? d.subworks.find(s => s.id === r.hit) : null;
+        if (old) { await Q.put('subworks', Object.assign(Q.clone(old), { no: r.no || old.no, name: r.name, qty: r.qty, unit: r.unit, status: r.status })); upd++; }
+        else { await Q.put('subworks', { id: Q.uid('S'), tenderId: selTenderId.value, no: r.no || String(order + 1), name: r.name, qty: r.qty, unit: r.unit, status: r.status, order: order++ }); add++; }
+      }
+      swImp.value = null; await load(); treeOpen[selTenderId.value] = true;
+      toast(`分項工程匯入完成：新增 ${add} 項、更新 ${upd} 項${swImpBad.value ? `（略過錯誤列）` : ''}`);
+    }
     async function moveSw(s, dir) {
       const list = d.subworks.filter(x => x.tenderId === s.tenderId).sort((a, b) => a.order - b.order), i = list.findIndex(x => x.id === s.id), j = i + dir;
       if (j < 0 || j >= list.length) return;
@@ -153,7 +205,23 @@ createApp({
     // 分項工程下拉：先依標號，再依項次(order)排列
     const swGroups = computed(() => d.tenders.slice().sort((a, b) => a.code.localeCompare(b.code)).map(t => ({ tender: t, subs: d.subworks.filter(s => s.tenderId === t.id).sort((a, b) => a.order - b.order) })).filter(g => g.subs.length));
     const tplSw = ref('S671-5'), selTplId = ref(null), tplTab = ref('items'), edit = ref(null), previewOn = ref(false), fieldIdx = ref(-1);
-    const tplList = kind => d.templates.filter(t => t.subworkId === tplSw.value && t.kind === kind && t.status === 'published').sort((a, b) => (a.order == null ? 1e9 : a.order) - (b.order == null ? 1e9 : b.order));
+    // 單元（選用）：標案 → 分項工程 → [單元] → 表單
+    const tplUnit = ref(''), unitForm = ref(null);
+    const tplUnits = computed(() => (swById(tplSw.value) || {}).unitList || []);
+    const unitTplN = (sid, u) => d.templates.filter(t => t.subworkId === sid && (t.unitNo || '') === u && t.status === 'published').length;
+    const unitRecN = (sid, u) => d.selfChecks.filter(x => x.subworkId === sid && x.unit === u).length + d.spotChecks.filter(x => x.subworkId === sid && x.unit === u).length;
+    function openUnitForm() { unitForm.value = { code: '', err: '' }; }
+    async function addUnit() {
+      const f = unitForm.value, code = f.code.trim(), sw = Q.clone(swById(tplSw.value)); if (!code) { f.err = '請輸入單元編號'; return; }
+      const list = sw.unitList || []; if (list.some(u => u.toUpperCase() === code.toUpperCase())) { f.err = `單元編號「${code}」在此分項工程已存在`; return; }
+      sw.unitList = list.concat(code); await Q.put('subworks', sw); await load(); f.code = ''; f.err = ''; toast(`已新增單元 ${code}`);
+    }
+    async function delUnit(u) {
+      const n = unitTplN(tplSw.value, u), r = unitRecN(tplSw.value, u);
+      if (n || r) return toast(`單元 ${u} 已有 ${n} 張表單範本${r ? `、${r} 筆填寫紀錄` : ''}，不可刪除`, true);
+      const sw = Q.clone(swById(tplSw.value)); sw.unitList = (sw.unitList || []).filter(x => x !== u); await Q.put('subworks', sw); if (tplUnit.value === u) tplUnit.value = ''; await load(); toast(`已刪除單元 ${u}`);
+    }
+    const tplList = kind => d.templates.filter(t => t.subworkId === tplSw.value && (t.unitNo || '') === tplUnit.value && t.kind === kind && t.status === 'published').sort((a, b) => (a.order == null ? 1e9 : a.order) - (b.order == null ? 1e9 : b.order));
     const dragId = ref(null), dragOver = ref(null);
     function onDragStart(e, t) { dragId.value = t.id; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', t.id); } catch (x) { /* ignore */ } }
     function onDragEnd() { dragId.value = null; dragOver.value = null; }
@@ -173,10 +241,34 @@ createApp({
       if (m === 'pdf' && pdfBlockedHolds(edit.value).length) { edit.value.fillMode = 'online'; toast(`此表含 ${pdfBlockedHolds(edit.value).length} 個 ☆停留點，PDF 範本無法逐項判定與申請會驗；請維持線上表單，或先取消停留點勾選`, true); return; }
       if (m === 'pdf') tplTab.value = 'file'; else if (tplTab.value === 'file') tplTab.value = 'items';
     });
-    watch(tplSw, () => { const l = tplList('self')[0] || tplList('spot')[0]; if (l) pickTpl(l); else { selTplId.value = null; edit.value = null; } });
+    const tplPickFirst = () => { const l = tplList('self')[0] || tplList('spot')[0]; if (l) pickTpl(l); else { selTplId.value = null; edit.value = null; } };
+    watch(tplSw, () => { tplUnit.value = ''; tplPickFirst(); });
+    watch(tplUnit, tplPickFirst);
     watch(() => d.templates.length, () => { if (!edit.value && loaded.value) { const l = tplList('self')[0]; if (l) pickTpl(l); } });
     const editUsed = computed(() => edit.value ? usedCount(edit.value) : 0);
-    const editStages = computed(() => edit.value ? ['pre', 'during', 'post'].map(s => ({ key: s, name: Q.STAGES[s], items: edit.value.items.map((it, idx) => ({ it, idx })).filter(x => x.it.stage === s) })) : []);
+    const editStages = computed(() => edit.value ? Q.stagesOf(edit.value).map(s => ({ key: s.key, name: s.name, items: edit.value.items.map((it, idx) => ({ it, idx })).filter(x => x.it.stage === s.key) })) : []);
+    /* ---------- 階段設定（每張表單可自訂，例：挖掘前／挖掘中／挖掘後） ---------- */
+    const STAGE_PRESETS = [['施工前', '施工中', '施工後'], ['挖掘前', '挖掘中', '挖掘後'], ['施工前', '施工後']];
+    const stageForm = ref(null);
+    const stageItemN = key => edit.value ? edit.value.items.filter(i => i.stage === key).length : 0;
+    function openStageForm() { stageForm.value = { rows: Q.clone(Q.stagesOf(edit.value)), err: '' }; }
+    function stageAdd() { stageForm.value.rows.push({ key: Q.uid('ST'), name: '' }); }
+    function stageMove(i, dir) { const r = stageForm.value.rows, j = i + dir; if (j < 0 || j >= r.length) return; const t = r[i]; r[i] = r[j]; r[j] = t; }
+    function stageDel(i) { const r = stageForm.value.rows; if (stageItemN(r[i].key)) return toast(`「${r[i].name}」還有 ${stageItemN(r[i].key)} 個檢查項目，請先移除或改到其他階段`, true); if (r.length <= 1) return toast('至少要有一個階段', true); r.splice(i, 1); }
+    function stagePreset(names) { const r = stageForm.value.rows; names.forEach((n, i) => { if (r[i]) r[i].name = n; else r.push({ key: Q.uid('ST'), name: n }); }); for (let i = r.length - 1; i >= names.length; i--) if (!stageItemN(r[i].key)) r.splice(i, 1); }
+    function applyStages() {
+      const f = stageForm.value, rows = f.rows.map(s => ({ key: s.key, name: s.name.trim() }));
+      if (rows.some(s => !s.name)) { f.err = '階段名稱不可空白'; return; }
+      if (new Set(rows.map(s => s.name)).size !== rows.length) { f.err = '階段名稱不可重複'; return; }
+      edit.value.stages = rows; stageForm.value = null; toast('階段已更新，按「儲存」後生效');
+    }
+    // 依階段名稱對應 key；名稱不存在就新增階段（匯入用）
+    function buildStages(names, base) {
+      const out = Q.clone(base || []);
+      names.forEach(n => { if (n && !out.some(s => s.name === n)) out.push({ key: SR[n] && !out.some(s => s.key === SR[n]) ? SR[n] : Q.uid('ST'), name: n }); });
+      return out;
+    }
+    const stageKey = (stages, name) => (stages.find(s => s.name === name) || {}).key;
     const TYPES = { option: '選項', number: '數值', photo: '照片', text: '文字', linked: '連結表單' };
     const holdN = computed(() => edit.value ? edit.value.items.filter(i => i.hold).length : 0);
     function addItem(stage) { edit.value.items.push(Q.I(0, stage, '新檢查項目', '', { photo: false })); }
@@ -192,11 +284,239 @@ createApp({
     const linkOpts = computed(() => !edit.value ? [] : [...new Map(d.templates.filter(t => t.kind === 'self' && t.status === 'published' && t.subworkId === edit.value.subworkId && t.code !== edit.value.code).map(t => [t.code, { code: t.code, name: t.name }])).values()]);
     const adminUser = computed(() => d.users.find(u => u.role === '系統管理員') || { name: '系統管理員', org: '' });
     function finalizeItems(t) {
-      const order = { pre: 0, during: 1, post: 2 };
-      t.items = t.items.map((x, i) => [x, i]).sort((a, b) => order[a[0].stage] - order[b[0].stage] || a[1] - b[1]).map(x => x[0]);
+      const order = Object.fromEntries(Q.stagesOf(t).map((s, i) => [s.key, i]));
+      t.items = t.items.map((x, i) => [x, i]).sort((a, b) => (order[a[0].stage] ?? 99) - (order[b[0].stage] ?? 99) || a[1] - b[1]).map(x => x[0]);
       t.items.forEach((x, i) => { x.no = i + 1; if (t.kind === 'self' || !x.srcNo) x.srcNo = x.srcNo || x.no; if (!x.key) x.key = Q.uid('K'); });
       return t;
     }
+    /* ---------- 匯入此分項全部表單（單元＋線上表單＋檢查項目＋數值欄位，支援「共用＋單元覆蓋」） ---------- */
+    const bulk = ref(null);
+    const BULK_TYPE = { 選項: 'option', 數值: 'number', 照片: 'photo', 文字: 'text', 連結表單: 'linked' };
+    const BULK_KIND = { 自主檢查表: 'self', 抽查紀錄表: 'spot' };
+    function openBulk() { bulk.value = { fileName: '', err: '', units: [], forms: [], loose: [], sel: null, done: null }; }
+    function bulkSheet(wb, name) {
+      const ws = wb.Sheets[name]; if (!ws) return null;
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' }); if (!rows.length) return [];
+      const head = rows[0].map(h => String(h).replace(/\*/g, '').trim());
+      return rows.slice(1).map((r, i) => { const o = { _line: i + 2 }; head.forEach((h, k) => { if (h) o[h] = typeof r[k] === 'string' ? r[k].trim() : r[k]; }); return o; });
+    }
+    const yn = v => /^y/i.test(String(v || '').trim());
+    const num = v => v === '' || v == null ? '' : Number(v);
+    const splitList = v => String(v || '').replace(/[，,\s]+/g, '、').split('、').map(x => x.trim()).filter(Boolean);
+    function onBulkFile(e) {
+      const f = e.target.files[0]; if (!f) return; const b = bulk.value; Object.assign(b, { fileName: f.name, err: '', units: [], forms: [], loose: [], sel: null, done: null });
+      const rd = new FileReader();
+      rd.onload = () => { try { parseBook(XLSX.read(rd.result, { type: 'array' }), swById(tplSw.value), b); } catch (ex) { b.err = '無法讀取 Excel：' + ex.message; } };
+      rd.readAsArrayBuffer(f); e.target.value = '';
+    }
+    function parseBook(wb, sw, b) {
+      const shU = bulkSheet(wb, '單元') || [], shF = bulkSheet(wb, '表單'), shI = bulkSheet(wb, '檢查項目'), shV = bulkSheet(wb, '數值欄位') || [];
+      if (!shF || !shI) { b.err = '找不到「表單」或「檢查項目」工作表，請使用「下載匯入範本」的格式'; return; }
+      // 單元
+      const sysUnits = sw.unitList || [], seenU = {};
+      b.units = shU.filter(r => r['單元編號'] !== '' && r['單元編號'] != null).map(r => {
+        const code = String(r['單元編號']).trim(), k = code.toUpperCase(), errs = [];
+        if (seenU[k]) errs.push(`與第 ${seenU[k]} 列重複`); else seenU[k] = r._line;
+        return { code, line: r._line, exists: sysUnits.some(u => u.toUpperCase() === k), errs };
+      });
+      const allUnits = sysUnits.concat(b.units.filter(u => !u.errs.length && !u.exists).map(u => u.code));
+      const unitOf = c => allUnits.find(u => u.toUpperCase() === String(c).trim().toUpperCase());
+      // 表單
+      const fileSelf = shF.filter(r => r['表單類型'] === '自主檢查表').map(r => String(r['表號']));
+      const sysSelf = c => d.templates.some(t => t.subworkId === sw.id && t.kind === 'self' && t.status === 'published' && t.code === c);
+      const forms = [], byCode = {};
+      shF.filter(r => r['表號'] !== '' && r['表號'] != null).forEach(r => {
+        const code = String(r['表號']).trim(), errs = [], kind = BULK_KIND[r['表單類型']];
+        if (byCode[code]) errs.push(`表單第 ${r._line} 列：表號 ${code} 重複`);
+        if (!r['表單名稱']) errs.push(`表單第 ${r._line} 列：表單名稱不可空白`);
+        if (!kind) errs.push(`表單第 ${r._line} 列：表單類型須為 自主檢查表／抽查紀錄表`);
+        const ap = String(r['適用單元'] || '').trim(); let units = [''];
+        if (ap === '全部') { units = allUnits.slice(); if (!units.length) errs.push(`表單第 ${r._line} 列：適用單元填「全部」，但沒有任何單元`); }
+        else if (ap) { units = []; splitList(ap).forEach(u => { const hit = unitOf(u); if (hit) units.push(hit); else errs.push(`表單第 ${r._line} 列：單元「${u}」不存在`); }); }
+        const stNames = splitList(r['階段設定']);
+        if (new Set(stNames).size !== stNames.length) errs.push(`表單第 ${r._line} 列：階段名稱重複`);
+        const pair = String(r['配對自主檢查表號'] || '').trim();
+        if (pair && kind !== 'spot') errs.push(`表單第 ${r._line} 列：配對自主檢查表號僅限抽查紀錄表`);
+        if (pair && kind === 'spot' && !fileSelf.includes(pair) && !sysSelf(pair)) errs.push(`表單第 ${r._line} 列：配對自主檢查表號「${pair}」不存在`);
+        const fm = { code, name: r['表單名稱'], kind, kindText: r['表單類型'], units, applyText: ap, stageNames: stNames.length ? stNames : Q.DEF_STAGES.map(x => x.name),
+          source: r['來源依據'] || '', pair, order: r['排序'] === '' ? forms.length : Number(r['排序']), line: r._line, errs, items: [], fields: [], views: {} };
+        if (!byCode[code]) byCode[code] = fm; forms.push(fm);
+      });
+      forms.forEach(f => { if (forms.filter(x => x.code === f.code).length > 1 && !f.errs.some(e => e.includes('重複'))) f.errs.push(`表單第 ${f.line} 列：表號 ${f.code} 在「表單」工作表出現多次`); });
+      // 檢查項目
+      b.loose = [];
+      const iSeen = {};
+      shI.filter(r => r['表號'] !== '' && r['表號'] != null).forEach(r => {
+        const code = String(r['表號']).trim(), fm = byCode[code], L = `檢查項目第 ${r._line} 列`;
+        if (!fm) { b.loose.push(`${L}：表號 ${code} 不在「表單」工作表`); return; }
+        const unit = r['單元編號'] === '' ? '' : String(r['單元編號']).trim(), no = Number(r['項次']), ex = yn(r['排除']), e = fm.errs;
+        const u = unit ? unitOf(unit) : '';
+        if (!no || no < 1 || !Number.isInteger(no)) { e.push(`${L}：項次需為正整數`); return; }
+        if (unit && (!u || !fm.units.includes(u))) e.push(`${L}：單元「${unit}」不在此表單的適用單元內`);
+        const k = `${u}|${no}`; if (iSeen[code + '#' + k]) e.push(`${L}：項次 ${no}${u ? '（' + u + '）' : ''} 重複`); iSeen[code + '#' + k] = 1;
+        if (ex && !unit) e.push(`${L}：「排除」只能用在單元列`);
+        const it = { unit: u, no, ex, line: r._line, stage: r['階段'], name: r['檢查項目'], std: r['檢查標準'] == null ? '' : String(r['檢查標準']), typeText: r['判定類型'], type: BULK_TYPE[r['判定類型']],
+          hold: yn(r['停留點']), photo: yn(r['必拍照']), ref: String(r['引用文件編號'] || '').trim(), linked: String(r['連結表號'] || '').trim() };
+        if (!ex) {
+          if (!it.stage || !it.name || !it.typeText) e.push(`${L}：階段、檢查項目、判定類型必填`);
+          if (it.stage && !fm.stageNames.includes(it.stage)) e.push(`${L}：階段「${it.stage}」不在此表單的階段（${fm.stageNames.join('／')}）`);
+          if (it.typeText && !it.type) e.push(`${L}：判定類型「${it.typeText}」須為 選項／數值／照片／文字／連結表單`);
+          if (it.ref && !d.docs.some(x => x.code === it.ref)) e.push(`${L}：引用文件編號「${it.ref}」不存在於參考文件`);
+          if (it.type === 'linked' && !it.linked) e.push(`${L}：判定類型為連結表單時須填連結表號`);
+          if (it.linked && !fileSelf.includes(it.linked) && !sysSelf(it.linked)) e.push(`${L}：連結表號「${it.linked}」不存在`);
+        }
+        fm.items.push(it);
+      });
+      for (const fm of forms) fm.items.filter(i => i.ex && i.unit).forEach(i => { if (!fm.items.some(x => !x.unit && x.no === i.no)) fm.errs.push(`檢查項目第 ${i.line} 列：排除的項次 ${i.no} 沒有對應的共用項目`); });
+      // 數值欄位
+      const vSeen = {};
+      shV.filter(r => r['表號'] !== '' && r['表號'] != null).forEach(r => {
+        const code = String(r['表號']).trim(), fm = byCode[code], L = `數值欄位第 ${r._line} 列`;
+        if (!fm) { b.loose.push(`${L}：表號 ${code} 不在「表單」工作表`); return; }
+        const unit = r['單元編號'] === '' ? '' : String(r['單元編號']).trim(), u = unit ? unitOf(unit) : '', no = Number(r['項次']), ex = yn(r['排除']), e = fm.errs;
+        const v = { unit: u, no, ex, line: r._line, label: String(r['欄位名稱'] || '').trim(), unitText: r['單位'] == null ? '' : String(r['單位']), min: num(r['下限']), max: num(r['上限']) };
+        if (!v.label) e.push(`${L}：欄位名稱必填`);
+        if (unit && (!u || !fm.units.includes(u))) e.push(`${L}：單元「${unit}」不在此表單的適用單元內`);
+        if (!fm.items.some(i => i.no === no)) e.push(`${L}：找不到項次 ${no}`);
+        if ((v.min !== '' && isNaN(v.min)) || (v.max !== '' && isNaN(v.max))) e.push(`${L}：下限、上限需為數字`);
+        else if (v.min !== '' && v.max !== '' && v.min > v.max) e.push(`${L}：下限大於上限`);
+        const k = `${code}#${u}|${no}|${v.label}`; if (vSeen[k]) e.push(`${L}：欄位「${v.label}」重複`); vSeen[k] = 1;
+        if (ex && !unit) e.push(`${L}：「排除」只能用在單元列`);
+        if (ex && unit && !fm.fields.some(x => !x.unit && x.no === no && x.label === v.label) && !shV.some(x => String(x['表號']).trim() === code && (x['單元編號'] === '' || x['單元編號'] == null) && Number(x['項次']) === no && String(x['欄位名稱']).trim() === v.label)) e.push(`${L}：排除的欄位沒有對應的共用欄位`);
+        fm.fields.push(v);
+      });
+      // 依單元展開（共用＋單元覆蓋），並檢查展開後的結果
+      forms.forEach(fm => {
+        fm.units.forEach(u => {
+          const map = new Map();
+          fm.items.filter(i => !i.unit).forEach(i => map.set(i.no, Object.assign({ src: '共用' }, i)));
+          fm.items.filter(i => u && i.unit === u).forEach(i => { if (i.ex) map.delete(i.no); else map.set(i.no, Object.assign({ src: map.has(i.no) ? '覆蓋' : '單元新增' }, i)); });
+          const order = fm.stageNames;
+          const items = [...map.values()].sort((a, b) => order.indexOf(a.stage) - order.indexOf(b.stage) || a.no - b.no).map(i => {
+            const fmap = new Map();
+            fm.fields.filter(v => !v.unit && v.no === i.no).forEach(v => fmap.set(v.label, Object.assign({ src: '共用' }, v)));
+            fm.fields.filter(v => u && v.unit === u && v.no === i.no).forEach(v => { if (v.ex) fmap.delete(v.label); else fmap.set(v.label, Object.assign({ src: fmap.has(v.label) ? '覆蓋' : '單元新增' }, v)); });
+            return Object.assign({}, i, { fields: [...fmap.values()] });
+          });
+          const where = u ? `（單元 ${u}）` : '';
+          if (!items.length) fm.errs.push(`表單 ${fm.code}${where}：沒有任何檢查項目`);
+          items.forEach(i => { if (i.type === 'number' && !i.fields.length) fm.errs.push(`表單 ${fm.code}${where} 項次 ${i.no}：判定類型為數值，但沒有數值欄位`); if (i.type !== 'number' && i.fields.length) fm.errs.push(`表單 ${fm.code}${where} 項次 ${i.no}：不是數值類型，卻設定了數值欄位`); });
+          const old = d.templates.filter(t => t.subworkId === sw.id && (t.unitNo || '') === u && t.code === fm.code && t.status === 'published').sort((a, b) => b.version - a.version)[0];
+          if (old && old.kind !== fm.kind) fm.errs.push(`表單 ${fm.code}${where}：系統已有同表號但類型不同的表單`);
+          if (old && old.fillMode === 'pdf') fm.errs.push(`表單 ${fm.code}${where}：系統已有同表號的空白範本 PDF 表單，不可用線上表單覆蓋`);
+          fm.views[u] = { items, old, action: !old ? '新增' : usedCount(old) ? `另存 v${old.version + 1}` : `更新 v${old.version}` };
+        });
+        fm.errs = [...new Set(fm.errs)];
+      });
+      b.forms = forms.sort((a, b) => a.order - b.order);
+      const f0 = b.forms[0]; b.sel = f0 ? { code: f0.code, unit: f0.units[0] } : null;
+    }
+    const bulkOk = computed(() => bulk.value ? bulk.value.forms.filter(f => !f.errs.length) : []);
+    const bulkView = computed(() => { const b = bulk.value; if (!b || !b.sel) return null; const fm = b.forms.find(f => f.code === b.sel.code); return fm && fm.views[b.sel.unit] ? { fm, v: fm.views[b.sel.unit] } : null; });
+    async function doBulk() {
+      const b = bulk.value, sw = Q.clone(swById(tplSw.value)), ok = bulkOk.value; if (!ok.length) return toast('沒有可匯入的表單', true);
+      const newUnits = b.units.filter(u => !u.errs.length && !u.exists).map(u => u.code);
+      if (newUnits.length) { sw.unitList = (sw.unitList || []).concat(newUnits); await Q.put('subworks', sw); }
+      const res = { add: 0, upd: 0, ver: 0, units: newUnits.length }, saved = [];
+      // 自主檢查表先建，抽查表的配對才找得到
+      for (const fm of ok.slice().sort((a, b) => (a.kind === 'spot') - (b.kind === 'spot'))) {
+        for (const u of fm.units) {
+          const v = fm.views[u], old = v.old;
+          const stages = fm.stageNames.map(n => { const o = old && Q.stagesOf(old).find(s => s.name === n); return o ? { key: o.key, name: n } : { key: SR[n] || Q.uid('ST'), name: n }; });
+          // 同名項目沿用舊的永久代碼（key），讓抽查表對應與統計不中斷
+          const items = v.items.map((i, k) => { const prev = old && old.items.find(x => x.name === i.name); return Object.assign(Q.I(k + 1, stages.find(s => s.name === i.stage).key, i.name, i.std, { type: i.type, hold: !!i.hold, photo: !!i.photo || i.type === 'photo', ref: i.ref, linked: i.type === 'linked' ? i.linked : '',
+            fields: i.fields.map((f, n) => Q.F((prev && (prev.fields || []).find(x => x.label === f.label) || {}).key || 'f' + (n + 1), f.label, f.unitText, f.min === '' ? null : f.min, f.max === '' ? null : f.max)) }), prev && prev.key ? { key: prev.key } : {}); });
+          let pairedSelf = '';
+          if (fm.pair) { const sp = d.templates.concat(saved).filter(t => t.subworkId === sw.id && t.kind === 'self' && t.status === 'published' && t.code === fm.pair).sort((a, b) => ((b.unitNo || '') === u) - ((a.unitNo || '') === u) || b.version - a.version)[0]; pairedSelf = sp ? sp.id : ''; }
+          const base = { tenderId: sw.tenderId, subworkId: sw.id, unitNo: u, kind: fm.kind, code: fm.code, name: fm.name, source: fm.source || ('匯入：' + b.fileName), fillMode: 'online', stages, items, order: fm.order, pairedSelf };
+          let t;
+          if (!old) { t = Object.assign({ id: Q.uid('TP-'), version: 1, status: 'published', used: 0 }, base); await Q.put('templates', Q.ensureKeys(t)); res.add++; }
+          else if (usedCount(old)) { t = await Q.saveTemplate(Object.assign(Q.clone(old), base), true); res.ver++; }
+          else { t = Object.assign(Q.clone(old), base); await Q.put('templates', Q.ensureKeys(t)); res.upd++; }
+          saved.push(t);
+        }
+      }
+      await load(); b.done = res;
+      toast(`匯入完成：新增 ${res.add} 張、更新 ${res.upd} 張、另存新版 ${res.ver} 張${res.units ? `，新增單元 ${res.units} 個` : ''}`);
+      tplPickFirst();
+    }
+    // 匯出目前內容：本分項工程全部線上表單（自主檢查表＋抽查紀錄表），格式與匯入範本相同，可修改後整批匯入
+    // 同表號建在多個單元時，還原成「共用＋單元覆蓋」：第一個單元的內容當共用列，其他單元只寫差異（覆蓋／新增／排除）
+    function exportSubwork() {
+      const sw = swById(tplSw.value), unitOrder = sw.unitList || [];
+      const tpls = d.templates.filter(t => t.subworkId === sw.id && t.status === 'published' && t.fillMode !== 'pdf');
+      const groups = new Map(); tpls.forEach(t => { if (!groups.has(t.code)) groups.set(t.code, []); groups.get(t.code).push(t); });
+      const out = { 單元: unitOrder.map(u => [u, '']), 表單: [], 檢查項目: [], 數值欄位: [], 可連結表單: linkableRows(sw.id) }, skipped = [];
+      const sameItem = (a, ta, b, tb) => Q.stageName(ta, a.stage) === Q.stageName(tb, b.stage) && (a.std || '') === (b.std || '') && a.type === b.type && !!a.hold === !!b.hold && !!a.photo === !!b.photo && (a.ref || '') === (b.ref || '') && (a.linked || '') === (b.linked || '');
+      const fmin = f => (f.min === '' || f.min == null ? '' : Number(f.min)), fmax = f => (f.max === '' || f.max == null ? '' : Number(f.max));
+      const itemRow = (t, u, no, i) => [t.code, u, no, Q.stageName(t, i.stage), i.name, i.std || '', TYPE_TEXT[i.type] || '選項', i.hold ? 'Y' : 'N', i.photo ? 'Y' : 'N', i.ref || '', i.linked || '', ''];
+      const fieldRow = (code, u, no, f) => [code, u, no, f.label, f.unit || '', fmin(f), fmax(f), ''];
+      [...groups.values()].sort((a, b) => (a[0].order ?? 1e9) - (b[0].order ?? 1e9) || a[0].code.localeCompare(b[0].code, 'zh-Hant', { numeric: true })).forEach(list => {
+        const unitT = list.filter(t => t.unitNo).sort((a, b) => unitOrder.indexOf(a.unitNo) - unitOrder.indexOf(b.unitNo)), lvl = list.filter(t => !t.unitNo);
+        if (unitT.length && lvl.length) skipped.push(list[0].code);
+        const set = unitT.length ? unitT : lvl.slice(0, 1), base = set[0], code = base.code;
+        // 階段：以共用版本為準，其他單元多出的階段接在後面
+        const stNames = []; set.forEach(t => Q.stagesOf(t).forEach(st => { if (!stNames.includes(st.name)) stNames.push(st.name); }));
+        const isDef = stNames.join() === Q.DEF_STAGES.map(x => x.name).join();
+        const pair = base.pairedSelf ? (d.templates.find(x => x.id === base.pairedSelf) || {}).code || '' : '';
+        out.表單.push([code, base.name, base.kind === 'spot' ? '抽查紀錄表' : '自主檢查表', unitT.length ? unitT.map(t => t.unitNo).join('、') : '', base.source || '', pair, '', isDef ? '' : stNames.join('、')]);
+        // 共用列＝第一個（或唯一的）版本；其他單元只寫差異。先用 1、2、3 編項次，模擬匯入後順序若和系統不同，改用 10、20、30 留空位讓單元新增項目插在正確位置
+        const stIdx = n => { const k = stNames.indexOf(n); return k < 0 ? 99 : k; };
+        const layout = step => {
+          const I = [], F = [], shared = base.items.map((i, k) => ({ no: (k + 1) * step, i }));
+          shared.forEach(x => { I.push(itemRow(base, '', x.no, x.i)); (x.i.fields || []).forEach(f => F.push(fieldRow(code, '', x.no, f))); });
+          for (const t of set.slice(1)) {
+            const u = t.unitNo, used = new Set(), pairOf = new Array(t.items.length).fill(-1);
+            t.items.forEach((i, ui) => { const bk = base.items.findIndex((b, k) => !used.has(k) && b.name === i.name); if (bk >= 0) { pairOf[ui] = bk; used.add(bk); } });
+            // 名稱改了的項目：同位置、同階段、都沒配到 → 視為覆蓋（同項次）
+            // 名稱改了的項目：在前後兩個已配對項目之間、同階段、還沒配到的原項目 → 視為覆蓋（同項次）
+            t.items.forEach((i, ui) => {
+              if (pairOf[ui] >= 0) return;
+              let p = -1, q = base.items.length; for (let k = ui - 1; k >= 0; k--) if (pairOf[k] >= 0) { p = pairOf[k]; break; } for (let k = ui + 1; k < t.items.length; k++) if (pairOf[k] >= 0) { q = pairOf[k]; break; }
+              const bk = base.items.findIndex((b, k) => k > p && k < q && !used.has(k) && Q.stageName(base, b.stage) === Q.stageName(t, i.stage));
+              if (bk >= 0) { pairOf[ui] = bk; used.add(bk); }
+            });
+            base.items.forEach((b, k) => { if (!used.has(k)) I.push([code, u, shared[k].no, '', '', '', '', '', '', '', '', 'Y']); });
+            let prevNo = null, prevStage = null, off = 0, nextPlain = base.items.length;
+            for (let ui = 0; ui < t.items.length; ui++) {
+              const i = t.items[ui], stn = Q.stageName(t, i.stage);
+              if (pairOf[ui] >= 0) {
+                const bk = pairOf[ui], b = base.items[bk], no = shared[bk].no; prevNo = no; prevStage = stn; off = 0;
+                if (b.name !== i.name || !sameItem(i, t, b, base)) I.push(itemRow(t, u, no, i));
+                const bf = b.fields || [], tf = i.fields || [];
+                bf.forEach(f => { if (!tf.some(x => x.label === f.label)) F.push([code, u, no, f.label, '', '', '', 'Y']); });
+                tf.forEach(f => { const g = bf.find(x => x.label === f.label); if (!g || (g.unit || '') !== (f.unit || '') || fmin(g) !== fmin(f) || fmax(g) !== fmax(f)) F.push(fieldRow(code, u, no, f)); });
+                continue;
+              }
+              let no;
+              if (step === 1) no = ++nextPlain;
+              else {
+                if (prevStage !== stn) { const first = shared.find(x => Q.stageName(base, x.i.stage) === stn); prevNo = (first ? first.no : (base.items.length + 1) * step) - step; prevStage = stn; off = 0; }
+                no = prevNo + (++off); if (off >= step) return null;
+              }
+              I.push(itemRow(t, u, no, i)); (i.fields || []).forEach(f => F.push(fieldRow(code, u, no, f)));
+            }
+          }
+          return { I, F };
+        };
+        // 模擬匯入：依「共用＋單元覆蓋」展開後，項目順序要和系統內每個版本一致
+        const simulate = (L, t) => {
+          const m = new Map(); L.I.filter(r => r[1] === '').forEach(r => m.set(r[2], r));
+          if (t.unitNo && t !== base) L.I.filter(r => r[1] === t.unitNo).forEach(r => { if (r[11] === 'Y') m.delete(r[2]); else m.set(r[2], r); });
+          return [...m.values()].sort((a, b) => stIdx(a[3]) - stIdx(b[3]) || a[2] - b[2]).map(r => r[4]).join('\u0001');
+        };
+        let L = null;
+        for (const step of [1, 10, 100]) { const c = layout(step); if (c && set.every(t => simulate(c, t) === t.items.map(i => i.name).join('\u0001'))) { L = c; break; } }
+        if (!L) L = layout(100) || layout(1);
+        out.檢查項目.push(...L.I); out.數值欄位.push(...L.F);
+      });
+      if (!out.表單.length) return toast('本分項工程尚無線上表單可匯出', true);
+      if (buildXlsx(out, `${sw.no || ''}${sw.name || ''}_全部表單.xlsx`, `分項工程表單匯出：${sw.no || ''}、${sw.name || ''}`,
+        `由系統「匯出目前內容」產生，含本分項工程全部線上表單（${out.表單.length} 張）。同表號建在多個單元時以「共用＋單元覆蓋」表示。修改後可用「匯入此分項全部表單」匯入；空白範本 PDF 不在匯出範圍。`))
+        toast(`已匯出 ${out.表單.length} 張表單` + (skipped.length ? `；表號 ${skipped.join('、')} 同時建在分項工程層與單元下，只匯出單元版本` : ''), !!skipped.length);
+    }
+    // 空白範本（含範例資料）：連續壁工程的示範內容，看完範例可清掉後填自己的表單
+    function downloadBulkSample() { const a = document.createElement('a'); a.href = 'templates/分項工程表單匯入範本.xlsx'; a.download = '分項工程表單匯入範本（含範例資料）.xlsx'; document.body.appendChild(a); a.click(); a.remove(); }
     async function saveEdit() {
       if (!edit.value.name.trim()) return toast('請輸入表單名稱', true);
       if (edit.value.fillMode === 'pdf' && !edit.value.pdf) return toast('請上傳空白範本 PDF', true);
@@ -209,6 +529,7 @@ createApp({
       const paired = d.templates.find(t => t.id === edit.value.pairedSelf); if (!paired) return toast('此抽查表未對應自主檢查表', true);
       // 永遠對應自主檢查表的「最新發布版本」，以項目永久代碼（key）比對，不受項次重排影響
       const self = d.templates.filter(t => t.kind === 'self' && t.status === 'published' && t.code === paired.code && t.subworkId === paired.subworkId).sort((a, b) => b.version - a.version)[0] || paired;
+      { const st = Q.clone(Q.stagesOf(edit.value)); Q.stagesOf(self).forEach(s => { const hit = st.find(x => x.key === s.key); if (hit) hit.name = s.name; else st.push(Q.clone(s)); }); edit.value.stages = st; }
       edit.value.pairedSelf = self.id;
       let added = 0;
       self.items.forEach(si => { const hit = edit.value.items.find(x => (si.key && x.srcKey === si.key) || (!x.srcKey && x.srcNo === si.no)); if (hit) { hit.srcKey = si.key; hit.srcNo = si.no; return; } const c = Q.clone(si); c.srcNo = si.no; c.srcKey = si.key; c.key = Q.uid('K'); c.hold = false; edit.value.items.push(c); added++; });
@@ -229,7 +550,7 @@ createApp({
       const f = newTplForm.value; if (!f.name.trim()) return toast('請輸入表單名稱', true);
       if (f.fillMode === 'pdf' && !f.pdf) return toast('請上傳空白範本 PDF', true);
       const sw = swById(tplSw.value);
-      const t = { id: Q.uid('TP-'), tenderId: sw.tenderId, subworkId: sw.id, kind: f.kind, code: f.code.trim() || (f.kind === 'self' ? '新表' : 'SP-新'), name: f.name.trim(), version: 1, status: 'published', source: f.fillMode === 'pdf' ? '空白範本 PDF' : '', fillMode: f.fillMode, pdf: f.fillMode === 'pdf' ? f.pdf : null, items: f.fillMode === 'pdf' ? [] : [Q.I(1, 'pre', '新檢查項目', '')], used: 0 };
+      const t = { id: Q.uid('TP-'), tenderId: sw.tenderId, subworkId: sw.id, unitNo: tplUnit.value, kind: f.kind, code: f.code.trim() || (f.kind === 'self' ? '新表' : 'SP-新'), name: f.name.trim(), version: 1, status: 'published', source: f.fillMode === 'pdf' ? '空白範本 PDF' : '', fillMode: f.fillMode, pdf: f.fillMode === 'pdf' ? f.pdf : null, items: f.fillMode === 'pdf' ? [] : [Q.I(1, 'pre', '新檢查項目', '')], used: 0 };
       await Q.put('templates', Q.ensureKeys(t)); newTplForm.value = null; await load(); pickTpl(d.templates.find(x => x.id === t.id)); toast('已建立表單範本');
     }
     // PDF 預覽（Blob URL）
@@ -250,62 +571,6 @@ createApp({
     function download(name, text, type) {
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + text], { type: type || 'text/csv;charset=utf-8' })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     }
-    const csvCell = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
-    const CSV_HEAD = ['範本名稱', '階段', '項次', '檢查項目', '檢查標準', '判定類型', '停留點', '必填', '引用文件編號'];
-    const OPT_HEAD = ['表單類型', '表號', '連結表號']; // 選填：表單類型＝自主檢查表／抽查紀錄表；連結表號＝判定類型為「連結表單」時必填
-    const KIND = { 自主檢查表: 'self', 抽查紀錄表: 'spot' };
-    const linkErr = (type, code, extra) => type !== 'linked' ? '' : !code ? '判定類型為「連結表單」時，須填「連結表號」' : (d.templates.some(t => t.kind === 'self' && t.status === 'published' && t.code === code) || (extra || []).includes(code)) ? '' : `連結表號「${code}」不存在（需為已發布的自主檢查表表號）`;
-    function exportCsv() {
-      const t = edit.value, rows = [CSV_HEAD.concat(OPT_HEAD)].concat(t.items.map(i => [t.name, Q.STAGES[i.stage], i.no, i.name, i.std, TYPES[i.type] || '選項', i.hold ? 'Y' : 'N', i.photo ? 'Y' : 'N', i.ref || '', t.kind === 'spot' ? '抽查紀錄表' : '自主檢查表', t.code, i.linked || '']));
-      download(`${t.code}_${t.name}.csv`, rows.map(r => r.map(csvCell).join(',')).join('\r\n'));
-    }
-
-    /* ---------- 匯入檢查項目（到目前編輯中的範本）---------- */
-    const itemImp = ref(null);
-    const ITEM_REQ = ['階段', '檢查項目', '判定類型'];
-    function openItemImp() { itemImp.value = { fileName: '', rows: [], groups: [], sel: '', mode: 'append', err: '', done: false }; }
-    function itemSample() {
-      const t = edit.value; return [CSV_HEAD.concat(OPT_HEAD)].concat((t.items.length ? t.items : [Q.I(1, 'pre', '施工圖', '是否核准')]).map(i => [t.name, Q.STAGES[i.stage], i.no, i.name, i.std, TYPES[i.type] || '選項', i.hold ? 'Y' : 'N', i.photo ? 'Y' : 'N', i.ref || '', t.kind === 'spot' ? '抽查紀錄表' : '自主檢查表', t.code, i.linked || '']));
-    }
-    function parseItemSheets(sheets) {
-      const m = itemImp.value; m.err = ''; m.rows = []; let usable = 0, lastMiss = '';
-      sheets.forEach(sh => {
-        const rows = sh.rows.filter(r => r.some(x => String(x).trim() !== '')); if (rows.length < 2) return;
-        const head = rows[0].map(x => String(x).trim()), miss = ITEM_REQ.filter(h => !head.includes(h));
-        if (miss.length) { lastMiss = `工作表「${sh.name}」缺少欄位：` + miss.join('、'); return; }
-        usable++; const ix = h => head.indexOf(h), cell = (r, h) => ix(h) < 0 ? '' : String(r[ix(h)] == null ? '' : r[ix(h)]).trim();
-        rows.slice(1).forEach((r, k) => {
-          const errs = [], stage = SR[cell(r, '階段')], type = RT[cell(r, '判定類型')], ref = cell(r, '引用文件編號');
-          if (!stage) errs.push('階段須為 施工前／施工中／施工後');
-          if (!type) errs.push('判定類型「' + cell(r, '判定類型') + '」不在代碼表內（選項／數值／照片／文字／連結表單）');
-          if (!cell(r, '檢查項目')) errs.push('檢查項目不可空白');
-          if (ref && !d.docs.find(x => x.code === ref)) errs.push('引用文件編號「' + ref + '」不存在於參考文件庫');
-          const lk = cell(r, '連結表號'), le = linkErr(type, lk); if (le) errs.push(le);
-          m.rows.push({ line: k + 2, sheet: sh.name, group: cell(r, '範本名稱') || '（未命名）', stage, type, linked: lk, name: cell(r, '檢查項目'), std: ix('檢查標準') < 0 ? '' : String(r[ix('檢查標準')] == null ? '' : r[ix('檢查標準')]), hold: /^y/i.test(cell(r, '停留點')), photo: /^y/i.test(cell(r, '必填')), ref, stageText: cell(r, '階段'), typeText: cell(r, '判定類型'), errs });
-        });
-      });
-      if (!usable) { m.err = lastMiss || '沒有資料列，請確認第一列為欄位標題'; return; }
-      m.groups = [...new Set(m.rows.map(r => r.group))]; m.sel = m.groups[0];
-    }
-    function downloadItemSample() { writeXlsx(`${edit.value.code}_匯入樣本.xlsx`, itemSample(), edit.value.code); }
-    function onItemFile(e) {
-      const f = e.target.files[0]; if (!f) return; const m = itemImp.value; m.fileName = f.name; m.rows = []; m.groups = []; m.err = ''; const rd = new FileReader();
-      if (/\.xlsx?$/i.test(f.name)) {
-        rd.onload = () => { try { const wb = XLSX.read(rd.result, { type: 'array' }); parseItemSheets(wb.SheetNames.map(n => ({ name: n, rows: XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, defval: '' }) }))); } catch (ex) { m.err = '無法讀取 Excel：' + ex.message; } };
-        rd.readAsArrayBuffer(f);
-      } else rd.onload = () => parseItemSheets([{ name: 'CSV', rows: parseCsv(String(rd.result).replace(/^\ufeff/, '')) }]), rd.readAsText(f, 'utf-8');
-    }
-    const itemImpRows = computed(() => itemImp.value ? itemImp.value.rows.filter(r => r.group === itemImp.value.sel) : []);
-    const itemImpBad = computed(() => itemImpRows.value.filter(r => r.errs.length).length);
-    function doItemImp() {
-      const m = itemImp.value, ok = itemImpRows.value.filter(r => !r.errs.length); if (!ok.length) return toast('沒有可匯入的列', true);
-      const items = ok.map(r => Q.I(0, r.stage, r.name, r.std, { type: r.type, hold: r.hold, photo: r.photo || r.type === 'photo', ref: r.ref, fields: r.type === 'number' ? [Q.F('v', '實測值', '', null, null)] : [], linked: r.type === 'linked' ? r.linked : '' }));
-      edit.value.items = m.mode === 'replace' ? items : edit.value.items.concat(items);
-      toast(`已匯入 ${items.length} 項${itemImpBad.value ? `（略過 ${itemImpBad.value} 列錯誤）` : ''}，請按「儲存」生效`); itemImp.value = null;
-    }
-
-    /* ---------- CSV 匯入 ---------- */
-    const imp = reactive({ step: 1, text: '', fileName: '', groups: [], selGroup: 0, mode: 'new', targetSw: 'S671-5', existing: '', err: '', done: 0, sheets: [] });
     function parseCsv(text) {
       const rows = []; let row = [], cell = '', q = false;
       for (let i = 0; i < text.length; i++) {
@@ -317,79 +582,126 @@ createApp({
       if (cell !== '' || row.length) { row.push(cell); rows.push(row); } return rows.filter(r => r.some(x => x.trim() !== ''));
     }
     const RT = { 選項: 'option', 數值: 'number', 照片: 'photo', 文字: 'text', 連結表單: 'linked' }, SR = { 施工前: 'pre', 施工中: 'during', 施工後: 'post' };
-    function validate() {
-      imp.err = '';
-      const sheets = imp.sheets.length ? imp.sheets : [{ name: '貼上內容', rows: parseCsv(imp.text.replace(/^﻿/, '')) }];
-      const groups = {}; let usable = 0, lastMiss = '';
-      sheets.forEach(sh => {
-        const rows = sh.rows.filter(r => r.some(x => String(x).trim() !== ''));
-        if (rows.length < 2) return;
-        const head = rows[0].map(x => String(x).trim()), miss = CSV_HEAD.filter(h => !head.includes(h));
-        if (miss.length) { lastMiss = `工作表「${sh.name}」缺少欄位：` + miss.join('、'); return; }
-        usable++;
-        const idx = Object.fromEntries(CSV_HEAD.concat(OPT_HEAD).map(h => [h, head.indexOf(h)])), cell = (r, h) => idx[h] < 0 ? '' : String(r[idx[h]] == null ? '' : r[idx[h]]).trim();
-        rows.slice(1).forEach((r, k) => {
-          const g = cell(r, '範本名稱') || '（未命名）', errs = [];
-          const stage = SR[cell(r, '階段')], type = RT[cell(r, '判定類型')], ref = cell(r, '引用文件編號');
-          if (!stage) errs.push('階段須為 施工前／施工中／施工後');
-          if (!type) errs.push('判定類型「' + cell(r, '判定類型') + '」不在代碼表內（選項／數值／照片／文字／連結表單）');
-          if (!cell(r, '檢查項目')) errs.push('檢查項目不可空白');
-          if (ref && !d.docs.find(x => x.code === ref)) errs.push('引用文件編號「' + ref + '」不存在於參考文件庫');
-          const kt = cell(r, '表單類型'); if (kt && !KIND[kt]) errs.push(`表單類型「${kt}」須為 自主檢查表／抽查紀錄表`);
-          const grp = (groups[g] = groups[g] || { name: g, rows: [], kind: 'self', code: '' }); if (KIND[kt]) grp.kind = KIND[kt]; if (cell(r, '表號') && !grp.code) grp.code = cell(r, '表號');
-          grp.rows.push({ line: k + 2, sheet: sh.name, stage, type, linked: cell(r, '連結表號'), name: cell(r, '檢查項目'), std: String(r[idx['檢查標準']] == null ? '' : r[idx['檢查標準']]), hold: /^y/i.test(cell(r, '停留點')), photo: /^y/i.test(cell(r, '必填')), ref, raw: r, idx, errs });
-        });
+    /* ---------- 單張表單的匯出／匯入檢查項目：與「匯入此分項全部表單」同一個 Excel 格式 ---------- */
+    const XH = {
+      unit: ['單元編號 *', '說明'],
+      form: ['表號 *', '表單名稱 *', '表單類型 *', '適用單元', '來源依據', '配對自主檢查表號', '排序', '階段設定'],
+      item: ['表號 *', '單元編號', '項次 *', '階段 *', '檢查項目 *', '檢查標準', '判定類型 *', '停留點', '必拍照', '引用文件編號', '連結表號', '排除'],
+      field: ['表號 *', '單元編號', '項次 *', '欄位名稱 *', '單位', '下限', '上限', '排除']
+    };
+    const TYPE_TEXT = { option: '選項', number: '數值', photo: '照片', text: '文字', linked: '連結表單' };
+    // 本分項工程系統內的自主檢查表（含 PDF）：給 Excel「可連結表單」工作表，做為連結表號／配對表號的下拉清單
+    function linkableRows(swId) {
+      const m = new Map();
+      d.templates.filter(t => t.subworkId === swId && t.kind === 'self' && t.status === 'published').sort((a, b) => a.code.localeCompare(b.code, 'zh-Hant', { numeric: true })).forEach(t => {
+        const r = m.get(t.code) || { code: t.code, name: t.name, units: new Set(), pdf: t.fillMode === 'pdf' }; r.units.add(t.unitNo || '（分項工程層）'); m.set(t.code, r);
       });
-      if (!usable) { imp.err = lastMiss || '沒有資料列，請上傳 Excel／CSV 或貼上內容'; return; }
-      const newCodes = Object.values(groups).map(g => g.code).filter(Boolean);
-      Object.values(groups).forEach(g => g.rows.forEach(r => { const le = linkErr(r.type, r.linked, newCodes); if (le) r.errs.push(le); }));
-      imp.groups = Object.values(groups).map(g => Object.assign(g, { bad: g.rows.filter(r => r.errs.length).length })); imp.selGroup = 0; imp.step = 3;
+      return [...m.values()].map(r => [r.code, r.name, [...r.units].join('、'), r.pdf ? '空白範本 PDF' : '線上表單']);
     }
-    function onFile(e) {
-      const f = e.target.files[0]; if (!f) return; imp.fileName = f.name; imp.err = ''; imp.sheets = []; imp.text = '';
-      const rd = new FileReader();
-      if (/\.xlsx?$/i.test(f.name)) {
-        if (!window.XLSX) { imp.err = 'Excel 函式庫未載入'; return; }
-        rd.onload = () => {
-          try {
-            const wb = XLSX.read(rd.result, { type: 'array' });
-            imp.sheets = wb.SheetNames.map(n => ({ name: n, rows: XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, defval: '' }) }));
-            imp.step = 2; validate();
-          } catch (ex) { imp.err = '無法讀取 Excel：' + ex.message; }
-        };
-        rd.readAsArrayBuffer(f);
-      } else { rd.onload = () => { imp.text = rd.result; imp.step = 2; }; rd.readAsText(f, 'utf-8'); }
+    // 以內建底稿（與匯入範本相同的填寫說明、欄位、檢查公式、下拉選單）產生 Excel，再把資料填進去
+    function buildXlsx(data, fileName, title, sub) {
+      if (!window.QMS_EXPORT_TPL) return toast('匯出底稿未載入', true);
+      const u8 = Uint8Array.from(atob(window.QMS_EXPORT_TPL), c => c.charCodeAt(0)), cfb = XLSX.CFB.read(u8, { type: 'array' });
+      const ent = p => XLSX.CFB.find(cfb, p), rd = p => new TextDecoder().decode(ent(p).content), wr = (p, x) => { ent(p).content = new TextEncoder().encode(x); };
+      const dp = new DOMParser(), xs0 = new XMLSerializer(), NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+      const xs = { serializeToString: d => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' + xs0.serializeToString(d) };
+      // 工作表名稱 → 檔案路徑
+      const wbDoc = dp.parseFromString(rd('/xl/workbook.xml'), 'application/xml'), relDoc = dp.parseFromString(rd('/xl/_rels/workbook.xml.rels'), 'application/xml');
+      const relOf = {}; [...relDoc.getElementsByTagName('Relationship')].forEach(r => { relOf[r.getAttribute('Id')] = r.getAttribute('Target').replace(/^\/?(xl\/)?/, ''); });
+      const pathOf = {}; [...wbDoc.getElementsByTagName('sheet')].forEach(sh => { pathOf[sh.getAttribute('name')] = '/xl/' + relOf[sh.getAttribute('r:id') || sh.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id')]; });
+      // 列印範圍＝實際資料列；資料範圍（dimension）涵蓋公式欄
+      const PRINT = { 單元: 'B', 表單: 'M', 檢查項目: 'O', 數值欄位: 'L', 可連結表單: 'E' }, DIM = Object.assign({}, PRINT, { 可連結表單: 'O' }), sheetEls = [...wbDoc.getElementsByTagName('sheet')];
+      let dn = wbDoc.getElementsByTagName('definedNames')[0];
+      if (!dn) { dn = wbDoc.createElementNS(NS, 'definedNames'); const sheetsEl = wbDoc.getElementsByTagName('sheets')[0]; sheetsEl.parentNode.insertBefore(dn, sheetsEl.nextSibling); }
+      [...dn.getElementsByTagName('definedName')].filter(x => x.getAttribute('name') === '_xlnm.Print_Area').forEach(x => dn.removeChild(x));
+      Object.keys(PRINT).forEach(name => { const idx = sheetEls.findIndex(x => x.getAttribute('name') === name); if (idx < 0) return; const el = wbDoc.createElementNS(NS, 'definedName'); el.setAttribute('name', '_xlnm.Print_Area'); el.setAttribute('localSheetId', String(idx)); const n = name === '可連結表單' ? (data[name] || []).length + (data.表單 || []).filter(r => r[2] === '自主檢查表' && !(data[name] || []).some(x => x[0] === r[0])).length : (data[name] || []).length; el.textContent = `'${name}'!$A$1:$${PRINT[name]}$${Math.max(n + 1, 2)}`; dn.appendChild(el); });
+      // 開啟時重新計算公式
+      let calc = wbDoc.getElementsByTagName('calcPr')[0]; if (!calc) { calc = wbDoc.createElementNS(NS, 'calcPr'); wbDoc.documentElement.appendChild(calc); } calc.setAttribute('fullCalcOnLoad', '1'); wr('/xl/workbook.xml', xs.serializeToString(wbDoc));
+      // 樣式參考格：代碼表!H1 一般列、H2 單元列、H3 自動欄位
+      const cdDoc = dp.parseFromString(rd(pathOf['代碼表']), 'application/xml'), styleOf = ref => { const c = [...cdDoc.getElementsByTagName('c')].find(x => x.getAttribute('r') === ref); return c ? c.getAttribute('s') : null; };
+      const ST = { norm: styleOf('H1'), unit: styleOf('H2'), auto: styleOf('H3') };
+      const col = n => { let s = ''; for (n++; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + (n - 1) % 26) + s; return s; };
+      const colIdx = ref => ref.replace(/\d+/g, '').split('').reduce((a, ch) => a * 26 + ch.charCodeAt(0) - 64, 0) - 1;
+      const setVal = (doc, c, v) => {
+        while (c.firstChild) c.removeChild(c.firstChild);
+        if (v === '' || v == null) { c.removeAttribute('t'); return; }
+        if (typeof v === 'number') { c.removeAttribute('t'); const ve = doc.createElementNS(NS, 'v'); ve.textContent = String(v); c.appendChild(ve); }
+        else { c.setAttribute('t', 'inlineStr'); const is = doc.createElementNS(NS, 'is'), te = doc.createElementNS(NS, 't'); te.setAttribute('xml:space', 'preserve'); te.textContent = String(v); is.appendChild(te); c.appendChild(is); }
+      };
+      // 填寫說明的標題與說明文字
+      { const doc = dp.parseFromString(rd(pathOf['填寫說明']), 'application/xml'), cs = [...doc.getElementsByTagName('c')];
+        [['B2', title], ['B3', sub]].forEach(([ref, v]) => { const c = cs.find(x => x.getAttribute('r') === ref); if (c && v) setVal(doc, c, v); });
+        wr(pathOf['填寫說明'], xs.serializeToString(doc)); }
+      Object.entries(data).forEach(([name, rows]) => {
+        const doc = dp.parseFromString(rd(pathOf[name]), 'application/xml'), sd = doc.getElementsByTagName('sheetData')[0];
+        const rowEls = {}; [...sd.getElementsByTagName('row')].forEach(r => { rowEls[r.getAttribute('r')] = r; });
+        [...sd.getElementsByTagName('f')].forEach(fe => { const v = fe.parentNode.getElementsByTagName('v')[0]; if (v) v.parentNode.removeChild(v); fe.parentNode.removeAttribute('t'); });
+        const OFF = name === '可連結表單' ? 11 : 0;   // 可連結表單：系統現有資料寫在隱藏的 L–O 欄，看得到的 A–E 欄是公式
+        rows.forEach((vals, k) => {
+          const rn = String(k + 2), unitRow = (name === '檢查項目' || name === '數值欄位') && !!vals[1];
+          let row = rowEls[rn]; if (!row) { row = doc.createElementNS(NS, 'row'); row.setAttribute('r', rn); const after = [...sd.getElementsByTagName('row')].find(x => +x.getAttribute('r') > +rn); sd.insertBefore(row, after || null); }
+          const cells = {}; [...row.getElementsByTagName('c')].forEach(c => { cells[colIdx(c.getAttribute('r'))] = c; });
+          Object.entries(cells).forEach(([ci, c]) => { if (name !== '可連結表單' && +ci >= vals.length && ST.auto) c.setAttribute('s', ST.auto); });   // 灰底自動欄位
+          vals.forEach((v, ci) => {
+            const cx = ci + OFF; let c = cells[cx];
+            if (!c) { c = doc.createElementNS(NS, 'c'); c.setAttribute('r', col(cx) + rn); const after = [...row.getElementsByTagName('c')].find(x => colIdx(x.getAttribute('r')) > cx); row.insertBefore(c, after || null); }
+            const st = name === '可連結表單' ? null : unitRow ? ST.unit : ST.norm; if (st) c.setAttribute('s', st);
+            setVal(doc, c, v);
+          });
+        });
+        // 更新工作表的資料範圍（dimension），否則新增的列可能被讀檔程式忽略
+        const dim = doc.getElementsByTagName('dimension')[0], lastRow = Math.max(rows.length + 1, ...[...sd.getElementsByTagName('row')].map(r => +r.getAttribute('r')));
+        if (dim) dim.setAttribute('ref', `A1:${DIM[name]}${lastRow}`);
+        wr(pathOf[name], xs.serializeToString(doc));
+      });
+      const out = XLSX.CFB.write(cfb, { type: 'array', fileType: 'zip' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+      a.download = fileName; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+      return true;
     }
-    const SAMPLE_ROWS = () => [CSV_HEAD.concat(OPT_HEAD), ['表5-6 鋼筋籠自主檢查表', '施工前', 1, '施工圖', '是否核准', '選項', 'Y', 'Y', 'CF671-PL-0032'], ['表5-6 鋼筋籠自主檢查表', '施工中', 2, '焊條使用是否符合要求', '使用 AWS D1.4 E8016', '選項', 'N', 'N', ''], ['表5-6 鋼筋籠自主檢查表', '施工中', 3, '鋼筋剪力筋是否依設計數量安放', '依施工圖標示', 'Y/N', 'N', 'N', ''], ['表5-6 鋼筋籠自主檢查表', '施工中', 4, '鋼筋籠端板是否牢固', '端板厚度 6mm', '數值', 'N', 'N', 'CF671-DW-9999'], ['表5-6 鋼筋籠自主檢查表', '施工後', 5, '場地清理', '是否清理完成', '選項', 'N', 'N', '']];
-    function sampleCsv() { return SAMPLE_ROWS().map(r => r.map(csvCell).join(',')).join('\r\n'); }
-    function loadSample() { imp.fileName = '範本匯入樣本.xlsx'; imp.sheets = [{ name: '範本', rows: SAMPLE_ROWS() }]; imp.step = 2; validate(); }
-    function writeXlsx(name, rows, sheetName) {
-      const ws = XLSX.utils.aoa_to_sheet(rows); ws['!cols'] = CSV_HEAD.concat(OPT_HEAD).map((h, i) => ({ wch: [26, 8, 6, 28, 36, 10, 8, 6, 16, 12, 8, 10][i] }));
-      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, sheetName || '範本'); XLSX.writeFile(wb, name);
-    }
-    function downloadSample() { writeXlsx('範本匯入樣本.xlsx', SAMPLE_ROWS()); }
+    // 匯出 Excel：目前這張表單
     function exportXlsx() {
-      const t = edit.value; writeXlsx(`${t.code}_${t.name}.xlsx`, [CSV_HEAD.concat(OPT_HEAD)].concat(t.items.map(i => [t.name, Q.STAGES[i.stage], i.no, i.name, i.std, TYPES[i.type] || '選項', i.hold ? 'Y' : 'N', i.photo ? 'Y' : 'N', i.ref || '', t.kind === 'spot' ? '抽查紀錄表' : '自主檢查表', t.code, i.linked || ''])), t.code);
+      const t = edit.value, sw = swById(t.subworkId), stNames = Q.stagesOf(t).map(s => s.name), isDef = stNames.join() === Q.DEF_STAGES.map(s => s.name).join();
+      const pair = t.pairedSelf ? (d.templates.find(x => x.id === t.pairedSelf) || {}).code || '' : '';
+      const data = {
+        單元: t.unitNo ? [[t.unitNo, '']] : [],
+        表單: [[t.code, t.name, t.kind === 'spot' ? '抽查紀錄表' : '自主檢查表', t.unitNo || '', t.source || '', pair, '', isDef ? '' : stNames.join('、')]],
+        檢查項目: t.items.map(i => [t.code, '', i.no, Q.stageName(t, i.stage), i.name, i.std || '', TYPE_TEXT[i.type] || '選項', i.hold ? 'Y' : 'N', i.photo ? 'Y' : 'N', i.ref || '', i.linked || '', '']),
+        數值欄位: [].concat(...t.items.map(i => (i.fields || []).map(f => [t.code, '', i.no, f.label, f.unit || '', f.min === '' || f.min == null ? '' : Number(f.min), f.max === '' || f.max == null ? '' : Number(f.max), '']))),
+        可連結表單: linkableRows(t.subworkId)
+      };
+      if (buildXlsx(data, `${t.code}_${t.name}${t.unitNo ? '_' + t.unitNo : ''}.xlsx`, `表單匯出檔：${t.kind === 'self' ? '表' : ''}${t.code} ${t.name}${t.unitNo ? '（單元 ' + t.unitNo + '）' : ''}`,
+        `由系統「匯出 Excel」產生（${sw.no || ''}、${sw.name || ''}），欄位、檢查欄與規則和「分項工程表單匯入範本」相同。修改後可用表單範本的「匯入檢查項目」或「匯入此分項全部表單」匯入。`))
+        toast('已匯出（含填寫說明、檢查欄與可連結表單）');
     }
-    // 建立新範本時：同一分項工程已有相同表號 → 須改用「匯入為新版本」
-    const impDup = g => imp.mode === 'new' && !!g.code && d.templates.some(t => t.status === 'published' && t.subworkId === imp.targetSw && t.kind === g.kind && t.code === g.code);
-    const impOk = computed(() => imp.groups.filter(g => !g.bad && !impDup(g)));
-    async function doImport() {
-      let n = 0;
-      for (const g of impOk.value) {
-        const items = g.rows.map((r, i) => Q.I(i + 1, r.stage, r.name, r.std, { type: r.type, hold: r.hold, photo: r.photo, ref: r.ref || '', fields: r.type === 'number' ? [Q.F('v', '實測值', '', null, null)] : [], linked: r.type === 'linked' ? r.linked : '' }));
-        if (imp.mode === 'version' && imp.existing) {
-          const old = d.templates.find(t => t.id === imp.existing); const nt = Q.clone(old); nt.items = items; await Q.saveTemplate(nt, true);
-        } else {
-          const sw = swById(imp.targetSw);
-          let code = g.code; if (!code) { let k = 1; while (d.templates.some(t => t.subworkId === sw.id && t.code === `IMP-${k}`)) k++; code = `IMP-${k}`; }
-          await Q.put('templates', Q.ensureKeys({ id: Q.uid('TP-'), tenderId: sw.tenderId, subworkId: sw.id, kind: g.kind || 'self', code, name: g.name, version: 1, status: 'published', source: '匯入：' + (imp.fileName || '貼上內容'), fillMode: 'online', items, used: 0 }));
-        }
-        n++;
-      }
-      await load(); imp.step = 4; imp.done = n;
+    const itemImp = ref(null);
+    function openItemImp() { itemImp.value = { fileName: '', err: '', res: null, code: '', unit: '', mode: 'replace' }; }
+    function onItemFile(e) {
+      const f = e.target.files[0]; if (!f) return; const m = itemImp.value; Object.assign(m, { fileName: f.name, err: '', res: null }); const rd = new FileReader();
+      rd.onload = () => {
+        try {
+          const res = { units: [], forms: [], loose: [], err: '' }; parseBook(XLSX.read(rd.result, { type: 'array' }), swById(edit.value.subworkId), res);
+          if (res.err) { m.err = res.err; return; } if (!res.forms.length) { m.err = '「表單」工作表沒有資料'; return; }
+          const fm = res.forms.find(x => x.code === edit.value.code) || res.forms[0];
+          m.res = res; m.code = fm.code; m.unit = fm.units.includes(edit.value.unitNo || '') ? (edit.value.unitNo || '') : fm.units[0];
+        } catch (ex) { m.err = '無法讀取 Excel：' + ex.message; }
+      };
+      rd.readAsArrayBuffer(f); e.target.value = '';
     }
-    function impReset() { Object.assign(imp, { step: 1, text: '', fileName: '', groups: [], err: '', sheets: [] }); }
+    const itemImpForm = computed(() => { const m = itemImp.value; return m && m.res ? m.res.forms.find(x => x.code === m.code) : null; });
+    const itemImpView = computed(() => { const fm = itemImpForm.value; return fm && fm.views[itemImp.value.unit] ? fm.views[itemImp.value.unit] : null; });
+    // 單張匯入只看這張表單本身的錯誤（不檢查「系統已有同表號」這類整批匯入才需要的規則）
+    const itemImpErrs = computed(() => { const fm = itemImpForm.value; if (!fm) return []; const e = fm.errs.filter(x => !/系統已有同表號/.test(x)); if (fm.kind && fm.kind !== edit.value.kind) e.push(`檔案中的表單類型為「${fm.kindText}」，與目前編輯的表單不同`); return e; });
+    function doItemImp() {
+      const m = itemImp.value, fm = itemImpForm.value, v = itemImpView.value; if (!fm || !v || itemImpErrs.value.length) return toast('有錯誤，無法匯入', true);
+      const t = edit.value, base = m.mode === 'replace' ? [] : Q.stagesOf(t);
+      // 階段：沿用同名階段的 key，其餘依檔案的階段設定新增
+      const stages = m.mode === 'replace' ? fm.stageNames.map(n => { const o = Q.stagesOf(t).find(s => s.name === n); return o ? Q.clone(o) : { key: SR[n] || Q.uid('ST'), name: n }; }) : buildStages(fm.stageNames, base);
+      const items = v.items.map(i => { const prev = t.items.find(x => x.name === i.name); return Object.assign(Q.I(0, stageKey(stages, i.stage), i.name, i.std, { type: i.type, hold: !!i.hold, photo: !!i.photo || i.type === 'photo', ref: i.ref, linked: i.type === 'linked' ? i.linked : '',
+        fields: i.fields.map((f, n) => Q.F((prev && (prev.fields || []).find(x => x.label === f.label) || {}).key || 'f' + (n + 1), f.label, f.unitText, f.min === '' ? null : f.min, f.max === '' ? null : f.max)) }), m.mode === 'replace' && prev && prev.key ? { key: prev.key } : {}); });
+      t.stages = stages; t.items = m.mode === 'replace' ? items : t.items.concat(items);
+      toast(`已匯入 ${items.length} 項（${m.mode === 'replace' ? '取代原有項目' : '加在現有項目後面'}），請按「${editUsed.value > 0 ? '另存為 v' + (t.version + 1) : '儲存'}」生效`); itemImp.value = null;
+    }
 
     /* ---------- 其他 ---------- */
     const docForm = ref(null), userForm = ref(null);
@@ -418,7 +730,7 @@ createApp({
       await Q.put('meta', Object.assign({ id: 'params' }, p)); toast('參數已儲存');
     }
     async function resetDemo() { if (!confirm('將清除所有資料並還原示範資料，確定？')) return; await Q.seed(true); await load(); toast('已還原示範資料'); }
-    const navItems = [['dashboard', '查驗總覽'], ['g', '查驗作業'], ['holds', '停留點會驗', 'badge'], ['selfchecks', '自主檢查紀錄'], ['spots', '抽查紀錄'], ['defects', '缺失追蹤', 'dbadge'], ['g', '基本資料'], ['projects', '標案與分項工程'], ['templates', '表單範本'], ['import', '範本匯入'], ['docs', '參考文件'], ['g', '系統'], ['users', '帳號與權限'], ['params', '參數設定']];
+    const navItems = [['dashboard', '查驗總覽'], ['g', '查驗作業'], ['holds', '停留點會驗', 'badge'], ['selfchecks', '自主檢查紀錄'], ['spots', '抽查紀錄'], ['defects', '缺失追蹤', 'dbadge'], ['g', '基本資料'], ['projects', '標案與分項工程'], ['templates', '表單範本'], ['docs', '參考文件'], ['g', '系統'], ['users', '帳號與權限'], ['params', '參數設定']];
     // 側邊選單：分組可收合（狀態記在 localStorage）
     const navTree = (() => { const t = []; navItems.forEach(n => { if (n[0] === 'g') t.push({ group: n[1], items: [] }); else if (t.length) t[t.length - 1].items.push(n); else t.push({ link: n }); }); return t; })();
     const collapsed = reactive((() => { try { return JSON.parse(localStorage.getItem('qms-nav-collapsed') || '{}'); } catch (e) { return {}; } })());
@@ -437,9 +749,9 @@ createApp({
       Q, d, now, loaded, page, menuOpen, toastMsg, toastNg, toast, go, tenderById, swById, tenderFilter, supervisors, reqCls, rel, openReqs, overdueReqs, openDefects, overdueDefects, weekHolds, spotRate, kpiSelf, todayAgenda, tplOf, usedCount,
       progTender, progFilter, progRows, progCount, holdTab, holdTabs, holdCount, holdList, holdByDate, selReqId, selReq, calView, sched, reqChips, lockedAfter, hoursBefore, doSchedule, doReject, doStart, doCancel,
       showSC, showSP, itemsOf, judgeText, valuesText, spotCount, defCls, defText, defTab, defList, defAct, defShow, defReview,
-      selTenderId, selTender, treeRoot, treeOpen, swPick, treeAll, pickTender, pickSw, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, tenderForm, swForm, saveTender, saveSw, moveSw, delSw, newTender,
-      tplSw, swGroups, selTplId, tplTab, edit, previewOn, fieldIdx, tplList, tplHistory, pickTpl, editUsed, editStages, isPdf, newTplForm, onNewPdf, onEditPdf, createTpl, pdfUrl, downloadFile, wfCls, readPdf, TYPES, holdN, addItem, delItem, moveItem, addField, onType, saveEdit, delTpl, syncFromSelf, newTpl, exportCsv, exportXlsx, dragId, dragOver, onDragStart, onDragEnd, onDrop, itemImp, openItemImp, itemSample, downloadItemSample, onItemFile, itemImpRows, itemImpBad, doItemImp,
-      imp, impDup, linkOpts, adminUser, validate, onFile, sampleCsv, loadSample, downloadSample, impOk, doImport, impReset, download,
+      selTenderId, selTender, treeRoot, treeOpen, swPick, treeAll, pickTender, pickSw, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, tenderForm, swForm, saveTender, saveSw, moveSw, delSw, newTender, swImp, openSwImp, downloadSwSample, onSwFile, swImpOk, swImpBad, doSwImp,
+      tplSw, tplUnit, tplUnits, unitForm, unitTplN, openUnitForm, addUnit, delUnit, swGroups, selTplId, tplTab, edit, previewOn, fieldIdx, tplList, tplHistory, pickTpl, editUsed, editStages, isPdf, newTplForm, onNewPdf, onEditPdf, createTpl, pdfUrl, downloadFile, wfCls, readPdf, TYPES, holdN, addItem, delItem, moveItem, addField, onType, saveEdit, delTpl, syncFromSelf, bulk, openBulk, onBulkFile, bulkOk, bulkView, doBulk, downloadBulkSample, exportSubwork, stageForm, stageItemN, openStageForm, stageAdd, stageMove, stageDel, stagePreset, applyStages, STAGE_PRESETS, newTpl, exportXlsx, dragId, dragOver, onDragStart, onDragEnd, onDrop, itemImp, openItemImp, onItemFile, itemImpForm, itemImpView, itemImpErrs, doItemImp,
+      linkOpts, adminUser,
       docForm, userForm, saveDoc, newDoc, editDoc, onDocFile, saveUser, delRow, saveParams, resetDemo, navItems, navTree, collapsed, toggleGroup, titles, todayStr
     };
   }

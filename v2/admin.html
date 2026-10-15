@@ -153,7 +153,7 @@
         <div class="mt" v-if="sched.rejecting"><label class="f">退回原因</label><textarea rows="2" v-model="sched.reason"></textarea>
           <div class="row mt"><button class="btn danger" @click="doReject">確認退回</button><button class="btn" @click="sched.rejecting=false">取消</button></div></div>
         <div class="row mt" v-else><button class="btn primary grow" @click="doSchedule">{{ selReq.status==='pending'?'確認排定':'改期' }}</button><button class="btn danger" @click="sched.rejecting=true">退回</button></div>
-        <template v-if="selReq.status==='scheduled'"><label class="f mt" v-if="sched.tplOpts.length">會驗使用的抽查紀錄表</label><select v-if="sched.tplOpts.length" v-model="sched.tplId"><option v-for="o in sched.tplOpts" :key="o.id" :value="o.id">{{ o.name }}（{{ o.pdf ? '空白範本 PDF' : '線上表單' }}）</option></select>
+        <template v-if="selReq.status==='scheduled'"><label class="f mt" v-if="sched.tplOpts.length">會驗使用的抽查紀錄表</label><select v-if="sched.tplOpts.length" v-model="sched.tplId"><option v-for="o in sched.tplOpts" :key="o.id" :value="o.id">{{ o.name }}</option></select>
         <div class="row mt"><button class="btn green grow" @click="doStart">開始會驗（建立抽查紀錄）</button></div></template>
       </template>
       <div class="mt" v-if="selReq.status==='inspecting'"><div class="alert info">抽查進行中，請至「現場作業」頁完成抽查紀錄與簽認。</div>
@@ -178,7 +178,7 @@
   <div class="card tbl-scroll"><table class="table"><thead><tr><th>編號</th><th>表單</th><th>位置</th><th>抽查時機</th><th>抽查結果</th><th>狀態</th></tr></thead><tbody>
     <tr v-for="s in d.spotChecks" :key="s.id" class="click" @click="showSP=s"><td>{{ s.id }}</td><td>{{ s.templateName }} <span class="chip">v{{ s.templateVer }}</span> <span class="chip warn" v-if="s.fillMode==='pdf'">PDF</span></td><td>{{ s.location }}</td>
       <td><span class="chip warn" v-if="s.kind==='hold'">檢驗停留點<template v-if="s.title">：★{{ s.title }}</template></span><span class="chip" v-else>隨機抽查</span></td>
-      <td><template v-if="s.fillMode==='pdf'"><span class="chip" :class="s.pdfResult==='ng'?'ng':s.pdfResult==='ok'?'ok':''">{{ s.wfStatus }}{{ s.pdfResult==='ok' ? '・合格' : s.pdfResult==='ng' ? '・有缺失' : '' }}</span></template><template v-else>○ {{ spotCount(s,'ok') }}　<span style="color:var(--ng)">╳ {{ spotCount(s,'ng') }}</span>　╱ {{ spotCount(s,'na') }}</template></td>
+      <td><template v-if="s.fillMode==='pdf'"><span class="chip" :class="s.wfStatus==='已結案'?'ok':''">PDF 紀錄・{{ s.wfStatus }}</span></template><template v-else>○ {{ spotCount(s,'ok') }}　<span style="color:var(--ng)">╳ {{ spotCount(s,'ng') }}</span>　╱ {{ spotCount(s,'na') }}</template></td>
       <td><span class="chip" :class="s.status==='signed'?'ok':'warn'">{{ s.status==='signed'?'已簽認':'填寫中' }}</span></td></tr>
   </tbody></table></div>
 </template>
@@ -226,7 +226,7 @@
       <div class="card">
         <h3>分項工程（主要施工項目）</h3><div class="muted small mb">共 {{ swAll.length }} 項・已設定檢查表 {{ swAll.filter(s=>swTplText(s,'self')!=='未設定').length }} 項・以 ▲▼ 調整工序順序</div>
         <div class="alert info mb row" v-if="swPick"><span class="grow">已篩選分項工程：<b>{{ (d.subworks.find(s=>s.id===swPick)||{}).name }}</b></span><a @click="swPick=null">✕ 顯示全部</a></div>
-        <div class="row wrap mb"><input type="search" v-model="swSearch" placeholder="搜尋分項工程" style="max-width:240px"><select v-model="swStatus" style="width:auto"><option value="">全部狀態</option><option>施工中</option><option>未開始</option><option>已完成</option></select><span class="grow"></span><button class="btn" @click="go('import')">匯入範本</button><button class="btn primary" @click="swForm={id:'',name:'',no:'',qty:1,unit:'式',status:'施工中'}">＋ 新增分項工程</button></div>
+        <div class="row wrap mb"><input type="search" v-model="swSearch" placeholder="搜尋分項工程" style="max-width:240px"><select v-model="swStatus" style="width:auto"><option value="">全部狀態</option><option>施工中</option><option>未開始</option><option>已完成</option></select><span class="grow"></span><button class="btn" @click="openSwImp">匯入分項工程</button><button class="btn primary" @click="swForm={id:'',name:'',no:'',qty:1,unit:'式',status:'施工中'}">＋ 新增分項工程</button></div>
         <div class="tbl-scroll"><table class="table"><thead><tr><th></th><th>項次</th><th>分項工程</th><th class="right">數量</th><th>自主檢查表</th><th>抽查紀錄表</th><th>停留點</th><th></th></tr></thead><tbody>
           <tr v-for="s in swPaged" :key="s.id" :class="{picked: swPick===s.id}"><td class="nowrap"><a @click="moveSw(s,-1)">▲</a> <a @click="moveSw(s,1)">▼</a></td><td>{{ s.no }}</td><td><b>{{ s.name }}</b></td><td class="right nowrap">{{ s.qty.toLocaleString() }} {{ s.unit }}</td>
             <td><span class="chip" :class="swTplText(s,'self')==='未設定'?'':'blue'">{{ swTplText(s,'self') }}</span></td><td><span class="chip" :class="swTplText(s,'spot')==='未設定'?'':'blue'">{{ swTplText(s,'spot') }}</span></td><td><span class="star" v-if="swHold(s)">★ {{ swHold(s) }}</span></td>
@@ -243,8 +243,10 @@
   <div class="page-head"><div><h1>表單範本</h1><div class="muted">自主檢查表（廠商）與抽查紀錄表（監造）。已使用的範本修改後會另存新版本。</div></div></div>
   <div class="cols2">
     <div class="card">
+      <button class="btn block mb" @click="openBulk">⬆ 匯入此分項全部表單</button>
       <label class="f">分項工程</label><select v-model="tplSw"><optgroup v-for="g in swGroups" :key="g.tender.id" :label="g.tender.code + ' ' + g.tender.name"><option v-for="s in g.subs" :key="s.id" :value="s.id">{{ g.tender.code }}｜{{ s.no }}、{{ s.name }}</option></optgroup></select>
-      <div class="row mt"><button class="btn primary sm" @click="newTpl('self')">＋ 自主檢查表</button><button class="btn sm" @click="newTpl('spot')">＋ 抽查紀錄表</button></div>
+      <template v-if="tplUnits.length"><label class="f mt">單元</label><select v-model="tplUnit"><option value="">（不指定單元，掛在分項工程下）</option><option v-for="u in tplUnits" :key="u" :value="u">{{ u }}（{{ unitTplN(tplSw, u) }} 張）</option></select></template>
+      <div class="row mt"><button class="btn sm" @click="openUnitForm">＋ 單元</button><button class="btn primary sm" @click="newTpl('self')">＋ 自主檢查表</button><button class="btn sm" @click="newTpl('spot')">＋ 抽查紀錄表</button></div>
       <h4 class="tpl-group">自主檢查表（廠商）<span class="chip">{{ tplList('self').length }}</span></h4>
       <div class="tpl-item" v-for="t in tplList('self')" :key="t.id" :class="{on: selTplId===t.id, dragging: dragId===t.id, over: dragOver===t.id && dragId!==t.id}" draggable="true" @dragstart="onDragStart($event,t)" @dragend="onDragEnd" @dragover.prevent="dragOver=t.id" @dragleave="dragOver===t.id && (dragOver=null)" @drop.prevent="onDrop('self',t)" @click="pickTpl(t)" title="拖曳可調整順序"><span class="grip">⋮⋮</span><div class="tpl-body"><b>表{{ t.code }} {{ t.name }}</b><div class="muted small"><template v-if="t.fillMode==='pdf'"><span class="chip warn">空白範本 PDF</span>・v{{ t.version }}</template><template v-else><span class="chip blue">線上表單</span> {{ t.items.length }} 項・<span class="star">★{{ t.items.filter(i=>i.hold).length }}</span>・v{{ t.version }}</template></div></div></div>
       <h4 class="tpl-group">抽查紀錄表（監造）<span class="chip">{{ tplList('spot').length }}</span></h4>
@@ -252,11 +254,11 @@
       <div class="muted small mt" v-if="!tplList('self').length && !tplList('spot').length">此分項尚未設定範本</div>
     </div>
     <div class="card" v-if="edit">
-      <div class="row wrap"><h2 class="grow">{{ edit.kind==='self'?'表'+edit.code+' ':'' }}{{ edit.name }} <span class="chip" :class="edit.kind==='self'?'blue':'warn'">{{ edit.kind==='self'?'自主檢查表':'抽查紀錄表' }}</span> <span class="chip ok">v{{ edit.version }} 已發布</span></h2></div>
+      <div class="row wrap"><h2 class="grow">{{ edit.kind==='self'?'表'+edit.code+' ':'' }}{{ edit.name }} <span class="chip" v-if="edit.unitNo">單元 {{ edit.unitNo }}</span> <span class="chip" :class="edit.kind==='self'?'blue':'warn'">{{ edit.kind==='self'?'自主檢查表':'抽查紀錄表' }}</span> <span class="chip ok">v{{ edit.version }} 已發布</span></h2></div>
       <div class="muted small mt">來源：{{ edit.source || '—' }}</div>
       <div class="row wrap mt"><label class="f" style="margin:0">填寫方式（二選一）</label><div class="seg"><button :class="{on: edit.fillMode!=='pdf'}" @click="edit.fillMode='online'">線上表單</button><button :class="{on: edit.fillMode==='pdf'}" @click="edit.fillMode='pdf'">空白範本（PDF）</button></div>
         <span class="muted small" v-if="edit.fillMode==='pdf'">現場下載空白 PDF → 離線填寫簽名 → 上傳簽名後的 PDF 即完成（無逐項判定、停留點）</span><span class="muted small" v-else>現場直接線上逐項填寫、拍照、手寫簽認</span></div>
-      <div class="row wrap mt"><template v-if="edit.fillMode!=='pdf'"><button class="btn" @click="exportXlsx">匯出 Excel</button><button class="btn" @click="exportCsv">匯出 CSV</button><button class="btn" @click="openItemImp">匯入檢查項目</button><button class="btn" @click="previewOn=true">預覽表單</button><button class="btn" v-if="edit.kind==='spot'" @click="syncFromSelf">從自主檢查表同步項目</button></template><span class="grow"></span><button class="btn danger" @click="delTpl">刪除此表單</button><button class="btn primary" @click="saveEdit">{{ editUsed>0?'另存為 v'+(edit.version+1):'儲存' }}</button></div>
+      <div class="row wrap mt"><template v-if="edit.fillMode!=='pdf'"><button class="btn" @click="exportXlsx">匯出 Excel</button><button class="btn" @click="openItemImp">匯入檢查項目</button><button class="btn" @click="previewOn=true">預覽表單</button><button class="btn" v-if="edit.kind==='spot'" @click="syncFromSelf">從自主檢查表同步項目</button></template><span class="grow"></span><button class="btn danger" @click="delTpl">刪除此表單</button><button class="btn primary" @click="saveEdit">{{ editUsed>0?'另存為 v'+(edit.version+1):'儲存' }}</button></div>
       <div class="alert warn mt" v-if="editUsed>0">此版本已有 {{ editUsed }} 張紀錄使用，修改後將另存新版本；已填寫的表單保留 v{{ edit.version }} 內容。</div>
       <div class="tabs mt"><template v-if="edit.fillMode!=='pdf'"><a :class="{on:tplTab==='items'}" @click="tplTab='items'">檢查項目</a><a :class="{on:tplTab==='head'}" @click="tplTab='head'">表頭與簽認欄</a><a :class="{on:tplTab==='defect'}" @click="tplTab='defect'">缺失複查設定</a></template><a v-else :class="{on:tplTab==='file'}" @click="tplTab='file'">範本檔案（PDF）</a><a :class="{on:tplTab==='ver'}" @click="tplTab='ver'">版本紀錄</a></div>
 
@@ -266,10 +268,10 @@
           <button class="btn sm" @click="downloadFile(edit.pdf)">下載</button><label class="btn sm">重新上傳<input type="file" accept="application/pdf,.pdf" hidden @change="onEditPdf"></label></div>
         <label class="dropzone" v-else><input type="file" accept="application/pdf,.pdf" hidden @change="onEditPdf"><div class="ic">PDF</div><div>點擊選取空白範本 PDF（上限 10 MB）</div></label>
         <iframe class="pdf-frame mt" v-if="pdfUrl" :src="pdfUrl" title="PDF 預覽"></iframe>
-        <div class="alert info mt">現場作業選到此範本時，會顯示「下載空白範本」與「上傳簽名後 PDF」。抽查紀錄表若用於停留點會驗，監造需另外選擇「合格放行／有缺失」。</div>
+        <div class="alert info mt">現場作業選到此範本時，會顯示「下載空白範本」與「上傳簽名後 PDF」。PDF 表單視為一般表格紀錄，不設停留點、不做合格／不合格判定；停留點會驗只能使用線上表單的抽查紀錄表。</div>
       </template>
       <template v-if="tplTab==='items' && edit.fillMode!=='pdf'">
-        <div class="row wrap mb"><label class="f" style="margin:0">表單名稱</label><input type="text" v-model="edit.name" style="max-width:300px"><label class="f" style="margin:0">表號</label><input type="text" v-model="edit.code" style="max-width:90px"><span class="muted small">判定符號：○ 合格　╳ 有缺失需改正　╱ 無此檢查項目　<span class="star">★</span> 檢驗停留點（共 {{ holdN }} 項）</span></div>
+        <div class="row wrap mb"><label class="f" style="margin:0">表單名稱</label><input type="text" v-model="edit.name" style="max-width:300px"><label class="f" style="margin:0">表號</label><input type="text" v-model="edit.code" style="max-width:90px"><button class="btn sm" @click="openStageForm" title="可改成挖掘前／挖掘中／挖掘後等">階段：{{ Q.stagesOf(edit).map(x=>x.name).join('／') }}　✎</button><span class="muted small">判定符號：○ 合格　╳ 有缺失需改正　╱ 無此檢查項目　<span class="star">★</span> 檢驗停留點（共 {{ holdN }} 項）</span></div>
         <div class="tbl-scroll"><table class="table">
           <thead><tr><th></th><th>序</th><th>檢查項目</th><th>檢查標準</th><th>判定類型</th><th>★停留點</th><th>必拍照</th><th>引用文件</th><th></th></tr></thead>
           <tbody v-for="st in editStages" :key="st.key">
@@ -300,33 +302,6 @@
     </div>
     <div class="card muted" v-else>請從左側選擇或新增範本</div>
   </div>
-</template>
-
-<!-- ================= 範本匯入 ================= -->
-<template v-if="page==='import'">
-  <div class="page-head"><div><h1>範本匯入</h1><div class="muted">上傳 Excel（.xlsx／.xls，可含多個工作表）或 CSV，批次建立自主檢查表／抽查紀錄表範本</div></div><div class="row"><button class="btn" @click="downloadSample">下載標準匯入樣本（.xlsx）</button><button class="btn" @click="download('範本匯入樣本.csv', sampleCsv())">.csv</button></div></div>
-  <div class="card mb"><div class="steps"><template v-for="(s,i) in ['下載樣本','上傳檔案','預覽與驗證','確認匯入']"><div class="st" :class="{on: imp.step===i+1, done: imp.step>i+1}"><i>{{ imp.step>i+1?'✓':i+1 }}</i>{{ s }}</div><div class="ln" v-if="i<3"></div></template></div></div>
-  <div class="card" v-if="imp.step<=2">
-    <div class="row wrap mb"><input type="file" accept=".xlsx,.xls,.csv,text/csv" @change="onFile"><button class="btn" @click="loadSample">載入樣本內容</button></div>
-    <label class="f">或直接貼上 CSV 內容（上傳 Excel 時免貼）（必要欄位：範本名稱、階段、項次、檢查項目、檢查標準、判定類型、停留點、必填、引用文件編號；選填：表單類型、表號、連結表號）</label>
-    <textarea rows="10" v-model="imp.text" @input="imp.step=2"></textarea>
-    <div class="alert ng mt" v-if="imp.err">{{ imp.err }}</div>
-    <div class="row mt"><span class="grow"></span><button class="btn primary" :disabled="!imp.text.trim() && !imp.sheets.length" @click="validate">預覽與驗證 ›</button></div>
-  </div>
-  <div class="cols2" v-if="imp.step===3">
-    <div class="card"><h3>解析結果（{{ imp.groups.length }} 個範本）</h3>
-      <div class="list-item" v-for="(g,i) in imp.groups" :key="g.name" style="cursor:pointer" :style="imp.selGroup===i?'background:var(--primary-l);padding:8px;border-radius:8px':''" @click="imp.selGroup=i"><b>{{ g.name }}</b><div class="small muted">{{ g.kind==='spot' ? '抽查紀錄表' : '自主檢查表' }}・表號 {{ g.code || '（自動編號）' }}</div><div><span class="chip" :class="g.bad?'ng':'ok'">{{ g.bad?g.bad+' 列錯誤':g.rows.length+' 列通過' }}</span> <span class="chip ng" v-if="impDup(g)">表號已存在，請改用「匯入為新版本」</span></div></div>
-      <h4 class="mt mb">匯入方式</h4>
-      <label><input type="radio" value="new" v-model="imp.mode"> 建立新範本</label><br><label><input type="radio" value="version" v-model="imp.mode"> 匯入為既有範本的新版本</label>
-      <select class="mt" v-if="imp.mode==='new'" v-model="imp.targetSw"><optgroup v-for="g in swGroups" :key="g.tender.id" :label="g.tender.code + ' ' + g.tender.name"><option v-for="s in g.subs" :key="s.id" :value="s.id">{{ g.tender.code }}｜{{ s.no }}、{{ s.name }}</option></optgroup></select>
-      <select class="mt" v-else v-model="imp.existing"><option value="">選擇既有範本…</option><option v-for="t in d.templates.filter(t=>t.status==='published' && t.fillMode!=='pdf')" :value="t.id">{{ t.kind==='spot' ? '抽查' : '自檢' }}｜表{{ t.code }} {{ t.name }}</option></select>
-    </div>
-    <div class="card" v-if="imp.groups[imp.selGroup]"><h3>預覽：{{ imp.groups[imp.selGroup].name }}</h3><div class="tbl-scroll"><table class="table"><thead><tr><th>工作表／列</th><th>階段</th><th>檢查項目</th><th>檢查標準</th><th>類型</th><th>停留點</th><th>必填</th><th>引用文件</th><th>驗證結果</th></tr></thead><tbody>
-      <tr v-for="r in imp.groups[imp.selGroup].rows" :class="{err: r.errs.length}"><td class="nowrap">{{ r.sheet }}！{{ r.line }}</td><td>{{ r.raw[r.idx['階段']] }}</td><td>{{ r.name }}</td><td class="pre">{{ r.std }}</td><td>{{ r.raw[r.idx['判定類型']] }}</td><td>{{ r.hold?'Y':'N' }}</td><td>{{ r.photo?'Y':'N' }}</td><td>{{ r.ref }}</td>
-        <td><span class="chip ok" v-if="!r.errs.length">通過</span><div v-else style="color:var(--ng)" class="small"><b>錯誤</b><div v-for="e in r.errs">{{ e }}</div></div></td></tr></tbody></table></div>
-      <div class="row mt"><span class="grow">可匯入 <b>{{ impOk.length }}</b> 個範本，<b style="color:var(--ng)">{{ imp.groups.length-impOk.length }}</b> 個有錯誤將略過</span><button class="btn" @click="impReset">重新上傳</button><button class="btn primary" :disabled="!impOk.length || (imp.mode==='version' && !imp.existing)" @click="doImport">匯入 {{ impOk.length }} 個通過的範本</button></div></div>
-  </div>
-  <div class="card" v-if="imp.step===4"><div class="alert ok">已成功匯入 {{ imp.done }} 個範本。</div><div class="row mt"><button class="btn primary" @click="go('templates')">前往表單範本</button><button class="btn" @click="impReset">繼續匯入</button></div></div>
 </template>
 
 <!-- ================= 參考文件 / 帳號 / 參數 ================= -->
@@ -370,6 +345,28 @@
   <div><label class="f">狀態</label><select v-model="swForm.status"><option>施工中</option><option>未開始</option><option>已完成</option></select></div></div>
   <div class="foot"><button class="btn" @click="swForm=null">取消</button><button class="btn primary" @click="saveSw">儲存</button></div></div></div>
 
+<div class="modal-bg" v-if="swImp" @click.self="swImp=null"><div class="modal wide"><h3>匯入分項工程 → {{ selTender.name }}</h3>
+  <div class="alert info mb">上傳 Excel（.xlsx／.xls，讀取第一個工作表）或 CSV。第一列為欄位標題：<b>分項工程</b>（必填）、項次、數量、單位（預設「式」）、狀態（施工中／未開始／已完成，預設施工中）。可先下載樣本，裡面會帶出本標案目前的分項工程當參考。</div>
+  <div class="row wrap mb"><input type="file" accept=".xlsx,.xls,.csv,text/csv" @change="onSwFile"><button class="btn" @click="downloadSwSample">下載匯入樣本（.xlsx）</button></div>
+  <div class="alert ng mb" v-if="swImp.err">{{ swImp.err }}</div>
+  <template v-if="swImp.rows.length">
+    <div class="row wrap mb"><label><input type="radio" value="upsert" v-model="swImp.mode"> 名稱或項次相同時更新原資料，其餘新增</label><label><input type="radio" value="append" v-model="swImp.mode"> 全部新增</label></div>
+    <div class="tbl-scroll" style="max-height:340px"><table class="table"><thead><tr><th>列</th><th>項次</th><th>分項工程</th><th class="right">數量</th><th>單位</th><th>狀態</th><th>處理方式</th><th>驗證結果</th></tr></thead><tbody>
+      <tr v-for="r in swImp.rows" :class="{err: r.errs.length}"><td>{{ r.line }}</td><td>{{ r.no }}</td><td>{{ r.name }}</td><td class="right">{{ r.errs.length ? r.qtyText : r.qty.toLocaleString() }}</td><td>{{ r.unit }}</td><td>{{ r.status }}</td>
+        <td><span class="chip" :class="swImp.mode==='upsert' && r.hit ? 'warn' : 'blue'" v-if="!r.errs.length">{{ swImp.mode==='upsert' && r.hit ? '更新' : '新增' }}</span></td>
+        <td><span class="chip ok" v-if="!r.errs.length">通過</span><div v-else style="color:var(--ng)" class="small"><div v-for="e in r.errs">{{ e }}</div></div></td></tr></tbody></table></div>
+    <div class="mt">可匯入 <b>{{ swImpOk.length }}</b> 列，<b :style="swImpBad?'color:var(--ng)':''">{{ swImpBad }}</b> 列有錯誤將略過</div>
+  </template>
+  <div class="foot"><button class="btn" @click="swImp=null">取消</button><button class="btn primary" :disabled="!swImpOk.length" @click="doSwImp">匯入</button></div></div></div>
+<div class="modal-bg" v-if="unitForm" @click.self="unitForm=null"><div class="modal"><h3>單元管理</h3>
+  <div class="alert info mb">分項工程：<b>{{ (swById(tplSw)||{}).no }}、{{ (swById(tplSw)||{}).name }}</b><br>單元為選用層級：設定後，表單範本可掛在單元下，現場新增自主檢查／隨機抽查時就要先選單元。同一分項工程內的單元編號不可重複。</div>
+  <label class="f">單元編號</label><div class="row"><input type="text" v-model="unitForm.code" placeholder="例：P12、BP-01、A區" @keyup.enter="addUnit" @input="unitForm.err=''"><button class="btn primary" @click="addUnit">新增</button></div>
+  <div class="alert ng mt" v-if="unitForm.err">{{ unitForm.err }}</div>
+  <h4 class="mt">已設定的單元（{{ tplUnits.length }}）</h4>
+  <div class="muted small" v-if="!tplUnits.length">尚未設定單元，表單範本直接掛在分項工程下。</div>
+  <table class="table" v-else><thead><tr><th>單元編號</th><th class="right">表單範本</th><th></th></tr></thead><tbody>
+    <tr v-for="u in tplUnits" :key="u"><td><b>{{ u }}</b></td><td class="right">{{ unitTplN(tplSw, u) }} 張</td><td class="right nowrap"><button class="btn sm" @click="tplUnit=u; unitForm=null">設定表單</button> <button class="btn sm danger" @click="delUnit(u)">刪</button></td></tr></tbody></table>
+  <div class="foot"><button class="btn primary" @click="unitForm=null">完成</button></div></div></div>
 <div class="modal-bg" v-if="docForm" @click.self="docForm=null"><div class="modal"><h3>{{ docForm.isNew ? '新增參考文件' : '編輯參考文件' }}</h3><div class="form-grid"><div><label class="f">文件編號</label><input type="text" v-model="docForm.code" :disabled="!docForm.isNew" placeholder="例：CF671-SP-0010"></div><div><label class="f">名稱</label><input type="text" v-model="docForm.name"></div><div style="grid-column:1/-1"><label class="f">備註</label><input type="text" v-model="docForm.note" placeholder="例：第 5 章 品質管理（p.5-10）"></div></div>
   <label class="f mt">文件檔案（PDF、Word、Excel、圖檔等，上限 20 MB）</label>
   <div class="filecard" v-if="docForm.file"><div class="fic">{{ (docForm.file.name.split('.').pop() || '').toUpperCase().slice(0,4) }}</div><div class="grow"><b>{{ docForm.file.name }}</b><div class="small muted">{{ Q.fmtSize(docForm.file.size) }}</div></div><label class="btn sm">更換<input type="file" hidden @change="onDocFile"></label><button class="btn sm danger" @click="docForm.file=null">移除</button></div>
@@ -397,19 +394,52 @@
   <div class="foot"><button class="btn" @click="addField(edit.items[fieldIdx])">＋ 新增欄位</button><button class="btn primary" @click="fieldIdx=-1">完成</button></div></div></div>
 
 <!-- 匯入檢查項目 -->
-<div class="modal-bg" v-if="itemImp" @click.self="itemImp=null"><div class="modal wide"><h3>匯入檢查項目 → {{ edit && edit.name }}</h3>
-  <div class="alert info mb">上傳 Excel（.xlsx／.xls，可含多個工作表）或 CSV。必要欄位：<b>階段、檢查項目、判定類型</b>；選填：範本名稱、檢查標準、停留點(Y/N)、必填(Y/N)、引用文件編號、連結表號（判定類型為連結表單時必填）。匯入後項目會加入目前編輯中的表單，按「儲存」才會生效。</div>
-  <div class="row wrap mb"><input type="file" accept=".xlsx,.xls,.csv,text/csv" @change="onItemFile"><button class="btn" @click="downloadItemSample">下載匯入樣本（.xlsx）</button></div>
-  <div class="alert ng mb" v-if="itemImp.err">{{ itemImp.err }}</div>
-  <template v-if="itemImp.groups.length">
-    <div class="row wrap mb"><label class="f" style="margin:0">匯入範本</label><select v-model="itemImp.sel" style="max-width:320px"><option v-for="g in itemImp.groups" :value="g">{{ g }}</option></select>
-      <label><input type="radio" value="append" v-model="itemImp.mode"> 加在現有項目後面</label><label><input type="radio" value="replace" v-model="itemImp.mode"> 取代全部現有項目</label></div>
-    <div class="tbl-scroll" style="max-height:340px"><table class="table"><thead><tr><th>工作表／列</th><th>階段</th><th>檢查項目</th><th>檢查標準</th><th>類型</th><th>★</th><th>必拍</th><th>引用文件</th><th>驗證結果</th></tr></thead><tbody>
-      <tr v-for="r in itemImpRows" :class="{err: r.errs.length}"><td class="nowrap">{{ r.sheet }}！{{ r.line }}</td><td>{{ r.stageText }}</td><td>{{ r.name }}</td><td class="pre">{{ r.std }}</td><td>{{ r.typeText }}</td><td>{{ r.hold?'Y':'N' }}</td><td>{{ r.photo?'Y':'N' }}</td><td>{{ r.ref }}</td>
-        <td><span class="chip ok" v-if="!r.errs.length">通過</span><div v-else style="color:var(--ng)" class="small"><div v-for="e in r.errs">{{ e }}</div></div></td></tr></tbody></table></div>
-    <div class="mt">可匯入 <b>{{ itemImpRows.length - itemImpBad }}</b> 列，<b :style="itemImpBad?'color:var(--ng)':''">{{ itemImpBad }}</b> 列有錯誤將略過</div>
+<div class="modal-bg" v-if="bulk" @click.self="bulk=null"><div class="modal wide"><h3>匯入此分項全部表單 → {{ (swById(tplSw)||{}).no }}、{{ (swById(tplSw)||{}).name }}</h3>
+  <div class="alert info mb">一次匯入本分項工程的<b>單元、線上表單（自主檢查表／抽查紀錄表）、檢查項目與數值欄位檢核條件</b>。可先按「匯出目前內容」取得本分項全部線上表單，修改後再匯入；新建時可下載「空白範本（含範例資料）」參考格式（工作表：單元、表單、檢查項目、數值欄位、可連結表單）。空白範本 PDF 請在系統內個別建立。<br>同表號已存在時會更新該表單，已有填寫紀錄則另存新版本，舊紀錄保留原內容。</div>
+  <div class="row wrap mb"><input type="file" accept=".xlsx,.xls" @change="onBulkFile"><button class="btn" @click="exportSubwork">匯出目前內容（.xlsx）</button><button class="btn" @click="downloadBulkSample">空白範本（含範例資料）</button><span class="muted small" v-if="bulk.fileName">{{ bulk.fileName }}</span></div>
+  <div class="alert ng mb" v-if="bulk.err">{{ bulk.err }}</div>
+  <div class="alert ok mb" v-if="bulk.done">匯入完成：新增 {{ bulk.done.add }} 張、更新 {{ bulk.done.upd }} 張、另存新版 {{ bulk.done.ver }} 張<template v-if="bulk.done.units">，新增單元 {{ bulk.done.units }} 個</template>。</div>
+  <template v-if="bulk.forms.length && !bulk.done">
+    <div class="mb" v-if="bulk.units.length"><b>單元</b>：<span class="chip" v-for="u in bulk.units" :key="u.code" :class="u.errs.length ? 'ng' : u.exists ? '' : 'blue'" :title="u.errs.join('；')">{{ u.code }}{{ u.errs.length ? '（' + u.errs[0] + '）' : u.exists ? '（已存在）' : '（新增）' }}</span></div>
+    <div class="alert warn mb" v-if="bulk.loose.length"><div v-for="e in bulk.loose">{{ e }}</div></div>
+    <div class="tbl-scroll"><table class="table"><thead><tr><th>表號</th><th>表單名稱</th><th>類型</th><th>建立位置（點選可預覽）</th><th>階段</th><th>檢核結果</th></tr></thead><tbody>
+      <tr v-for="f in bulk.forms" :key="f.code+f.line" :class="{err: f.errs.length}"><td class="nowrap"><b>{{ f.code }}</b></td><td>{{ f.name }}</td><td class="nowrap">{{ f.kindText }}</td>
+        <td><a v-for="u in f.units" :key="u" class="chip" :class="bulk.sel && bulk.sel.code===f.code && bulk.sel.unit===u ? 'blue' : ''" style="margin:0 4px 4px 0;cursor:pointer" @click="bulk.sel={code:f.code,unit:u}">{{ u || '分項工程層' }}<template v-if="f.views[u]">・{{ f.views[u].items.length }} 項・{{ f.views[u].action }}</template></a></td>
+        <td class="small">{{ f.stageNames.join('／') }}</td>
+        <td><span class="chip ok" v-if="!f.errs.length">可匯入</span><div v-else style="color:var(--ng)" class="small"><div v-for="e in f.errs">{{ e }}</div></div></td></tr></tbody></table></div>
+    <div class="mt">可匯入 <b>{{ bulkOk.length }}</b> 張表單（展開後共 <b>{{ bulkOk.reduce((n,f)=>n+f.units.length,0) }}</b> 張），<b :style="bulk.forms.length-bulkOk.length ? 'color:var(--ng)' : ''">{{ bulk.forms.length - bulkOk.length }}</b> 張有錯誤將略過</div>
+    <template v-if="bulkView"><h4 class="mt mb">展開預覽：{{ bulkView.fm.kind==='self' ? '表' : '' }}{{ bulkView.fm.code }} {{ bulkView.fm.name }}（{{ bulk.sel.unit ? '單元 ' + bulk.sel.unit : '分項工程層' }}）</h4>
+      <div class="tbl-scroll" style="max-height:360px"><table class="table"><thead><tr><th>階段</th><th>序</th><th>檢查項目</th><th>檢查標準</th><th>類型</th><th>★</th><th>拍照</th><th>數值欄位（檢核條件）</th><th>來源</th></tr></thead><tbody>
+        <tr v-for="(i,k) in bulkView.v.items" :key="k"><td class="nowrap">{{ i.stage }}</td><td>{{ k+1 }}</td><td>{{ i.name }}</td><td class="pre small">{{ i.std }}</td><td class="nowrap">{{ i.typeText }}<template v-if="i.linked">→表{{ i.linked }}</template></td><td><span class="star" v-if="i.hold">★</span></td><td>{{ i.photo ? 'Y' : '' }}</td>
+          <td class="small"><div v-for="f in i.fields">{{ f.label }}{{ f.unitText ? '（' + f.unitText + '）' : '' }}：{{ Q.rangeText(f) || '只記錄' }} <span class="chip" v-if="f.src!=='共用'" style="font-size:11px">{{ f.src }}</span></div></td>
+          <td><span class="chip" :class="i.src==='共用' ? '' : 'blue'">{{ i.src }}</span></td></tr></tbody></table></div></template>
   </template>
-  <div class="foot"><button class="btn" @click="itemImp=null">取消</button><button class="btn primary" :disabled="!itemImp.groups.length || itemImpRows.length-itemImpBad<=0" @click="doItemImp">匯入</button></div></div></div>
+  <div class="foot"><button class="btn" @click="bulk=null">{{ bulk.done ? '關閉' : '取消' }}</button><button class="btn primary" v-if="!bulk.done" :disabled="!bulkOk.length" @click="doBulk">匯入 {{ bulkOk.length }} 張表單</button></div></div></div>
+<div class="modal-bg" v-if="stageForm" @click.self="stageForm=null"><div class="modal"><h3>階段設定 → {{ edit && edit.name }}</h3>
+  <div class="alert info mb">階段決定現場填寫時的頁籤與順序：前一個階段的項目都判定完，才能填下一個階段。可改名、新增、刪除、調整順序（例：挖掘前／挖掘中／挖掘後）。已有填寫紀錄的表單，儲存後會另存新版本，舊紀錄維持原本的階段。</div>
+  <label class="f">快速套用</label><div class="row wrap mb"><button class="btn sm" v-for="p in STAGE_PRESETS" :key="p.join()" @click="stagePreset(p)">{{ p.join('／') }}</button></div>
+  <table class="table"><thead><tr><th style="width:56px">順序</th><th>階段名稱</th><th class="right">檢查項目</th><th></th></tr></thead><tbody>
+    <tr v-for="(r,i) in stageForm.rows" :key="r.key"><td class="nowrap"><a @click="stageMove(i,-1)">▲</a> <a @click="stageMove(i,1)">▼</a></td><td><input type="text" v-model="r.name" placeholder="例：挖掘前" @input="stageForm.err=''"></td><td class="right">{{ stageItemN(r.key) }} 項</td><td class="right"><button class="btn sm danger" :disabled="stageItemN(r.key)>0 || stageForm.rows.length<=1" :title="stageItemN(r.key) ? '此階段還有檢查項目，不可刪除' : ''" @click="stageDel(i)">刪</button></td></tr>
+  </tbody></table>
+  <button class="btn sm mt" @click="stageAdd">＋ 新增階段</button>
+  <div class="alert ng mt" v-if="stageForm.err">{{ stageForm.err }}</div>
+  <div class="foot"><button class="btn" @click="stageForm=null">取消</button><button class="btn primary" @click="applyStages">套用</button></div></div></div>
+<div class="modal-bg" v-if="itemImp" @click.self="itemImp=null"><div class="modal wide"><h3>匯入檢查項目 → {{ edit && ((edit.kind==='self' ? '表' + edit.code + ' ' : '') + edit.name) }}{{ edit && edit.unitNo ? '（單元 ' + edit.unitNo + '）' : '' }}</h3>
+  <div class="alert info mb">使用與「匯入此分項全部表單」相同的 Excel 格式（工作表：表單、檢查項目、數值欄位，可含單元）。建議先按「匯出 Excel」取得目前內容，修改後再匯入。系統會找檔案中與目前表號相同的表單；檢查項目、數值欄位的檢核條件與階段設定會一起匯入，按「儲存」才會生效。</div>
+  <div class="row wrap mb"><input type="file" accept=".xlsx,.xls" @change="onItemFile"><button class="btn" @click="exportXlsx">匯出目前內容（.xlsx）</button><button class="btn" @click="downloadBulkSample">空白範本（含範例資料）</button><span class="muted small" v-if="itemImp.fileName">{{ itemImp.fileName }}</span></div>
+  <div class="alert ng mb" v-if="itemImp.err">{{ itemImp.err }}</div>
+  <template v-if="itemImp.res && itemImpForm">
+    <div class="row wrap mb"><label class="f" style="margin:0">檔案中的表單</label><select v-model="itemImp.code" style="max-width:300px" @change="itemImp.unit=itemImpForm.units[0]"><option v-for="f in itemImp.res.forms" :key="f.code+f.line" :value="f.code">{{ f.code }} {{ f.name }}</option></select>
+      <template v-if="itemImpForm.units.length>1 || itemImpForm.units[0]"><label class="f" style="margin:0">套用單元</label><select v-model="itemImp.unit" style="width:auto"><option v-for="u in itemImpForm.units" :key="u" :value="u">{{ u || '分項工程層' }}</option></select></template>
+      <span class="chip">階段：{{ itemImpForm.stageNames.join('／') }}</span></div>
+    <div class="row wrap mb"><label><input type="radio" value="replace" v-model="itemImp.mode"> 取代全部現有項目（建議）</label><label><input type="radio" value="append" v-model="itemImp.mode"> 加在現有項目後面</label></div>
+    <div class="alert ng mb" v-if="itemImpErrs.length"><div v-for="e in itemImpErrs">{{ e }}</div></div>
+    <div class="tbl-scroll" style="max-height:380px" v-if="itemImpView"><table class="table"><thead><tr><th>階段</th><th>序</th><th>檢查項目</th><th>檢查標準</th><th>類型</th><th>★</th><th>拍照</th><th>數值欄位（檢核條件）</th><th>來源</th></tr></thead><tbody>
+      <tr v-for="(i,k) in itemImpView.items" :key="k"><td class="nowrap">{{ i.stage }}</td><td>{{ k+1 }}</td><td>{{ i.name }}</td><td class="pre small">{{ i.std }}</td><td class="nowrap">{{ i.typeText }}<template v-if="i.linked">→表{{ i.linked }}</template></td><td><span class="star" v-if="i.hold">★</span></td><td>{{ i.photo ? 'Y' : '' }}</td>
+        <td class="small"><div v-for="f in i.fields">{{ f.label }}{{ f.unitText ? '（' + f.unitText + '）' : '' }}：{{ Q.rangeText(f) || '只記錄' }}</div></td><td><span class="chip" :class="i.src==='共用' ? '' : 'blue'">{{ i.src }}</span></td></tr></tbody></table></div>
+    <div class="mt" v-if="itemImpView">共 <b>{{ itemImpView.items.length }}</b> 項</div>
+  </template>
+  <div class="foot"><button class="btn" @click="itemImp=null">取消</button><button class="btn primary" :disabled="!itemImpView || itemImpErrs.length>0" @click="doItemImp">匯入</button></div></div></div>
 
 <!-- 預覽表單 -->
 <div class="modal-bg" v-if="previewOn && edit" @click.self="previewOn=false"><div class="modal wide"><h3>預覽：{{ edit.name }} v{{ edit.version }}</h3><div class="tbl-scroll"><table class="table"><thead><tr><th>序</th><th>檢查項目</th><th>檢查標準</th><th>實際檢查情形（填寫欄位）</th><th>判定</th></tr></thead>
@@ -429,7 +459,7 @@
   <div class="foot"><button class="btn primary" @click="showSC=null">關閉</button></div></div></div>
 <div class="modal-bg" v-if="showSP" @click.self="showSP=null"><div class="modal wide"><h3>{{ showSP.templateName }} v{{ showSP.templateVer }}｜{{ showSP.id }}</h3>
   <div class="muted mb">{{ showSP.location }}｜{{ showSP.kind==='hold' ? '檢驗停留點會驗 '+showSP.requestId : '隨機抽查' }}｜{{ Q.fmtD(showSP.date||showSP.createdAt) }}</div>
-  <div class="filecard mb" v-if="showSP.fillMode==='pdf'"><div class="fic">PDF</div><div class="grow"><template v-if="showSP.pdfFile"><b>{{ showSP.pdfFile.name }}</b><div class="muted small">簽名後 PDF・{{ Q.fmtSize(showSP.pdfFile.size) }}・判定：{{ showSP.pdfResult==='ng' ? '有缺失' : showSP.pdfResult==='ok' ? '合格' : '—' }}</div></template><span class="muted" v-else>尚未上傳簽名後 PDF</span></div><button class="btn sm" v-if="showSP.pdfFile" @click="downloadFile(showSP.pdfFile)">下載</button></div>
+  <div class="filecard mb" v-if="showSP.fillMode==='pdf'"><div class="fic">PDF</div><div class="grow"><template v-if="showSP.pdfFile"><b>{{ showSP.pdfFile.name }}</b><div class="muted small">簽名後 PDF・{{ Q.fmtSize(showSP.pdfFile.size) }}（一般表格紀錄，不做合格判定）</div></template><span class="muted" v-else>尚未上傳簽名後 PDF</span></div><button class="btn sm" v-if="showSP.pdfFile" @click="downloadFile(showSP.pdfFile)">下載</button></div>
   <div class="mt" v-if="showSP.fillMode==='pdf'"><h4 class="mb">辦理軌跡（{{ showSP.wfStatus }}・V{{ showSP.version||0 }}）</h4><ul class="timeline" v-if="(showSP.logs||[]).length"><li v-for="(l,i) in showSP.logs.slice().reverse()" :key="i" :class="l.action.includes('結案')?'ok':''">{{ Q.fmtFull(l.at) }}｜<b>{{ l.user }}</b> <span class="chip">{{ l.action }}</span><div class="small muted">{{ l.detail }}</div><a class="small" v-if="l.file" @click="downloadFile(l.file)">⬇ {{ l.file.name }}</a> <img v-if="l.sig" :src="l.sig" style="height:30px;vertical-align:middle;border:1px solid var(--line);border-radius:4px"></li></ul><div class="muted small" v-else>尚無辦理紀錄</div></div>
   <div class="tbl-scroll" v-if="showSP.fillMode!=='pdf'"><table class="table"><thead><tr><th>序</th><th>檢查項目</th><th>實測</th><th>判定</th><th>照片</th></tr></thead><tbody>
     <tr v-for="x in itemsOf(showSP)" :style="showSP.focusNo===x.it.no?'font-weight:600':''"><td>{{ x.it.no }}</td><td><span class="star" v-if="x.it.hold">★</span>{{ x.it.name }} <span class="chip warn" v-if="showSP.focusNo===x.it.no">本次會驗</span></td><td>{{ valuesText(x.it, x.a) }}</td><td><span class="chip" :class="x.a.judge==='ok'?'ok':x.a.judge==='ng'?'ng':''">{{ judgeText(x.a.judge) }}</span></td><td>{{ (x.a.photos||[]).length || '' }}</td></tr></tbody></table></div>
@@ -440,6 +470,7 @@
 </div>
 <script src="lib/vue.global.prod.js"></script>
 <script src="lib/xlsx.full.min.js"></script>
+<script src="templates/export-template.js"></script>
 <script src="js/drawer.js"></script>
 <script src="js/sample-pdfs.js"></script>
 <script src="js/db.js"></script>

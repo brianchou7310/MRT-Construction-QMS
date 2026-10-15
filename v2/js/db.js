@@ -10,6 +10,10 @@
   const LINKED = { '5-4': '導溝施工自主檢查表', '5-6': '鋼筋籠自主檢查表', '5-7': '穩定液自主檢查紀錄表', '5-8': '連續壁超音波檢測紀錄表', '5-9': '連續壁混凝土灌漿紀錄表' };
   const JUDGE = { ok: '○ 合格', ng: '╳ 缺失', na: '╱ 無此項' };
   const STAGES = { pre: '施工前', during: '施工中', post: '施工後' };
+  // 階段可依表單自訂（例：挖掘前／挖掘中／挖掘後），未設定時用預設的施工前／中／後
+  const DEF_STAGES = [{ key: 'pre', name: '施工前' }, { key: 'during', name: '施工中' }, { key: 'post', name: '施工後' }];
+  const stagesOf = tpl => (tpl && tpl.stages && tpl.stages.length ? tpl.stages : DEF_STAGES);
+  const stageName = (tpl, key) => (stagesOf(tpl).find(s => s.key === key) || {}).name || STAGES[key] || key;
   const DEFAULT_PARAMS = { id: 'params', holdAdvanceHours: 24, replyHours: 8, photoMaxKB: 400, defectDueDays: 7 };
 
   /* ---------- IndexedDB 基礎 ---------- */
@@ -95,9 +99,9 @@
   function stageDone(sc, tpl, stage) { return stageItems(tpl, stage).every(i => sc.answers[i.no] && sc.answers[i.no].judge); }
   // 鎖定原因：前一階段未完成 / 前面有停留點尚未放行
   function lockReason(sc, tpl, item) {
-    const order = ['pre', 'during', 'post'];
+    const order = stagesOf(tpl).map(s => s.key);
     const si = order.indexOf(item.stage);
-    for (let k = 0; k < si; k++) if (!stageDone(sc, tpl, order[k])) return `請先完成${STAGES[order[k]]}項目`;
+    for (let k = 0; k < si; k++) if (!stageDone(sc, tpl, order[k])) return `請先完成${stageName(tpl, order[k])}項目`;
     const blocker = tpl.items.find(i => i.hold && i.no < item.no && (sc.answers[i.no] || {}).judge !== 'na' && (sc.hold[i.no] || {}).state !== 'passed');
     if (blocker) return (sc.answers[blocker.no] || {}).judge === 'ng' ? `待 ☆${blocker.name} 缺失改善、重新判定並經監造放行` : `待 ☆${blocker.name} 監造放行`;
     return null;
@@ -290,7 +294,7 @@
         const rec = { id: `SC-CF671-LNK-${unit}-${code}`, tenderId: 'T671', tenderCode: 'CF671', templateId: tpl.id, templateVer: tpl.version, templateCode: code, templateName: tpl.name, subworkId: tpl.subworkId, subworkName: 'Y01站連續壁施工', unit, location: loc, date: at, contractor: '大陸工程股份有限公司', status: 'signed', answers: ans, linked: {}, qrConfirmed: true, drawingNo: '', hold: {}, recovery: '', signatures: { site: { img: '', at, name: '示範品管' }, rep: { img: '', at, name: '示範工地主任' } }, hash: 'linkseed', createdAt: at, updatedAt: at, fillMode: tpl.fillMode || 'online', pdfFile: null, wfStatus: '未開始', lockedBy: null, lastUpdatedBy: null, version: 0, logs: [] };
         if (tpl.fillMode === 'pdf' && tpl.pdf) {
           const f = { name: `${tpl.name}_${unit}_已填寫.pdf`, size: tpl.pdf.size, data: tpl.pdf.data, at };
-          Object.assign(rec, { answers: {}, pdfFile: f, pdfResult: 'ok', wfStatus: '已結案', version: 2, lastUpdatedBy: '示範品管', logs: [{ at: at - 3600e3, user: '示範品管', action: '下載鎖定', detail: '下載空白範本並鎖定控制權，開始填寫表單。' }, { at: at - 1800e3, user: '示範品管', action: '上傳並簽名', detail: '已完成 PDF 上傳並現地手寫簽名，待辦理憑證加簽結案。', file: { name: f.name, size: f.size, data: f.data } }, { at, user: '示範品管', action: '憑證加簽結案', detail: '經實體自然人憑證數位簽章認證，表單正式結案。', file: { name: f.name, size: f.size, data: f.data } }] });
+          Object.assign(rec, { answers: {}, pdfFile: f, wfStatus: '已結案', version: 2, lastUpdatedBy: '示範品管', logs: [{ at: at - 3600e3, user: '示範品管', action: '下載鎖定', detail: '下載空白範本並鎖定控制權，開始填寫表單。' }, { at: at - 1800e3, user: '示範品管', action: '上傳並簽名', detail: '已完成 PDF 上傳並現地手寫簽名，待辦理憑證加簽結案。', file: { name: f.name, size: f.size, data: f.data } }, { at, user: '示範品管', action: '憑證加簽結案', detail: '經實體自然人憑證數位簽章認證，表單正式結案。', file: { name: f.name, size: f.size, data: f.data } }] });
         }
         await put('selfChecks', rec);
       }
@@ -321,7 +325,15 @@
       if (sc) { sp.scId = sc.id; await put('spotChecks', sp); }
     }
   }
-  async function postSeed() { await migrateKeys(); await migrateReqSub(); await migrateScLinks(); await seedLinked(); }
+  async function postSeed() { await migrateKeys(); await migrateReqSub(); await migrateScLinks(); await seedLinked(); await migrateUnits(); }
+  // 單元示範資料：鑽掘混凝土基樁（S671-6）設定 BP-01、BP-02 兩個單元，各掛自己的表單範本
+  async function migrateUnits() {
+    const sw = await get('subworks', 'S671-6'); if (!sw || 'unitList' in sw) return;
+    sw.unitList = ['BP-01', 'BP-02']; await put('subworks', sw);
+    const t = await get('templates', 'TP-S6'); if (t && !t.unitNo) { t.unitNo = 'BP-01'; await put('templates', t); }
+    const add = [mini('TP-S6-2', 'S671-6', 'self', '1-6-2', '鑽掘混凝土基樁自主檢查表（BP-02）', 4, { unitNo: 'BP-02' }), mini('TP-SP-S6', 'S671-6', 'spot', 'SP-1-6', '鑽掘混凝土基樁施工品質抽查記錄表', 4, { unitNo: 'BP-01' })];
+    for (const x of add) if (!(await get('templates', x.id))) await put('templates', ensureKeys(x));
+  }
   // 舊版抽查紀錄（單項 measures/judge）轉為完整表單結構
   async function migrateSpots() {
     const list = (await all('spotChecks')).filter(x => !x.answers); if (!list.length) return;
@@ -371,7 +383,7 @@
     const sc = {
       id: `SC-${tender.code}-${String(d.getFullYear()).slice(2)}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(n, 3)}`,
       tenderId: tender.id, tenderCode: tender.code, templateId: tpl.id, templateVer: tpl.version, templateCode: tpl.code, templateName: tpl.name,
-      subworkId: sw.id, subworkName: sw.name, unit, location: location || `${tender.site || tender.name} 單元 ${unit}`, date: Date.now(), contractor: tender.contractor,
+      subworkId: sw.id, subworkName: sw.name, unit: unit || '', location: location || `${tender.site || tender.name} ${unit ? '單元 ' + unit : sw.name}`, date: Date.now(), contractor: tender.contractor,
       status: 'draft', answers: {}, linked: {}, qrConfirmed: false, drawingNo: drawingNo || '', hold: {}, recovery: '', signatures: {}, createdAt: Date.now(), updatedAt: Date.now(),
       fillMode: tpl.fillMode || 'online', pdfFile: null,
       wfStatus: '未開始', lockedBy: null, lastUpdatedBy: null, version: 0, logs: []
@@ -418,15 +430,16 @@
     const tpl = await get('templates', templateId), n = await counter('spot'), d = new Date();
     const tender = await get('tenders', tpl.tenderId); const sw = await get('subworks', tpl.subworkId);
     let sc = selfCheckId ? await get('selfChecks', selfCheckId) : null;
-    if (!sc && unit) { const l = (await all('selfChecks')).filter(x => x.unit === unit && x.subworkId === tpl.subworkId).sort((a, b) => b.createdAt - a.createdAt); sc = l[0] || null; }
+    // 廠商自檢對照：有單元＝同分項工程＋同單元；沒有單元＝同分項工程（有配對自檢表時優先同表）
+    if (!sc && (unit || !request)) { const pair = tpl.pairedSelf ? await get('templates', tpl.pairedSelf) : null; const l = (await all('selfChecks')).filter(x => x.subworkId === tpl.subworkId && (x.unit || '') === (unit || '')).sort((a, b) => (pair ? (b.templateCode === pair.code) - (a.templateCode === pair.code) : 0) || b.createdAt - a.createdAt); sc = l[0] || null; }
     const focus = request && request.itemNo ? (tpl.items.find(i => request.itemKey && i.srcKey === request.itemKey) || tpl.items.find(i => !request.itemKey && i.srcNo === request.itemNo) || {}).no || null : null;
     const answers = {}; tpl.items.forEach(i => { answers[i.no] = { judge: null, values: {}, photos: [], note: '' }; });
     const sp = {
       id: `SP-${tender.code}-${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(n, 3)}`, kind: request ? 'hold' : 'random', requestId: request ? request.id : '', scId: sc ? sc.id : '', itemNo: request ? request.itemNo : 0, focusNo: focus,
-      templateId: tpl.id, templateVer: tpl.version, templateName: tpl.name, subworkId: tpl.subworkId, tenderId: tender.id, tenderCode: tender.code, unit: unit || (request && request.unit) || '', location: location || (request && request.location) || (sc && sc.location) || `Y01站 單元 ${unit || ''}`,
+      templateId: tpl.id, templateVer: tpl.version, templateName: tpl.name, subworkId: tpl.subworkId, tenderId: tender.id, tenderCode: tender.code, unit: unit || (request && request.unit) || '', location: location || (request && request.location) || (sc && sc.location) || (unit ? `單元 ${unit}` : (sw ? sw.name : '')),
       title: focus ? tpl.items.find(i => i.no === focus).name : (request ? request.title : tpl.name), subworkName: sw ? sw.name : '', answers,
       calc: { thickness: '1.0', length: sc && sc.answers[2] ? String((sc.answers[2].values || {}).len || '') : '', depth: '' }, status: 'draft', signatures: {}, date: Date.now(), createdAt: Date.now(),
-      fillMode: tpl.fillMode || 'online', pdfFile: null, pdfResult: null,
+      fillMode: tpl.fillMode || 'online', pdfFile: null,
       wfStatus: '未開始', lockedBy: null, lastUpdatedBy: null, version: 0, logs: []
     };
     await put('spotChecks', sp); return sp;
@@ -434,7 +447,7 @@
   // 會驗可用的抽查紀錄表：同分項工程已發布者；預設為含本停留點對應項目的線上抽查表
   async function spotOptions(reqId) {
     const r = await get('requests', reqId), sc = r.scId ? await get('selfChecks', r.scId) : null, sub = (sc && sc.subworkId) || r.subworkId;
-    const tpls = (await all('templates')).filter(t => t.kind === 'spot' && t.status === 'published' && t.subworkId === sub).sort((a, b) => (a.order == null ? 1e9 : a.order) - (b.order == null ? 1e9 : b.order));
+    const tpls = (await all('templates')).filter(t => t.kind === 'spot' && t.status === 'published' && t.subworkId === sub && t.fillMode !== 'pdf').sort((a, b) => (a.order == null ? 1e9 : a.order) - (b.order == null ? 1e9 : b.order));
     const def = (r.itemKey && tpls.find(t => t.items.some(i => i.srcKey === r.itemKey))) || tpls.find(t => t.items.some(i => i.srcNo === r.itemNo)) || tpls[0] || null;
     return { tpls, def };
   }
@@ -442,7 +455,7 @@
     const r = await get('requests', reqId);
     if (r.spotId) return get('spotChecks', r.spotId);
     const { tpls, def } = await spotOptions(reqId);
-    if (!tpls.length) throw new Error(`「${r.subworkName || '此分項工程'}」尚未設定已發布的抽查紀錄表範本，請先至後台「表單範本」建立`);
+    if (!tpls.length) throw new Error(`「${r.subworkName || '此分項工程'}」尚未設定已發布的線上抽查紀錄表範本（停留點會驗不可使用 PDF 抽查表），請先至後台「表單範本」建立`);
     const tpl = (templateId && tpls.find(t => t.id === templateId)) || def;
     const sp = await newSpotCheck({ templateId: tpl.id, unit: r.unit, location: r.location, request: r, selfCheckId: r.scId });
     r.status = 'inspecting'; r.spotId = sp.id; r.notices.push({ at: Date.now(), text: '監造開始會驗', level: 'info' });
@@ -483,15 +496,14 @@
     const sp = await get('spotChecks', spId); const tpl = await get('templates', sp.templateId);
     const isPdf = sp.fillMode === 'pdf';
     if (!isPdf) autoNa(sp);
-    sp.hash = await hashOf({ a: sp.answers, c: sp.calc, v: sp.templateVer, p: sp.pdfFile ? [sp.pdfFile.name, sp.pdfFile.size] : null, r: sp.pdfResult });
+    sp.hash = await hashOf({ a: sp.answers, c: sp.calc, v: sp.templateVer, p: sp.pdfFile ? [sp.pdfFile.name, sp.pdfFile.size] : null });
     sp.status = 'signed'; await put('spotChecks', sp);
     const ngItems = isPdf ? [] : tpl.items.filter(i => (sp.answers[i.no] || {}).judge === 'ng');
     const scItem = it => (it.no === sp.focusNo ? sp.itemNo : 0);
     for (const it of ngItems) await createDefect({ tenderCode: sp.tenderCode, title: it.name, location: `${sp.tenderCode}｜${sp.location}`, source: '抽查', refId: sp.id, itemNo: it.no, subworkId: sp.subworkId, scId: sp.scId, scItemNo: scItem(it) });
-    if (isPdf && sp.pdfResult === 'ng') await createDefect({ tenderCode: sp.tenderCode, title: sp.templateName, location: `${sp.tenderCode}｜${sp.location}`, source: '抽查（PDF）', refId: sp.id, itemNo: 0, subworkId: sp.subworkId, scId: sp.scId, scItemNo: sp.requestId ? sp.itemNo : 0 });
     if (sp.requestId) {
       const r = await get('requests', sp.requestId);
-      const pass = isPdf ? sp.pdfResult !== 'ng' : (sp.focusNo ? sp.answers[sp.focusNo].judge !== 'ng' : !ngItems.length);
+      const pass = isPdf ? true : (sp.focusNo ? sp.answers[sp.focusNo].judge !== 'ng' : !ngItems.length);
       r.status = pass ? 'passed' : 'failed';
       r.notices.push({ at: Date.now(), text: pass ? '抽查完成，合格放行（後續項目解鎖）' : '抽查判定有缺失，不合格', level: pass ? 'ok' : 'danger' });
       await put('requests', r); await syncHold(r, pass ? 'passed' : 'failed');
@@ -520,9 +532,9 @@
     wfLog(rec, user, '取消鎖定', '放棄當次修改，釋放控制權。'); await wfSave(kind, rec); return rec;
   }
   // next（抽查表）：relay 其他局內人員續填／vendor 轉廠商簽名／supervisor 免廠商簽名逕轉主任加簽
-  async function wfUpload(kind, id, user, { file, sig, next, result }) {
+  async function wfUpload(kind, id, user, { file, sig, next }) {
     const rec = await wfGet(kind, id); if (rec.wfStatus !== '鎖定中' || rec.lockedBy !== user) throw new Error('需由鎖定人上傳');
-    rec.version = (rec.version || 0) + 1; rec.pdfFile = file; rec.lockedBy = null; rec.lastUpdatedBy = user; rec.pdfResult = result || rec.pdfResult;
+    rec.version = (rec.version || 0) + 1; rec.pdfFile = file; rec.lockedBy = null; rec.lastUpdatedBy = user;
     let detail;
     if (kind === 'self') { rec.wfStatus = '待流轉'; detail = '已完成 PDF 上傳並現地手寫簽名，待辦理憑證加簽結案。'; }
     else if (next === 'vendor') { rec.wfStatus = '待廠商簽名'; detail = '完成 PDF 上傳與現地手寫簽名，轉施工廠商辦理簽名確認。'; }
@@ -543,7 +555,6 @@
     wfLog(rec, user, kind === 'self' ? '憑證加簽結案' : '主任加簽結案', `經${method === 'tw-fido' ? '行動自然人憑證（TW FidO）' : '實體自然人憑證'}數位簽章認證，表單正式結案。`, { file: rec.pdfFile ? { name: rec.pdfFile.name, size: rec.pdfFile.size, data: rec.pdfFile.data } : null });
     if (kind === 'self') {
       rec.hash = await hashOf({ p: [rec.pdfFile.name, rec.pdfFile.size], v: rec.templateVer, n: rec.version }); rec.status = 'signed'; rec.signatures = { site: { at: Date.now(), name: user } };
-      if (rec.pdfResult === 'ng' && !rec.defectId) { const df = await createDefect({ tenderCode: rec.tenderCode, title: rec.templateName, location: `${rec.tenderCode}｜${rec.subworkName} ${rec.unit}`, source: '自主檢查（PDF）', refId: rec.id, itemNo: 0, subworkId: rec.subworkId, scId: rec.id, scItemNo: 0 }); rec.defectId = df.id; }
       await saveSelf(rec); return rec;
     }
     await put('spotChecks', rec); return finalizeSpot(id);
@@ -593,7 +604,7 @@
 
   window.QMS = {
     ready, open, all, get, put, del, seed, getParams, onChange: f => listeners.push(f),
-    LINKED, JUDGE, STAGES, HOLD_TEXT, REQ_TEXT, H, D,
+    LINKED, JUDGE, STAGES, DEF_STAGES, stagesOf, stageName, HOLD_TEXT, REQ_TEXT, H, D,
     fmtDT, fmtD, fmtFull, toLocalInput, fromLocalInput, nextHour, atDay, relTime, uid, clone, hashOf,
     evalField, suggest, rangeText, stageItems, stageDone, lockReason, holdState,
     tickOverdue, newSelfCheck, saveSelf, applyHold, schedule, reject, spotOptions, startInspection, cancelInspection, reportFix, reviewDefect, newSpotCheck, autoNa, migrateSpots, wfLock, wfCancel, wfUpload, wfVendorSign, wfClose, wfUnfreeze, pdfBlobUrl, downloadPdf, downloadAny, openAny, canPreview, fileToDataUrl, fmtSize, dataUrlSize, createDefect, finalizeSelf, finalizeSpot, setDefectStatus, saveTemplate, putMany, F, I, ensureKeys, baseId
