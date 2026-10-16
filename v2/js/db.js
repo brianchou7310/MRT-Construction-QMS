@@ -168,10 +168,8 @@
   function buildSeed() {
     const now = Date.now();
     const out = { tenders: [], subworks: [], templates: [], selfChecks: [], requests: [], spotChecks: [], defects: [], docs: [], users: [], meta: [] };
-    out.tenders.push(
-      { id: 'T671', code: 'CF671', name: 'CF671 土建標', status: '施工中', contractor: '大陸工程股份有限公司', supervisor: '臺北市政府捷運工程局第二區工程處', site: 'Y01 站及區間隧道', start: '2024/03/01', end: '2028/12/31', external: '（日後串接標案管理系統）', desc: '隸屬 CF670A 臺北都會區大眾捷運系統環狀線南環段 CF670A 區段標工程', members: 6 },
-      { id: 'T624', code: 'CF624H', name: 'CF624H 水環標', status: '施工中', contractor: '遠揚營造股份有限公司', supervisor: '臺北市政府捷運工程局第二區工程處', site: '隧道（地下）排水系統', start: '2024/06/01', end: '2028/06/30', external: '', desc: '隸屬 CF670A 區段標工程', members: 4 }
-    );
+    // 標案：與標案管理系統（ProjBase）真實資料一致
+    out.tenders.push(Object.assign(tenderFromProj(SEED_PROJ.CF671, SEED_PROJ.CF670A), { id: 'T671', members: 6, addedAt: 0 }), Object.assign(tenderFromProj(SEED_PROJ.CF624H, SEED_PROJ.CF670A), { id: 'T624', members: 4, addedAt: 0 }));
     const sw = [['一', '鋼板樁工程', 296, 'M'], ['二', '開挖支撐工程', 1, '式'], ['三', '車站開挖祛水系統', 1, '式'], ['四', '構造物回填工程', 19470, 'M3'], ['五', '連續壁工程', 15550, 'M2'], ['六', '鑽掘混凝土基樁工程', 6315, 'M'], ['七', '營建剩餘資源處理工程', 192575, 'M3'], ['八', '模板組立工程', 93026, 'M2'], ['九', '鋼筋工程', 11038, 'T'], ['十', '預拌混凝土工程', 50299, 'M3'], ['十一', '接地系統工程', 1, '式'], ['十二', '政大宿舍拆除工程', 1, '式'], ['十三', '舊廣路銅橋橋新建（含拆除）工程', 1, '式'], ['十四', '臨時排水工程', 1, '式'], ['十五', '地下調查工程', 1, '式']];
     sw.forEach((s, i) => out.subworks.push({ id: 'S671-' + (i + 1), tenderId: 'T671', no: s[0], name: s[1], qty: s[2], unit: s[3], status: '施工中', order: i }));
     [['隧道（地下）工程', 4], ['車站工程', 23]].forEach((s, i) => out.subworks.push({ id: 'S624-' + (i + 1), tenderId: 'T624', no: ['一', '二'][i], name: s[0], qty: 1, unit: '式', status: '施工中', order: i }));
@@ -187,7 +185,7 @@
     out.templates.find(t => t.id === 'TP-S2').used = 2;
 
     // 參考文件
-    [['CF671-PL-0032', 'Y01 站連續壁工計畫書', '第5章 品質管理（p.5-10~5-21）'], ['CF671-DW-0101', '連續壁施工圖', 'Y01 站 單元配置'], ['CF671-SP-0005', '施工規範 03310 混凝土', '坍度、溫度及試體規定'], ['CF671-SP-0007', '施工規範 02450 連續壁', '垂直度及穩定液管理']].forEach(d => out.docs.push({ id: d[0], code: d[0], name: d[1], note: d[2] }));
+    [['CF671-PL-0032', 'Y01 站連續壁工計畫書', '第5章 品質管理（p.5-10~5-21）'], ['CF671-DW-0101', '連續壁施工圖', 'Y01 站 單元配置'], ['CF671-SP-0005', '施工規範 03310 混凝土', '坍度、溫度及試體規定'], ['CF671-SP-0007', '施工規範 02450 連續壁', '垂直度及穩定液管理']].forEach(d => out.docs.push({ id: d[0], code: d[0], name: d[1], note: d[2], projKey: 'CF670A' }));
     out.users.push(
       { id: 'U1', name: '系統管理員', role: '系統管理員', org: '第二區工程處', email: 'admin@example.com' },
       { id: 'U2', name: '示範品管', role: '廠商品管人員', org: '大陸工程股份有限公司', email: 'qc@contractor.example.com' },
@@ -253,6 +251,41 @@
     return out;
   }
 
+  /* ---------- 標案（來源：標案管理系統 ProjBase） ---------- */
+  const STEP_TEXT = { A: '未開工', B: '施工中', C: '驗收中', D: '保固', E: '結案', F: '仲裁中', Z: '解約' };
+  const PROJ_TYPE_TEXT = { '區': '區段標', '子': '子標', '單': '單一標' };
+  // 後台身份（部門）：部門代碼對應 ProjBase 的 WORK_SECTION_ID
+  const DEPTS = [{ id: '2J', name: '二區工程處土十所' }, { id: '2B', name: '二區工程處土十一所' }, { id: '2F', name: '二區工程處水環二所' }];
+  const rocDate = v => /^\d{7}$/.test(v || '') ? `${v.slice(0, 3)}/${v.slice(3, 5)}/${v.slice(5)}` : '';
+  const office = name => { const m = String(name || '').match(/^(.*?工程處)/); return '臺北市政府捷運工程局' + (m ? m[1] : ''); };
+  // 由 ProjBase 資料列建立系統內的標案（子標需帶入上層區段標）
+  function tenderFromProj(r, up) {
+    return { id: 'T-' + r.PROJ_ID, code: r.PROJ_ID, name: r.PROJ_NAME_C, type: r.PROJ_TYPE, parentCode: up ? up.PROJ_ID : '', parentName: up ? up.PROJ_NAME_C : '', parentSectionId: up ? up.WORK_SECTION_ID : '',
+      contId: r.CONT_ID || '', line: r.LINE_NM || '', contractor: (r.CONT_COMP_NAME_C || '').trim(), sectionId: r.WORK_SECTION_ID || '', sectionName: r.WORK_SECTION_NAME || '', supervisor: office(r.WORK_SECTION_NAME),
+      site: String(r.WORK_LOCA || '').replace(/\s+/g, ' ').trim(), start: rocDate(r.ACTU_STAR_DATE), end: rocDate(r.PLAN_FINI_DATE), amount: r.CONT_AMT_NT || 0, step: r.STEP_TYPE || '', status: STEP_TEXT[r.STEP_TYPE] || '—', desc: '', members: 0, src: 'projbase', addedAt: Date.now() };
+  }
+  // 畫面用的短名稱：去掉共同前綴「臺北都會區大眾捷運系統」與「…區段標-」
+  function tLabel(t) { if (!t) return ''; const n0 = String(t.name || ''); let n = n0.replace(/^臺北都會區大眾捷運系統/, '').replace(/^.*?區段標\s*[-－]?\s*/, '').replace(new RegExp('^' + String(t.code || '#').replace(/[^\w]/g, '') + '(施工標|標)?\\s*[-－]?\\s*'), '').trim(); return `${t.code} ${n || n0}`.trim(); }
+  // 區段標／單一標鍵值：子標取上層區段標，單一標取本身標號
+  const projKey = t => t ? (t.parentCode || t.code || '') : '';
+  function projOptions(tenders) { const m = new Map(); (tenders || []).slice().sort((a, b) => projKey(a).localeCompare(projKey(b))).forEach(t => { const k = projKey(t); if (k && !m.has(k)) m.set(k, { v: k, l: `${k} ${t.parentCode ? '區段標' : '單一標'}`, name: t.parentCode ? t.parentName : t.name }); }); return [...m.values()]; }
+  // 部門可見：標案本身或其區段標屬於該部門
+  const tenderInDept = (t, dept) => !dept || t.sectionId === dept || t.parentSectionId === dept;
+  const SEED_PROJ = {
+    CF670A: { PROJ_TYPE: '區', PROJ_ID: 'CF670A', PROJ_NAME_C: '臺北都會區大眾捷運系統環狀線南環段CF670A區段標工程', CONT_ID: 'E1366-1122006-000', LINE_NM: '環狀線南環及北環', CONT_AMT_NT: 8838099353, ACTU_STAR_DATE: '1120613', PLAN_FINI_DATE: '1220710', WORK_LOCA: '臺北市文山區新光路2段經秀明路2段至木新路', WORK_SECTION_ID: '2J', WORK_SECTION_NAME: '第二區工程處土木第十工務所', CONT_COMP_NAME_C: '大陸工程股份有限公司', STEP_TYPE: 'B' },
+    CF671: { PROJ_TYPE: '子', PROJ_UP: 'CF670A', PROJ_ID: 'CF671', PROJ_NAME_C: '環狀線南環段Y1站(含)~Y2A站(不含)土建工程', CONT_ID: 'E1366-1122006-000', LINE_NM: '環狀線南環及北環', CONT_AMT_NT: 7645834674, ACTU_STAR_DATE: '1120613', PLAN_FINI_DATE: '1210410', WORK_LOCA: '臺北市文山區新光路2段經秀明路2段至木新路', WORK_SECTION_ID: '2J', WORK_SECTION_NAME: '第二區工程處土木第十工務所', CONT_COMP_NAME_C: '大陸工程股份有限公司', STEP_TYPE: 'B' },
+    CF624H: { PROJ_TYPE: '子', PROJ_UP: 'CF670A', PROJ_ID: 'CF624H', PROJ_NAME_C: '臺北都會區大眾捷運系統環狀線南環段CF670A區段標-CF624H水電環控工程', CONT_ID: 'E1366-1122006-000', LINE_NM: '環狀線南環及北環', CONT_AMT_NT: 1192264679, ACTU_STAR_DATE: '1120613', PLAN_FINI_DATE: '1220710', WORK_LOCA: '臺北市文山區   動物園(Y01)站至政大(Y1A)站', WORK_SECTION_ID: '2F', WORK_SECTION_NAME: '第二區工程處水環第二工務所', CONT_COMP_NAME_C: '大陸工程股份有限公司', STEP_TYPE: 'B' }
+  };
+  // 舊示範標案（自行輸入的資料）改為與 ProjBase 一致；紀錄上的承包商一併更正
+  // 參考文件以區段標／單一標為鍵值：舊資料歸到 CF670A
+  async function migrateDocs() { for (const x of (await all('docs')).filter(x => !x.projKey)) { x.projKey = 'CF670A'; await put('docs', x); } }
+  async function migrateTenders() {
+    for (const [id, code] of [['T671', 'CF671'], ['T624', 'CF624H']]) {
+      const t = await get('tenders', id); if (!t || t.src) continue;
+      const n = Object.assign(tenderFromProj(SEED_PROJ[code], SEED_PROJ.CF670A), { id, members: t.members || 0, addedAt: 0 }); await put('tenders', n);
+      for (const st of ['selfChecks', 'spotChecks']) for (const r of (await all(st)).filter(x => x.tenderId === id && x.contractor && x.contractor !== n.contractor)) { r.contractor = n.contractor; await put(st, r); }
+    }
+  }
   /* ---------- 初始化與重置 ---------- */
   async function seed(force) {
     if (!force && await get('meta', 'seeded')) return;
@@ -354,7 +387,7 @@
     }
     for (const r of await all('requests')) if (r.inspector === '示範監造') { r.inspector = '示範工務所同仁'; await put('requests', r); }
   }
-  const ready = open().then(() => seed(false)).then(() => migrateRoles()).then(() => migrateSpots()).then(() => migratePdfWf()).then(() => postSeed()).then(() => tickOverdue());
+  const ready = open().then(() => seed(false)).then(() => migrateTenders()).then(() => migrateDocs()).then(() => migrateRoles()).then(() => migrateSpots()).then(() => migratePdfWf()).then(() => postSeed()).then(() => tickOverdue());
 
   async function getParams() { return Object.assign({}, DEFAULT_PARAMS, await get('meta', 'params') || {}); }
   async function counter(name) {
@@ -607,6 +640,7 @@
     LINKED, JUDGE, STAGES, DEF_STAGES, stagesOf, stageName, HOLD_TEXT, REQ_TEXT, H, D,
     fmtDT, fmtD, fmtFull, toLocalInput, fromLocalInput, nextHour, atDay, relTime, uid, clone, hashOf,
     evalField, suggest, rangeText, stageItems, stageDone, lockReason, holdState,
+    STEP_TEXT, PROJ_TYPE_TEXT, DEPTS, rocDate, tenderFromProj, tLabel, tenderInDept, projKey, projOptions,
     tickOverdue, newSelfCheck, saveSelf, applyHold, schedule, reject, spotOptions, startInspection, cancelInspection, reportFix, reviewDefect, newSpotCheck, autoNa, migrateSpots, wfLock, wfCancel, wfUpload, wfVendorSign, wfClose, wfUnfreeze, pdfBlobUrl, downloadPdf, downloadAny, openAny, canPreview, fileToDataUrl, fmtSize, dataUrlSize, createDefect, finalizeSelf, finalizeSpot, setDefectStatus, saveTemplate, putMany, F, I, ensureKeys, baseId
   };
 })();
