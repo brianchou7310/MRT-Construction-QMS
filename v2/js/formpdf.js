@@ -7,22 +7,29 @@
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   const CSS = `
-    .fp{width:${A4W - M * 2}px;font-family:"Microsoft JhengHei","PingFang TC","Noto Sans TC","Noto Sans CJK TC",sans-serif;color:#111;font-size:11.5px;line-height:1.45;background:#fff}
-    .fp h1{font-size:18px;margin:0 0 2px;text-align:center;letter-spacing:1px}
-    .fp .sub{text-align:center;color:#444;margin-bottom:8px;font-size:12px}
+    .fp{width:${A4W - M * 2}px;font-family:"DFKai-SB","BiauKai","標楷體","Microsoft JhengHei","PingFang TC","Noto Sans TC","Noto Sans CJK TC",sans-serif;color:#000;font-size:12px;line-height:1.5;background:#fff}
+    .fp .t1{text-align:center;font-size:16px;margin-bottom:4px}
+    .fp .t2{text-align:center;font-size:20px;font-weight:700;letter-spacing:4px;margin-bottom:2px}
+    .fp .t3{text-align:center;font-size:14px;margin-bottom:6px}.fp .t3.b{font-size:17px;font-weight:700}
     .fp table{width:100%;border-collapse:collapse;table-layout:fixed}
-    .fp td,.fp th{border:1px solid #333;padding:4px 5px;vertical-align:top;word-break:break-all}
-    .fp th{background:#e8eef1;font-weight:700;text-align:center}
-    .fp .fp-kv td.k{background:#f3f6f8;font-weight:700;white-space:nowrap}
-    .fp .stage td{background:#dfe9ee;font-weight:700}
-    .fp .c{text-align:center}.fp .j{text-align:center;font-size:15px;font-weight:700}
-    .fp .ng{color:#c62828}.fp .star{color:#c77800}.fp .mut{color:#555;font-size:10.5px}
-    .fp .blk{margin-top:10px}.fp .ttl{font-weight:700;margin:10px 0 4px;font-size:12.5px}
-    .fp .sig{height:64px;text-align:center}.fp .sig img{max-height:60px;max-width:100%}
+    .fp td,.fp th{border:1px solid #000;padding:3px 5px;vertical-align:middle;word-break:break-all}
+    .fp th{font-weight:400;text-align:center;line-height:1.35}
+    .fp .hd td.k{text-align:justify;text-align-last:justify;white-space:nowrap;padding:3px 8px}
+    .fp .it{margin-top:-1px}
+    .fp .stg{text-align:center;line-height:1.4}
+    .fp .j{text-align:center;font-size:15px;font-weight:700}
+    .fp .calc{font-size:13px;line-height:1.9;padding:4px 8px}
+    .fp .rv{line-height:1.7;padding:4px 6px;vertical-align:top}.fp .rv .ni{padding-left:1.4em;text-indent:-1.4em}
+    .fp .sg{margin-top:6px}.fp .sg td{border:none;vertical-align:top;padding:2px 4px}
+    .fp .sg .sl{width:18%;text-align:right;white-space:nowrap}.fp .sg .sv{width:32%;min-height:48px}
+    .fp .sg img{max-height:44px;max-width:100%;display:block}
+    .fp .ng{color:#c62828}.fp .star{color:#000}.fp .mut{color:#555;font-size:10.5px}
+    .fp .meta{margin-top:6px;color:#666;font-size:9.5px}
+    .fp .blk{margin-top:10px}.fp .ttl{font-weight:700;margin:12px 0 4px;font-size:13px}
     .fp .ph{display:inline-block;margin:0 6px 6px 0;text-align:center;font-size:10px;color:#555;vertical-align:top}
     .fp .ph img{width:150px;height:112px;object-fit:cover;border:1px solid #999;display:block}
-    .fp .note{font-size:10.5px;color:#333;margin:0;padding-left:18px}
   `;
+
 
   async function render(html) {
     const host = document.createElement('div');
