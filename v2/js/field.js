@@ -10,10 +10,15 @@ createApp({
     const role = ref((() => { try { return localStorage.getItem('qms2-role') || 'contractor'; } catch (e) { return 'contractor'; } })());
     const isSup = computed(() => role.value !== 'contractor'), isDirector = computed(() => role.value === 'director');
     watch(role, v => { try { localStorage.setItem('qms2-role', v); } catch (e) { /* ignore */ } });
+    // 捷運局工務所（同仁／主任）依單位區分標案權限：2J／2B／2F，規則同後台（標案本身或其區段標屬於該單位）
+    const dept = ref((() => { try { return localStorage.getItem('qms2-field-dept') || '2J'; } catch (e) { return '2J'; } })());
+    watch(dept, v => { try { localStorage.setItem('qms2-field-dept', v); } catch (e) { /* ignore */ } });
+    const deptName = computed(() => (Q.DEPTS.find(x => x.id === dept.value) || {}).name || '');
+    watch([role, dept], () => { if (loaded.value) load(); });
     // 目前身分 → 對應「帳號與權限」中的使用者（不再寫死姓名與單位）
     const ROLE_NAME = { contractor: '廠商品管人員', supervisor: '捷運局工務所同仁', director: '捷運局工務所主任' };
     const userOf = (roleName, org) => d.users.find(u => u.role === roleName && (!org || u.org === org)) || d.users.find(u => u.role === roleName) || null;
-    const me = computed(() => { const t = ROLE_NAME[role.value], u = userOf(t); return { id: u ? u.id : '', name: u ? u.name : `（未設定${t}帳號）`, org: u ? u.org : '', title: t }; });
+    const me = computed(() => { const t = ROLE_NAME[role.value], u = userOf(t); return { id: u ? u.id : '', name: u ? u.name : `（未設定${t}帳號）`, org: role.value !== 'contractor' && deptName.value ? `${deptName.value}（${dept.value}）` : (u ? u.org : ''), title: t }; });
     const wide = ref(window.matchMedia('(min-width: 900px)').matches);
     window.matchMedia('(min-width: 900px)').addEventListener('change', e => { wide.value = e.matches; });
     const toastMsg = ref(''), toastNg = ref(false); let tt;
@@ -22,9 +27,19 @@ createApp({
     async function load() {
       const names = ['tenders', 'subworks', 'templates', 'selfChecks', 'requests', 'spotChecks', 'defects', 'docs', 'users'];
       const res = await Promise.all(names.map(s => Q.all(s)).concat([Q.getParams()]));
-      names.forEach((n, i) => { d[n] = res[i]; }); d.params = res[names.length]; now.value = Date.now(); loaded.value = true;
+      names.forEach((n, i) => { d[n] = res[i]; }); d.params = res[names.length];
+      // 工務所身分只看本單位的標案；廠商不受限
+      if (role.value !== 'contractor') {
+        const vis = new Set(d.tenders.filter(t => Q.tenderInDept(t, dept.value)).map(t => t.id)), inT = x => vis.has(x.tenderId), keys = new Set(d.tenders.filter(t => vis.has(t.id)).map(Q.projKey));
+        d.tenders = d.tenders.filter(t => vis.has(t.id)); ['subworks', 'templates', 'selfChecks', 'requests', 'spotChecks', 'defects'].forEach(n => { d[n] = d[n].filter(inT); }); d.docs = d.docs.filter(x => keys.has(x.projKey));
+      }
+      if (tenderSel.value !== 'all' && !d.tenders.some(t => t.id === tenderSel.value)) tenderSel.value = 'all';
+      now.value = Date.now(); loaded.value = true;
     }
     const tplOf = id => d.templates.find(t => t.id === id);
+    // 參考文件：依區段標／單一標篩選
+    const docProj = ref('');
+    const docList = computed(() => d.docs.filter(x => !docProj.value || x.projKey === docProj.value).sort((a, b) => (a.projKey || '').localeCompare(b.projKey || '') || a.code.localeCompare(b.code)));
     const rel = ts => Q.relTime(ts, now.value);
     const inTender = x => tenderSel.value === 'all' || x.tenderId === tenderSel.value;
     const hh = ts => { const t = new Date(ts); return String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0'); };
@@ -117,25 +132,28 @@ createApp({
     /* ---------- 自主檢查清單 / 新增 ---------- */
     /* ---------- 自主檢查／抽查紀錄清單的篩選：標號 → 工項 → 單元 → 表單（選項只列清單中實際有的資料） ---------- */
     const NO_UNIT = '__none__';
-    const fc = reactive({ tender: '', sw: '', unit: '', tpl: '' }), fsp = reactive({ tender: '', sw: '', unit: '', tpl: '' });
+    const fc = reactive({ proj: '', tender: '', sw: '', unit: '', tpl: '' }), fsp = reactive({ proj: '', tender: '', sw: '', unit: '', tpl: '' });
+    const projOf = x => Q.projKey(d.tenders.find(t => t.id === x.tenderId));
+    const projOpts = computed(() => Q.projOptions(d.tenders));
     const tplKey = x => (tplOf(x.templateId) || {}).code || x.templateCode || x.templateName;
     const tplLabel = x => { const t = tplOf(x.templateId); return x.templateCode || (t && t.kind === 'self') ? `表${tplKey(x)} ${x.templateName}` : x.templateName; };
-    const passF = (f, x, upto) => { const lv = ['tender', 'sw', 'unit', 'tpl'], n = upto === 'all' ? 4 : lv.indexOf(upto);
-      return (n <= 0 || !f.tender || x.tenderId === f.tender) && (n <= 1 || !f.sw || x.subworkId === f.sw) && (n <= 2 || !f.unit || (f.unit === NO_UNIT ? !x.unit : x.unit === f.unit)) && (n <= 3 || !f.tpl || tplKey(x) === f.tpl); };
+    const F_LV = ['proj', 'tender', 'sw', 'unit', 'tpl'];
+    const passF = (f, x, upto) => { const n = upto === 'all' ? 9 : F_LV.indexOf(upto) - 1;
+      return (n < 0 || !f.proj || projOf(x) === f.proj) && (n <= 0 || !f.tender || x.tenderId === f.tender) && (n <= 1 || !f.sw || x.subworkId === f.sw) && (n <= 2 || !f.unit || (f.unit === NO_UNIT ? !x.unit : x.unit === f.unit)) && (n <= 3 || !f.tpl || tplKey(x) === f.tpl); };
     const uniq = (arr, key) => { const m = new Map(); arr.forEach(x => { const k = key(x); if (k[0] !== undefined && k[0] !== '' && !m.has(k[0])) m.set(k[0], k[1]); }); return [...m].map(([v, l]) => ({ v, l })); };
     function filterOpts(list, f) {
       const swName = id => { const s = d.subworks.find(x => x.id === id); return s ? `${s.no}、${s.name}` : id; };
-      const tenders = d.tenders.map(t => ({ v: t.id, l: t.name.includes(t.code) ? t.name : `${t.code} ${t.name}` })).sort((a, b) => a.l.localeCompare(b.l));   // 標號列出全部標案，與上方標號選單一致
+      const tenders = d.tenders.filter(t => !f.proj || Q.projKey(t) === f.proj).map(t => ({ v: t.id, l: Q.tLabel(t) })).sort((a, b) => a.l.localeCompare(b.l));   // 標號列出（所選區段標下的）全部標案
       const sws = uniq(list.filter(x => passF(f, x, 'sw')), x => [x.subworkId, swName(x.subworkId)]).sort((a, b) => ((d.subworks.find(s => s.id === a.v) || {}).order ?? 99) - ((d.subworks.find(s => s.id === b.v) || {}).order ?? 99));
       const l3 = list.filter(x => passF(f, x, 'unit')), units = uniq(l3.filter(x => x.unit), x => [x.unit, x.unit]).sort((a, b) => a.v.localeCompare(b.v, 'zh-Hant', { numeric: true }));
       if (units.length && l3.some(x => !x.unit)) units.push({ v: NO_UNIT, l: '（無單元）' });
       const tpls = uniq(list.filter(x => passF(f, x, 'tpl')), x => [tplKey(x), tplLabel(x)]).sort((a, b) => a.v.localeCompare(b.v, 'zh-Hant', { numeric: true }));
-      return { tenders, sws, units, tpls };
+      return { projs: projOpts.value, tenders, sws, units, tpls };
     }
     // 上層改變時，清掉已經不存在的下層選擇
-    function fixF(f, o) { if (f.sw && !o.sws.some(x => x.v === f.sw)) f.sw = ''; if (f.unit && !o.units.some(x => x.v === f.unit)) f.unit = ''; if (f.tpl && !o.tpls.some(x => x.v === f.tpl)) f.tpl = ''; }
-    function setF(f, lv, v) { f[lv] = v; const order = ['tender', 'sw', 'unit', 'tpl']; order.slice(order.indexOf(lv) + 1).forEach(k => { f[k] = ''; }); if (lv === 'tender') tenderSel.value = v || 'all'; }
-    const clearF = f => { f.tender = ''; f.sw = ''; f.unit = ''; f.tpl = ''; tenderSel.value = 'all'; };
+    function fixF(f, o) { if (f.proj && !o.projs.some(x => x.v === f.proj)) f.proj = ''; if (f.tender && !o.tenders.some(x => x.v === f.tender)) f.tender = ''; if (f.sw && !o.sws.some(x => x.v === f.sw)) f.sw = ''; if (f.unit && !o.units.some(x => x.v === f.unit)) f.unit = ''; if (f.tpl && !o.tpls.some(x => x.v === f.tpl)) f.tpl = ''; }
+    function setF(f, lv, v) { f[lv] = v; F_LV.slice(F_LV.indexOf(lv) + 1).forEach(k => { f[k] = ''; }); if (lv === 'tender' || lv === 'proj') tenderSel.value = f.tender || 'all'; }
+    const clearF = f => { f.proj = ''; f.tender = ''; f.sw = ''; f.unit = ''; f.tpl = ''; tenderSel.value = 'all'; };
     watch(tenderSel, v => { const t = v === 'all' ? '' : v; [fc, fsp].forEach(f => { if (f.tender !== t) setF(f, 'tender', t); }); }, { immediate: true });
     const scAll = computed(() => d.selfChecks.slice().sort((a, b) => b.updatedAt - a.updatedAt));
     const scOpts = computed(() => { const o = filterOpts(scAll.value, fc); fixF(fc, o); return o; });
@@ -152,6 +170,8 @@ createApp({
     const unitOpts = (sid, kind) => { const sw = d.subworks.find(s => s.id === sid), l = ((sw && sw.unitList) || []).filter(u => tplOpts(sid, kind, u).length); return l.length && tplOpts(sid, kind, '').length ? [''].concat(l) : l; };
     const ut = (u, pre) => u ? (pre || '') + '單元 ' + u : '';
     const where = (unit, swName) => unit ? '單元 ' + unit : swName;
+    // 標號選單「全部」：所有標案同屬一個區段標時顯示該區段標
+    const allTenderLabel = computed(() => { const ps = [...new Set(d.tenders.map(t => t.parentCode || ''))]; return ps.length === 1 && ps[0] ? `${ps[0]} 區段標` : '全部標案'; });
     const tenderOpts = () => d.tenders.slice().sort((a, b) => a.code.localeCompare(b.code));
     function cascade(f, kind, from) {
       if (from === 'tender') f.subworkId = (swOpts(f.tenderId, kind)[0] || {}).id || '';
@@ -522,7 +542,7 @@ createApp({
     });
 
     return {
-      Q, d, loaded, now, view, todoTab, tenderSel, fc, fsp, scOpts, spOpts, setF, clearF, NO_UNIT, scAll, spAll, role, isSup, me, wide, toastMsg, toastNg, toast, tplOf, rel, hh, todayLabel, reqCls,
+      Q, d, loaded, now, view, todoTab, tenderSel, dept, deptName, projOf, projOpts, docProj, docList, fc, fsp, scOpts, spOpts, setF, clearF, NO_UNIT, scAll, spAll, allTenderLabel, role, isSup, me, wide, toastMsg, toastNg, toast, tplOf, rel, hh, todayLabel, reqCls,
       todoReqs, lockedCards, rejectedCards, defTodos, draftSpots, pdfTodos, openPdfTodo, openDefects, todoCount, holdFilter, holdsList, selReqId, selReq, sched, selectReq, reqChips, reqPhotos, lockedAfter, doSchedule, doReject, doStart, doCancel,
       pf, pfPreview, pfUrl, pfTpl, pfRec, pfSelf, pfSt, wfCls, pfCanLock, pfIsLocker, pfCanClose, pfCanVendor, pfCanUnfreeze, pfHint, pfDownloadBlank, pfDownloadCur, pfLock, pfCancel, wfUp, wfCert, wfVen, wfUnf, openWfUp, onWfUpFile, submitWfUp, openWfVen, onWfVenFile, submitWfVen, openWfCert, submitWfCert, openWfUnf, submitWfUnf, dlLog, leavePdf, isDirector, scList, scProgress, newForm, qrForm, tenderOpts, swOpts, tplOpts, unitOpts, ut, cascade, openNew, createSc, scanQr, pickQr,
       cur, curTpl, stageTab, itemNo, saveMsg, docShow, linkShow, applyForm, readonly, stageList, curItem, shownItems, judged, total, stageStat, stageDone, ans, ensure, lockOf, hstate, hreq, itemEditable, sugg, itemIcon,

@@ -14,7 +14,7 @@
     .fp table{width:100%;border-collapse:collapse;table-layout:fixed}
     .fp td,.fp th{border:1px solid #000;padding:3px 5px;vertical-align:middle;word-break:break-all}
     .fp th{font-weight:400;text-align:center;line-height:1.35}
-    .fp .hd td.k{text-align:justify;text-align-last:justify;white-space:nowrap;padding:3px 8px}
+    .fp .hd td.k{text-align:left;white-space:nowrap;padding:3px 6px}
     .fp .it{margin-top:-1px}
     .fp .stg{text-align:center;line-height:1.4}
     .fp .j{text-align:center;font-size:15px;font-weight:700}

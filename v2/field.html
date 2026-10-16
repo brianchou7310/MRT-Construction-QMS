@@ -27,7 +27,7 @@
   <section class="list-col">
     <header class="hdr">
       <div class="grow"><div class="small sub">{{ todayLabel }}・{{ me.org || me.title }}・{{ me.name }}</div><h1>{{ view==='todo' ? '今日待辦' : '停留點會驗' }}</h1></div>
-      <select v-model="tenderSel" class="sel-tender"><option value="all">CF670A 區段標</option><option v-for="t in d.tenders" :value="t.id">{{ t.code }}</option></select>
+      <select v-model="tenderSel" class="sel-tender"><option value="all">{{ allTenderLabel }}</option><option v-for="t in d.tenders" :value="t.id">{{ t.code }}</option></select>
       <button class="btn" @click="qrForm={code:''}">▦ 掃描單元 QR Code</button>
     </header>
 
@@ -116,7 +116,7 @@
 <!-- ============ 自主檢查清單 ============ -->
 <div class="plain" v-if="view==='checks'">
   <header class="hdr"><div class="grow"><div class="small sub">{{ me.title }}・{{ me.org }}</div><h1>自主檢查</h1></div><button class="btn primary" v-if="!isSup" @click="openNew()">＋ 新增自主檢查</button><button class="btn" @click="qrForm={code:''}">▦ 掃描 QR</button></header>
-  <div class="filters"><select :value="fc.tender" @change="setF(fc,'tender',$event.target.value)"><option value="">全部標號</option><option v-for="o in scOpts.tenders" :key="o.v" :value="o.v">{{ o.l }}</option></select><select :value="fc.sw" @change="setF(fc,'sw',$event.target.value)"><option value="">全部工項</option><option v-for="o in scOpts.sws" :key="o.v" :value="o.v">{{ o.l }}</option></select><select v-if="scOpts.units.length" :value="fc.unit" @change="setF(fc,'unit',$event.target.value)"><option value="">全部單元</option><option v-for="o in scOpts.units" :key="o.v" :value="o.v">{{ o.l }}</option></select><select :value="fc.tpl" @change="setF(fc,'tpl',$event.target.value)"><option value="">全部表單</option><option v-for="o in scOpts.tpls" :key="o.v" :value="o.v">{{ o.l }}</option></select><span class="small muted nowrap">共 {{ scList.length }} 筆<template v-if="scList.length!==scAll.length"> ／ {{ scAll.length }}</template></span><a class="small" v-if="fc.tender||fc.sw||fc.unit||fc.tpl" @click="clearF(fc)">清除</a></div>
+  <div class="filters"><select :value="fc.proj" @change="setF(fc,'proj',$event.target.value)"><option value="">全部區段標／單一標</option><option v-for="o in scOpts.projs" :key="o.v" :value="o.v">{{ o.l }}</option></select><select :value="fc.tender" @change="setF(fc,'tender',$event.target.value)"><option value="">全部標號</option><option v-for="o in scOpts.tenders" :key="o.v" :value="o.v">{{ o.l }}</option></select><select :value="fc.sw" @change="setF(fc,'sw',$event.target.value)"><option value="">全部工項</option><option v-for="o in scOpts.sws" :key="o.v" :value="o.v">{{ o.l }}</option></select><select v-if="scOpts.units.length" :value="fc.unit" @change="setF(fc,'unit',$event.target.value)"><option value="">全部單元</option><option v-for="o in scOpts.units" :key="o.v" :value="o.v">{{ o.l }}</option></select><select :value="fc.tpl" @change="setF(fc,'tpl',$event.target.value)"><option value="">全部表單</option><option v-for="o in scOpts.tpls" :key="o.v" :value="o.v">{{ o.l }}</option></select><span class="small muted nowrap">共 {{ scList.length }} 筆<template v-if="scList.length!==scAll.length"> ／ {{ scAll.length }}</template></span><a class="small" v-if="fc.proj||fc.tender||fc.sw||fc.unit||fc.tpl" @click="clearF(fc)">清除</a></div>
   <div class="alert gray" v-if="!scList.length" style="margin:12px 14px 0">沒有符合篩選條件的紀錄。</div>
   <div class="grid-cards">
     <div class="tcard" v-for="sc in scList" :key="sc.id" @click="openSc(sc.id)">
@@ -214,7 +214,7 @@
 <!-- ============ 抽查紀錄清單 ============ -->
 <div class="plain" v-if="view==='spots'">
   <header class="hdr"><div class="grow"><div class="small sub">{{ me.title }}・{{ me.org }}</div><h1>抽查紀錄</h1></div><button class="btn" v-if="isSup" @click="openSpotNew">＋ 新增隨機抽查</button></header>
-  <div class="filters"><select :value="fsp.tender" @change="setF(fsp,'tender',$event.target.value)"><option value="">全部標號</option><option v-for="o in spOpts.tenders" :key="o.v" :value="o.v">{{ o.l }}</option></select><select :value="fsp.sw" @change="setF(fsp,'sw',$event.target.value)"><option value="">全部工項</option><option v-for="o in spOpts.sws" :key="o.v" :value="o.v">{{ o.l }}</option></select><select v-if="spOpts.units.length" :value="fsp.unit" @change="setF(fsp,'unit',$event.target.value)"><option value="">全部單元</option><option v-for="o in spOpts.units" :key="o.v" :value="o.v">{{ o.l }}</option></select><select :value="fsp.tpl" @change="setF(fsp,'tpl',$event.target.value)"><option value="">全部表單</option><option v-for="o in spOpts.tpls" :key="o.v" :value="o.v">{{ o.l }}</option></select><span class="small muted nowrap">共 {{ spList.length }} 筆<template v-if="spList.length!==spAll.length"> ／ {{ spAll.length }}</template></span><a class="small" v-if="fsp.tender||fsp.sw||fsp.unit||fsp.tpl" @click="clearF(fsp)">清除</a></div>
+  <div class="filters"><select :value="fsp.proj" @change="setF(fsp,'proj',$event.target.value)"><option value="">全部區段標／單一標</option><option v-for="o in spOpts.projs" :key="o.v" :value="o.v">{{ o.l }}</option></select><select :value="fsp.tender" @change="setF(fsp,'tender',$event.target.value)"><option value="">全部標號</option><option v-for="o in spOpts.tenders" :key="o.v" :value="o.v">{{ o.l }}</option></select><select :value="fsp.sw" @change="setF(fsp,'sw',$event.target.value)"><option value="">全部工項</option><option v-for="o in spOpts.sws" :key="o.v" :value="o.v">{{ o.l }}</option></select><select v-if="spOpts.units.length" :value="fsp.unit" @change="setF(fsp,'unit',$event.target.value)"><option value="">全部單元</option><option v-for="o in spOpts.units" :key="o.v" :value="o.v">{{ o.l }}</option></select><select :value="fsp.tpl" @change="setF(fsp,'tpl',$event.target.value)"><option value="">全部表單</option><option v-for="o in spOpts.tpls" :key="o.v" :value="o.v">{{ o.l }}</option></select><span class="small muted nowrap">共 {{ spList.length }} 筆<template v-if="spList.length!==spAll.length"> ／ {{ spAll.length }}</template></span><a class="small" v-if="fsp.proj||fsp.tender||fsp.sw||fsp.unit||fsp.tpl" @click="clearF(fsp)">清除</a></div>
   <div class="alert gray" v-if="!spList.length" style="margin:12px 14px 0">沒有符合篩選條件的紀錄。</div>
   <div class="alert gray" v-if="!isSup" style="margin:12px 14px 0">抽查紀錄由捷運局工務所同仁填寫；目前為「廠商」身分，僅供檢視。可到「我的」切換身分。</div>
   <div class="grid-cards">
@@ -332,11 +332,15 @@
 
 <!-- ============ 參考文件 / 我的 ============ -->
 <div class="plain" v-if="view==='docs'"><header class="hdr"><div class="grow"><h1>參考文件</h1></div></header>
-  <div class="grid-cards"><div class="tcard" v-for="x in d.docs" :key="x.id"><div @click="docShow=x.code" style="cursor:pointer"><div class="t">{{ x.name }}</div><div class="muted small">{{ x.code }}</div><div class="small">{{ x.note }}</div></div>
+  <div class="filters"><select v-model="docProj"><option value="">全部區段標／單一標</option><option v-for="o in projOpts" :key="o.v" :value="o.v">{{ o.l }}</option></select><span class="small muted nowrap">共 {{ docList.length }} 筆</span></div>
+  <div class="muted" v-if="!docList.length" style="padding:12px">沒有參考文件</div>
+  <div class="grid-cards"><div class="tcard" v-for="x in docList" :key="x.id"><div @click="docShow=x.code" style="cursor:pointer"><div class="t">{{ x.name }}</div><div class="muted small">{{ x.code }}・{{ x.projKey }}</div><div class="small">{{ x.note }}</div></div>
     <div class="row mt" v-if="x.file"><span class="small muted grow">📄 {{ x.file.name }}（{{ Q.fmtSize(x.file.size) }}）</span><button class="btn sm" v-if="Q.canPreview(x.file)" @click="Q.openAny(x.file)">開啟</button><button class="btn sm primary" @click="Q.downloadAny(x.file)">下載</button></div>
     <div class="small muted mt" v-else>尚未上傳檔案</div></div></div></div>
 <div class="plain" v-if="view==='me'"><header class="hdr"><div class="grow"><h1>我的</h1></div></header>
   <div class="card" style="max-width:520px"><h4>目前身分</h4><div class="pills"><button :class="{on: role==='contractor'}" @click="role='contractor'">廠商品管人員</button><button :class="{on: role==='supervisor'}" @click="role='supervisor'">捷運局工務所同仁</button><button :class="{on: role==='director'}" @click="role='director'">捷運局工務所主任</button></div>
+    <template v-if="isSup"><h4 class="mt">所屬單位（依單位篩選標案權限）</h4><div class="pills" style="flex-wrap:wrap;overflow:visible"><button v-for="x in Q.DEPTS" :key="x.id" :class="{on: dept===x.id}" @click="dept=x.id">{{ x.name }}（{{ x.id }}）</button></div>
+      <div class="small muted mt">可看到的標案：{{ d.tenders.length ? d.tenders.map(t=>t.code).join('、') : '（無）' }}</div></template>
     <div class="small muted mt">{{ me.name }}｜{{ me.org }}。廠商：填自主檢查表、申請會驗、簽名上傳；工務所同仁：回覆排定、開始會驗、填抽查紀錄表；工務所主任：加簽結案。</div>
     <hr><div class="row wrap"><button class="btn" @click="clearSigs">清除已存簽名</button><button class="btn danger" @click="resetDemo">還原示範資料</button><a class="btn" href="admin.html" target="_blank">開啟後台管理</a></div></div></div>
 
@@ -379,7 +383,7 @@
   <div class="foot"><button class="btn" @click="wfUnf=null">取消</button><button class="btn danger" @click="submitWfUnf">確認解除</button></div></div></div>
 
 <div class="modal-bg" v-if="newForm" @click.self="newForm=null"><div class="modal"><h3>新增自主檢查</h3>
-  <label class="f">① 標號</label><select v-model="newForm.tenderId" @change="cascade(newForm, 'self', 'tender')"><option v-for="t in tenderOpts()" :value="t.id">{{ t.name }}</option></select>
+  <label class="f">① 標號</label><select v-model="newForm.tenderId" @change="cascade(newForm, 'self', 'tender')"><option v-for="t in tenderOpts()" :value="t.id">{{ Q.tLabel(t) }}</option></select>
   <label class="f mt">② 工項（分項工程）</label><select v-model="newForm.subworkId" @change="cascade(newForm, 'self', 'sw')"><option v-for="s in swOpts(newForm.tenderId, 'self')" :value="s.id">{{ s.no }}、{{ s.name }}</option></select>
   <template v-if="unitOpts(newForm.subworkId, 'self').length"><label class="f mt">單元</label><select v-model="newForm.unit" @change="cascade(newForm, 'self', 'unit')"><option v-for="u in unitOpts(newForm.subworkId, 'self')" :value="u">{{ u || '（不指定單元）' }}</option></select></template>
   <label class="f mt">③ 表單</label><select v-model="newForm.templateId" @change="newForm.dupWarn='';newForm.forceDup=false"><option v-for="t in tplOpts(newForm.subworkId, 'self', newForm.unit)" :value="t.id">表{{ t.code }} {{ t.name }}（{{ t.fillMode==='pdf' ? '空白範本 PDF' : '線上表單・'+t.items.length+' 項' }}）</option></select>
@@ -388,7 +392,7 @@
   <div class="alert warn mt" v-if="newForm.dupWarn">{{ newForm.dupWarn }}</div>
   <div class="foot"><button class="btn" @click="newForm=null">取消</button><button class="btn amber" v-if="newForm.dupWarn" @click="newForm.forceDup=true;createSc()">仍要建立</button><button class="btn primary" v-else @click="createSc">建立並開始</button></div></div></div>
 <div class="modal-bg" v-if="spNew" @click.self="spNew=null"><div class="modal"><h3>新增隨機抽查</h3>
-  <label class="f">① 標號</label><select v-model="spNew.tenderId" @change="cascade(spNew, 'spot', 'tender')"><option v-for="t in tenderOpts()" :value="t.id">{{ t.name }}</option></select>
+  <label class="f">① 標號</label><select v-model="spNew.tenderId" @change="cascade(spNew, 'spot', 'tender')"><option v-for="t in tenderOpts()" :value="t.id">{{ Q.tLabel(t) }}</option></select>
   <label class="f mt">② 工項（分項工程）</label><select v-model="spNew.subworkId" @change="cascade(spNew, 'spot', 'sw')"><option v-for="s in swOpts(spNew.tenderId, 'spot')" :value="s.id">{{ s.no }}、{{ s.name }}</option></select>
   <template v-if="unitOpts(spNew.subworkId, 'spot').length"><label class="f mt">單元</label><select v-model="spNew.unit" @change="cascade(spNew, 'spot', 'unit')"><option v-for="u in unitOpts(spNew.subworkId, 'spot')" :value="u">{{ u || '（不指定單元）' }}</option></select></template>
   <label class="f mt">③ 抽查記錄表</label><select v-model="spNew.templateId"><option v-for="t in tplOpts(spNew.subworkId, 'spot', spNew.unit)" :value="t.id">{{ t.name }}（{{ t.fillMode==='pdf' ? '空白範本 PDF' : '線上表單・'+t.items.length+' 項' }}）</option></select>

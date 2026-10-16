@@ -7,6 +7,11 @@ createApp({
     const d = reactive({ tenders: [], subworks: [], templates: [], selfChecks: [], requests: [], spotChecks: [], defects: [], docs: [], users: [], params: {} });
     const now = ref(Date.now());
     const loaded = ref(false);
+    // 後台身份：系統管理員（全部）或部門（2J／2B／2F），記在 localStorage
+    const dept = ref((() => { try { return localStorage.getItem('qms2-admin-dept') || ''; } catch (e) { return ''; } })());
+    const allTenders = ref([]);
+    const deptName = computed(() => (Q.DEPTS.find(x => x.id === dept.value) || {}).name || '系統管理員');
+    async function setDept(v) { dept.value = v; try { localStorage.setItem('qms2-admin-dept', v); } catch (e) { /* ignore */ } await load(); toast(`已切換身份：${deptName.value}${v ? `（${v}）` : ''}`); }
     const fixPage = p => (p === 'import' ? 'templates' : p); // 範本匯入頁已移除，舊連結改到表單範本
     const page = ref(fixPage((location.hash || '#dashboard').slice(1)));
     const menuOpen = ref(false);
@@ -16,7 +21,12 @@ createApp({
     async function load() {
       const [tenders, subworks, templates, selfChecks, requests, spotChecks, defects, docs, users, params] = await Promise.all(
         ['tenders', 'subworks', 'templates', 'selfChecks', 'requests', 'spotChecks', 'defects', 'docs', 'users'].map(s => Q.all(s)).concat([Q.getParams()]));
-      Object.assign(d, { tenders, subworks, templates, selfChecks, requests, spotChecks, defects, docs, users, params });
+      // 依後台身份（部門）只顯示該部門負責的標案及其資料；allTenders 保留全部，供「新增標案」判斷是否已加入
+      allTenders.value = tenders;
+      const vis = new Set(tenders.filter(t => Q.tenderInDept(t, dept.value)).map(t => t.id)), inT = x => vis.has(x.tenderId), keys = new Set(tenders.filter(t => vis.has(t.id)).map(Q.projKey));
+      Object.assign(d, { tenders: tenders.filter(t => vis.has(t.id)), subworks: subworks.filter(inT), templates: templates.filter(inT), selfChecks: selfChecks.filter(inT), requests: requests.filter(inT), spotChecks: spotChecks.filter(inT), defects: defects.filter(inT), docs: docs.filter(x => !dept.value || keys.has(x.projKey)), users, params });
+      if (d.tenders.length && !d.tenders.some(t => t.id === selTenderId.value)) selTenderId.value = d.tenders[0].id;
+      if (tenderFilter.value !== 'all' && !d.tenders.some(t => t.id === tenderFilter.value)) tenderFilter.value = 'all';
       now.value = Date.now(); loaded.value = true;
     }
     function go(p) { page.value = p; location.hash = p; menuOpen.value = false; window.scrollTo(0, 0); }
@@ -119,8 +129,12 @@ createApp({
     const selTenderId = ref('T671'), swSearch = ref(''), swStatus = ref(''), swPage = ref(1);
     const selTender = computed(() => tenderById(selTenderId.value));
     // 左側樹狀：各層可收合；點分項工程時右側直接篩選到該項
-    const treeRoot = ref(true), treeOpen = reactive({ T671: true }), swPick = ref(null);
-    function treeAll(open) { treeRoot.value = true; d.tenders.forEach(t => { treeOpen[t.id] = open; }); }
+    const treeOpen = reactive({ T671: true }), grpOpen = reactive({}), swPick = ref(null);
+    // 標案樹：區段標 → 子標；單一標另成一組
+    const treeGroups = computed(() => { const m = new Map(); d.tenders.slice().sort((a, b) => a.code.localeCompare(b.code)).forEach(t => { const k = t.parentCode || ''; if (!m.has(k)) m.set(k, { key: k, code: k, name: t.parentName || '', items: [] }); m.get(k).items.push(t); });
+      return [...m.values()].sort((a, b) => (a.key ? 0 : 1) - (b.key ? 0 : 1) || a.key.localeCompare(b.key)); });
+    const grpIsOpen = g => grpOpen[g.key || '_'] !== false;
+    function treeAll(open) { treeGroups.value.forEach(g => { grpOpen[g.key || '_'] = open; }); d.tenders.forEach(t => { treeOpen[t.id] = open; }); }
     function pickTender(t) { if (selTenderId.value === t.id && !swPick.value) { treeOpen[t.id] = !treeOpen[t.id]; return; } selTenderId.value = t.id; swPick.value = null; treeOpen[t.id] = true; }
     function pickSw(s) { selTenderId.value = s.tenderId; swSearch.value = ''; swStatus.value = ''; swPick.value = s.id; swPage.value = 1; }
     const swAll = computed(() => d.subworks.filter(s => s.tenderId === selTenderId.value).sort((a, b) => a.order - b.order).filter(s => (!swPick.value || s.id === swPick.value) && (!swSearch.value || s.name.includes(swSearch.value)) && (!swStatus.value || s.status === swStatus.value)));
@@ -130,8 +144,7 @@ createApp({
     watch(selTenderId, id => { if (swPick.value && (d.subworks.find(s => s.id === swPick.value) || {}).tenderId !== id) swPick.value = null; });
     const swTplText = (s, kind) => { const l = d.templates.filter(t => t.subworkId === s.id && t.kind === kind && t.status === 'published'); const p = l.filter(t => t.fillMode === 'pdf').length; return l.length ? l.length + ' 張' + (p ? `（PDF ${p}）` : '') : '未設定'; };
     const swHold = s => d.templates.filter(t => t.subworkId === s.id && t.kind === 'self' && t.status === 'published').reduce((n, t) => n + (t.fillMode === 'pdf' ? 0 : t.items.filter(i => i.hold).length), 0);
-    const tenderForm = ref(null), swForm = ref(null);
-    async function saveTender() { await Q.put('tenders', tenderForm.value); tenderForm.value = null; await load(); toast('標案已儲存'); }
+    const swForm = ref(null);
     async function saveSw() {
       const s = swForm.value; if (!s.name.trim()) return toast('請輸入分項工程名稱', true);
       if (!s.id) { s.id = Q.uid('S'); s.order = d.subworks.length; s.tenderId = selTenderId.value; }
@@ -199,7 +212,38 @@ createApp({
       const refs = swRefs(s); if (refs.length) return toast(`「${s.name}」已有 ${refs.map(r => r[0] + ' ' + r[1] + ' 筆').join('、')}，不可刪除；不再使用請將狀態改為「已完工」`, true);
       if (!confirm(`刪除分項工程「${s.name}」？`)) return; await Q.del('subworks', s.id); await load();
     }
-    function newTender() { tenderForm.value = { id: Q.uid('T'), code: '', name: '', status: '施工中', contractor: '', supervisor: '', site: '', start: '', end: '', external: '', desc: '', members: 0 }; }
+    /* ---------- 新增標案：由標案管理系統（ProjBase）挑選 ----------
+       依登入部門（WORK_SECTION_ID）列出：該部門的區段標＋底下全部子標（子標不比對部門）、該部門的單一標 */
+    const pick = ref(null);
+    function newTender() {
+      if (!window.QMS_PROJBASE) return toast('找不到標案管理系統資料', true);
+      pick.value = { q: '', step: 'B', sel: {}, open: {} };
+    }
+    const pickData = computed(() => {
+      if (!pick.value) return { groups: [], singles: [], total: 0 };
+      const P = window.QMS_PROJBASE, dp = dept.value, f = pick.value, q = f.q.trim().toLowerCase(), have = new Set(allTenders.value.map(t => t.code));
+      const ok = r => (!f.step || r.STEP_TYPE === f.step) && (!q || (r.PROJ_ID + ' ' + r.PROJ_NAME_C + ' ' + (r.CONT_COMP_NAME_C || '')).toLowerCase().includes(q));
+      const row = r => ({ r, have: have.has(r.PROJ_ID) });
+      const kids = new Map(); P.forEach(r => { if (r.PROJ_TYPE === '子') { if (!kids.has(r.PROJ_UP)) kids.set(r.PROJ_UP, []); kids.get(r.PROJ_UP).push(r); } });
+      const groups = P.filter(r => r.PROJ_TYPE === '區' && (!dp || r.WORK_SECTION_ID === dp)).map(g => {
+        const all = (kids.get(g.PROJ_ID) || []).sort((a, b) => a.PROJ_ID.localeCompare(b.PROJ_ID)), gHit = !q || (g.PROJ_ID + ' ' + g.PROJ_NAME_C).toLowerCase().includes(q);
+        const items = all.filter(r => (!f.step || r.STEP_TYPE === f.step) && (gHit || ok(r))).map(row);
+        return { g, items, n: all.length };
+      }).filter(x => x.items.length).sort((a, b) => a.g.PROJ_ID.localeCompare(b.g.PROJ_ID));
+      const singles = P.filter(r => r.PROJ_TYPE === '單' && (!dp || r.WORK_SECTION_ID === dp) && ok(r)).sort((a, b) => a.PROJ_ID.localeCompare(b.PROJ_ID)).map(row);
+      const LIM = 300; let n = 0; const cut = arr => arr.filter(() => ++n <= LIM);
+      groups.forEach(x => { x.items = cut(x.items); }); const s2 = cut(singles);
+      return { groups: groups.filter(x => x.items.length), singles: s2, total: groups.reduce((a, x) => a + x.items.length, 0) + singles.length, more: n > LIM };
+    });
+    const pickSel = computed(() => pick.value ? Object.keys(pick.value.sel).filter(k => pick.value.sel[k]) : []);
+    function pickGroupAll(x, on) { x.items.filter(i => !i.have).forEach(i => { pick.value.sel[i.r.PROJ_ID] = on; }); }
+    async function doPick() {
+      const P = window.QMS_PROJBASE, by = new Map(P.map(r => [r.PROJ_ID, r])), codes = pickSel.value; if (!codes.length) return toast('請勾選要加入的標案', true);
+      const have = new Set(allTenders.value.map(t => t.code)), add = codes.filter(c => !have.has(c)).map(c => { const r = by.get(c); return Q.tenderFromProj(r, r.PROJ_UP ? by.get(r.PROJ_UP) : null); });
+      await Q.putMany('tenders', add); pick.value = null; await load();
+      if (add[0]) { selTenderId.value = add[0].id; swPick.value = null; grpOpen[add[0].parentCode || '_'] = true; }
+      toast(`已加入 ${add.length} 個標案，請接著建立分項工程`);
+    }
 
     /* ---------- 表單範本 ---------- */
     // 分項工程下拉：先依標號，再依項次(order)排列
@@ -310,6 +354,7 @@ createApp({
       rd.readAsArrayBuffer(f); e.target.value = '';
     }
     function parseBook(wb, sw, b) {
+      const swKey = Q.projKey(tenderById(sw && sw.tenderId));
       const shU = bulkSheet(wb, '單元') || [], shF = bulkSheet(wb, '表單'), shI = bulkSheet(wb, '檢查項目'), shV = bulkSheet(wb, '數值欄位') || [];
       if (!shF || !shI) { b.err = '找不到「表單」或「檢查項目」工作表，請使用「下載匯入範本」的格式'; return; }
       // 單元
@@ -361,7 +406,7 @@ createApp({
           if (!it.stage || !it.name || !it.typeText) e.push(`${L}：階段、檢查項目、判定類型必填`);
           if (it.stage && !fm.stageNames.includes(it.stage)) e.push(`${L}：階段「${it.stage}」不在此表單的階段（${fm.stageNames.join('／')}）`);
           if (it.typeText && !it.type) e.push(`${L}：判定類型「${it.typeText}」須為 選項／數值／照片／文字／連結表單`);
-          if (it.ref && !d.docs.some(x => x.code === it.ref)) e.push(`${L}：引用文件編號「${it.ref}」不存在於參考文件`);
+          if (it.ref && !d.docs.some(x => x.code === it.ref && x.projKey === swKey)) e.push(`${L}：引用文件編號「${it.ref}」不存在於 ${swKey} 的參考文件`);
           if (it.type === 'linked' && !it.linked) e.push(`${L}：判定類型為連結表單時須填連結表號`);
           if (it.linked && !fileSelf.includes(it.linked) && !sysSelf(it.linked)) e.push(`${L}：連結表號「${it.linked}」不存在`);
         }
@@ -705,8 +750,13 @@ createApp({
 
     /* ---------- 其他 ---------- */
     const docForm = ref(null), userForm = ref(null);
+    // 參考文件：以區段標／單一標為鍵值，可依此篩選；範本項目只能引用同一區段標／單一標的文件
+    const docProj = ref('');
+    const docList = computed(() => d.docs.filter(x => !docProj.value || x.projKey === docProj.value).sort((a, b) => (a.projKey || '').localeCompare(b.projKey || '') || a.code.localeCompare(b.code)));
+    const editProj = computed(() => edit.value ? Q.projKey(tenderById((swById(edit.value.subworkId) || {}).tenderId || edit.value.tenderId)) : '');
+    const refDocs = computed(() => d.docs.filter(x => x.projKey === editProj.value).sort((a, b) => a.code.localeCompare(b.code)));
     // 參考文件：可上傳檔案（PDF、Word、Excel、圖檔等，上限 20 MB），現場作業可下載
-    function newDoc() { docForm.value = { id: '', code: '', name: '', note: '', file: null, isNew: true }; }
+    function newDoc() { docForm.value = { id: '', code: '', name: '', note: '', projKey: docProj.value || (projOpts.value[0] || {}).v || '', file: null, isNew: true }; }
     function editDoc(x) { docForm.value = Object.assign(Q.clone(x), { isNew: false }); }
     async function onDocFile(e) {
       const f = e.target.files[0]; e.target.value = ''; if (!f) return;
@@ -715,9 +765,9 @@ createApp({
       if (!docForm.value.name.trim()) docForm.value.name = f.name.replace(/\.[^.]+$/, '');
     }
     async function saveDoc() {
-      const x = docForm.value; if (!x.code.trim()) return toast('請輸入文件編號', true); if (!x.name.trim()) return toast('請輸入文件名稱', true);
-      if (x.isNew && d.docs.some(o => o.code === x.code.trim())) return toast('文件編號已存在', true);
-      const rec = { id: x.isNew ? x.code.trim() : x.id, code: x.isNew ? x.code.trim() : x.code, name: x.name.trim(), note: x.note || '', file: x.file || null };
+      const x = docForm.value; if (!x.projKey) return toast('請選擇區段標／單一標', true); if (!x.code.trim()) return toast('請輸入文件編號', true); if (!x.name.trim()) return toast('請輸入文件名稱', true);
+      if (x.isNew && await Q.get('docs', x.code.trim())) return toast('文件編號已存在', true);
+      const rec = { id: x.isNew ? x.code.trim() : x.id, code: x.isNew ? x.code.trim() : x.code, name: x.name.trim(), note: x.note || '', projKey: x.projKey, file: x.file || null };
       await Q.put('docs', rec); docForm.value = null; await load(); toast(rec.file ? '已儲存，現場作業可下載此文件' : '已儲存（尚未上傳檔案）');
     }
     async function saveUser() { const x = userForm.value; if (!x.name.trim()) return toast('請輸入姓名', true); if (!x.id) x.id = Q.uid('U'); await Q.put('users', x); userForm.value = null; await load(); }
@@ -749,7 +799,7 @@ createApp({
         h = `<div class="t1" data-brk>表${E(r.templateCode)}　${E(r.templateName)}</div><div class="t2" data-brk>${E(r.contractor || tender.contractor || '')}</div><div class="t3" data-brk>施工自主檢查表</div>`;
         const used = new Set(t.items.filter(i => (ans[i.no] || {}).judge).map(i => i.stage));
         h += hdr([
-          full('工程名稱', E(tender.name)), full('分項工程名稱', E(swName)),
+          full('工程名稱', E(tender.parentName || tender.name)), full('分項工程名稱', E(swName)),
           L('檢查位置') + `<td>${E(r.location || '')}</td>` + L('檢查日期') + `<td>${E(dateTxt)}</td>`,
           full('施工流程', Q.stagesOf(t).map(st => `${box(used.has(st.key))}${E(st.name)}`).join('　　')),
           full('檢查結果', '○檢查合格　　　╳有缺失需改正　　　╱無此檢查項目')
@@ -757,7 +807,7 @@ createApp({
       } else {
         h = `<div class="t2" data-brk>${E(tender.supervisor || '臺北市政府捷運工程局')}</div><div class="t3 b" data-brk>${E(r.templateName)}</div>`;
         h += hdr([
-          full('工程名稱', E(tender.name)), full('施工廠商', E(r.contractor || tender.contractor)), full('分項工程名稱', E(swName)),
+          full('工程名稱', E(tender.parentName || tender.name)), full('施工廠商', E(r.contractor || tender.contractor)), full('分項工程名稱', E(swName)),
           L('抽查位置') + `<td>${E(r.location || '')}</td>` + L('檢查日期') + `<td>${E(dateTxt)}</td>`,
           full('抽查時機', `${box(r.kind === 'hold')}檢驗停留點${r.kind === 'hold' && r.title ? `（★${E(r.title)}）` : ''}　　　${box(r.kind !== 'hold')}隨機抽查`),
           full('抽查結果符號說明', '○ 檢查合格　　　╳ 有缺失需改正　　　╱ 無此檢查項目')
@@ -830,11 +880,15 @@ createApp({
     }
     // 查詢統計：自主檢查紀錄／抽查紀錄的查詢條件（標號 → 工項 → 單元，上層變更時清除下層）
     const swText = r => { const s = d.subworks.find(x => x.id === r.subworkId); return s ? `${s.no}、${s.name}` : (r.subworkName || '—'); };
-    const qf = reactive({ self: { tender: '', sw: '', unit: '' }, spot: { tender: '', sw: '', unit: '' } });
-    const QF_LV = ['tender', 'sw', 'unit'];
+    const projOf = r => Q.projKey(tenderById(r.tenderId));
+    const projOpts = computed(() => Q.projOptions(d.tenders));
+    const projText = k => (projOpts.value.find(x => x.v === k) || {}).l || k || '—';
+    const tendersOfProj = k => d.tenders.filter(t => !k || Q.projKey(t) === k).sort((a, b) => a.code.localeCompare(b.code));
+    const qf = reactive({ self: { proj: '', tender: '', sw: '', unit: '' }, spot: { proj: '', tender: '', sw: '', unit: '' } });
+    const QF_LV = ['proj', 'tender', 'sw', 'unit'];
     const qfSrc = kind => kind === 'self' ? d.selfChecks : d.spotChecks;
     const qfPass = (f, r, upto) => { const n = upto === 'all' ? 9 : QF_LV.indexOf(upto);
-      return (n <= 0 || !f.tender || r.tenderId === f.tender) && (n <= 1 || !f.sw || r.subworkId === f.sw) && (n <= 2 || !f.unit || (f.unit === '__none__' ? !r.unit : r.unit === f.unit)); };
+      return (n <= 0 || !f.proj || projOf(r) === f.proj) && (n <= 1 || !f.tender || r.tenderId === f.tender) && (n <= 2 || !f.sw || r.subworkId === f.sw) && (n <= 3 || !f.unit || (f.unit === '__none__' ? !r.unit : r.unit === f.unit)); };
     function qfOptsOf(kind) {
       const f = qf[kind], L = qfSrc(kind), swOrder = id => (d.subworks.find(s => s.id === id) || {}).order ?? 99;
       const sws = [...new Map(L.filter(r => qfPass(f, r, 'sw') && r.subworkId).map(r => [r.subworkId, swText(r)]))].map(([v, l]) => ({ v, l })).sort((a, b) => swOrder(a.v) - swOrder(b.v));
@@ -847,13 +901,13 @@ createApp({
     const qfList = computed(() => ({ self: d.selfChecks.filter(r => qfPass(qf.self, r, 'all')), spot: d.spotChecks.filter(r => qfPass(qf.spot, r, 'all')) }));
     function qfSet(kind, lv, v) { const f = qf[kind]; f[lv] = v; QF_LV.slice(QF_LV.indexOf(lv) + 1).forEach(k => { f[k] = ''; }); }
     function qfClear(kind) { QF_LV.forEach(k => { qf[kind][k] = ''; }); }
-    const ex = reactive({ tender: '', sw: '', unit: '', kind: '', tpl: '', status: '', busy: '' });
-    const EX_LV = ['tender', 'sw', 'unit', 'kind', 'tpl', 'status'];
+    const ex = reactive({ proj: '', tender: '', sw: '', unit: '', kind: '', tpl: '', status: '', busy: '' });
+    const EX_LV = ['proj', 'tender', 'sw', 'unit', 'kind', 'tpl', 'status'];
     const exRows = computed(() => d.selfChecks.map(r => ({ kind: 'self', r })).concat(d.spotChecks.map(r => ({ kind: 'spot', r })))
       .map(x => Object.assign(x, { key: x.kind + ':' + recCode(x.r), date: x.r.date || x.r.createdAt || 0 })).sort((a, b) => b.date - a.date));
     const exPass = (x, upto) => { const n = upto === 'all' ? 99 : EX_LV.indexOf(upto), r = x.r;
-      return (n <= 0 || !ex.tender || r.tenderId === ex.tender) && (n <= 1 || !ex.sw || r.subworkId === ex.sw) && (n <= 2 || !ex.unit || (ex.unit === '__none__' ? !r.unit : r.unit === ex.unit))
-        && (n <= 3 || !ex.kind || x.kind === ex.kind) && (n <= 4 || !ex.tpl || x.key === ex.tpl) && (n <= 5 || !ex.status || (ex.status === 'signed' ? r.status === 'signed' : r.status !== 'signed')); };
+      return (n <= 0 || !ex.proj || projOf(r) === ex.proj) && (n <= 1 || !ex.tender || r.tenderId === ex.tender) && (n <= 2 || !ex.sw || r.subworkId === ex.sw) && (n <= 3 || !ex.unit || (ex.unit === '__none__' ? !r.unit : r.unit === ex.unit))
+        && (n <= 4 || !ex.kind || x.kind === ex.kind) && (n <= 5 || !ex.tpl || x.key === ex.tpl) && (n <= 6 || !ex.status || (ex.status === 'signed' ? r.status === 'signed' : r.status !== 'signed')); };
     const exOpts = computed(() => {
       const L = exRows.value, uq = (arr, f) => { const m = new Map(); arr.forEach(x => { const [k, l] = f(x); if (k && !m.has(k)) m.set(k, l); }); return [...m].map(([v, l]) => ({ v, l })); };
       const swOrder = id => (d.subworks.find(s => s.id === id) || {}).order ?? 99;
@@ -875,16 +929,16 @@ createApp({
     async function downloadBatch() {
       const list = exList.value; if (!list.length) return toast('沒有符合條件的表單', true); if (ex.busy) return;
       const zip = new JSZip(), stamp = new Date(), pad = n => String(n).padStart(2, '0');
-      const idx = [['類別', '紀錄編號', '標號', '分項工程', '單元', '表號', '表單名稱', '版本', '日期', '填寫方式', '狀態', '檔案']];
+      const idx = [['類別', '紀錄編號', '區段標／單一標', '標號', '分項工程', '單元', '表號', '表單名稱', '版本', '日期', '填寫方式', '狀態', '檔案']];
       try {
         for (let i = 0; i < list.length; i++) {
           const { kind, r } = list[i]; ex.busy = `${i + 1} / ${list.length}`;
           const folder = kind === 'self' ? '自主檢查表/' : '抽查紀錄表/', name = recFile(kind, r);
           zip.file(folder + name, await recPdf(kind, r));
-          idx.push([kind === 'self' ? '自主檢查表' : '抽查紀錄表', r.id, r.tenderCode || '', r.subworkName || '', r.unit || '', recCode(r), r.templateName, 'v' + r.templateVer, Q.fmtD(r.date || r.createdAt), r.fillMode === 'pdf' ? '空白範本 PDF' : '線上表單', r.status === 'signed' ? '已簽認' : '填寫中', folder + name]);
+          idx.push([kind === 'self' ? '自主檢查表' : '抽查紀錄表', r.id, projOf(r), r.tenderCode || '', r.subworkName || '', r.unit || '', recCode(r), r.templateName, 'v' + r.templateVer, Q.fmtD(r.date || r.createdAt), r.fillMode === 'pdf' ? '空白範本 PDF' : '線上表單', r.status === 'signed' ? '已簽認' : '填寫中', folder + name]);
         }
         ex.busy = '壓縮中…';
-        const ws = XLSX.utils.aoa_to_sheet(idx); ws['!cols'] = [12, 22, 8, 22, 8, 8, 30, 6, 11, 12, 8, 50].map(w => ({ wch: w }));
+        const ws = XLSX.utils.aoa_to_sheet(idx); ws['!cols'] = [12, 22, 12, 8, 22, 8, 8, 30, 6, 11, 12, 8, 50].map(w => ({ wch: w }));
         const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '下載清單'); zip.file('下載清單.xlsx', XLSX.write(wb, { type: 'array', bookType: 'xlsx' }));
         const blob = await zip.generateAsync({ type: 'blob' });
         FormPDF.save(blob, `表單批次下載_${stamp.getFullYear()}${pad(stamp.getMonth() + 1)}${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}.zip`);
@@ -911,10 +965,10 @@ createApp({
       Q, d, now, loaded, page, menuOpen, toastMsg, toastNg, toast, go, tenderById, swById, tenderFilter, supervisors, reqCls, rel, openReqs, overdueReqs, openDefects, overdueDefects, weekHolds, spotRate, kpiSelf, todayAgenda, tplOf, usedCount,
       progTender, progFilter, progRows, progCount, holdTab, holdTabs, holdCount, holdList, holdByDate, selReqId, selReq, calView, sched, reqChips, lockedAfter, hoursBefore, doSchedule, doReject, doStart, doCancel,
       showSC, showSP, itemsOf, judgeText, valuesText, spotCount, defCls, defText, defTab, defList, defAct, defShow, defReview,
-      selTenderId, selTender, treeRoot, treeOpen, swPick, treeAll, pickTender, pickSw, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, tenderForm, swForm, saveTender, saveSw, moveSw, delSw, newTender, swImp, openSwImp, downloadSwSample, onSwFile, swImpOk, swImpBad, doSwImp,
+      selTenderId, selTender, treeGroups, grpOpen, grpIsOpen, treeOpen, swPick, treeAll, dept, deptName, setDept, allTenders, pick, pickData, pickSel, pickGroupAll, doPick, pickTender, pickSw, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, swForm, saveSw, moveSw, delSw, newTender, swImp, openSwImp, downloadSwSample, onSwFile, swImpOk, swImpBad, doSwImp,
       tplSw, tplUnit, tplUnits, unitForm, unitTplN, openUnitForm, addUnit, delUnit, swGroups, selTplId, tplTab, edit, previewOn, fieldIdx, tplList, tplHistory, pickTpl, editUsed, editStages, isPdf, newTplForm, onNewPdf, onEditPdf, createTpl, pdfUrl, downloadFile, wfCls, readPdf, TYPES, holdN, addItem, delItem, moveItem, addField, onType, saveEdit, delTpl, syncFromSelf, bulk, openBulk, onBulkFile, bulkOk, bulkView, doBulk, downloadBulkSample, exportSubwork, stageForm, stageItemN, openStageForm, stageAdd, stageMove, stageDel, stagePreset, applyStages, STAGE_PRESETS, newTpl, exportXlsx, dragId, dragOver, onDragStart, onDragEnd, onDrop, itemImp, openItemImp, onItemFile, itemImpForm, itemImpView, itemImpErrs, doItemImp,
-      linkOpts, adminUser, swText, qf, qfOpts, qfList, qfSet, qfClear, ex, exOpts, exList, exRows, exSet, exClear, downloadRec, downloadBatch, recCode,
-      docForm, userForm, saveDoc, newDoc, editDoc, onDocFile, saveUser, delRow, saveParams, resetDemo, navItems, navTree, collapsed, toggleGroup, titles, todayStr
+      linkOpts, adminUser, swText, projOf, projOpts, projText, tendersOfProj, qf, qfOpts, qfList, qfSet, qfClear, ex, exOpts, exList, exRows, exSet, exClear, downloadRec, downloadBatch, recCode,
+      docForm, userForm, docProj, docList, editProj, refDocs, saveDoc, newDoc, editDoc, onDocFile, saveUser, delRow, saveParams, resetDemo, navItems, navTree, collapsed, toggleGroup, titles, todayStr
     };
   }
 }).mount('#app');
