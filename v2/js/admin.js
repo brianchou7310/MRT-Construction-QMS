@@ -225,6 +225,15 @@ createApp({
       const refs = swRefs(s); if (refs.length) return toast(`「${s.name}」已有 ${refs.map(r => r[0] + ' ' + r[1] + ' 筆').join('、')}，不可刪除；不再使用請將狀態改為「已完工」`, true);
       if (!confirm(`刪除分項工程「${s.name}」？`)) return; await Q.del('subworks', s.id); await load();
     }
+    // 移除標案：標案底下已有填寫紀錄（自主檢查、抽查、會驗、缺失）者不可刪除；沒有紀錄則連同分項工程、表單範本一併移除
+    function tenderRefs(t) { const n = (arr) => arr.filter(x => x.tenderId === t.id).length; return [['自主檢查紀錄', n(d.selfChecks)], ['抽查紀錄', n(d.spotChecks)], ['會驗申請', n(d.requests)], ['缺失追蹤', n(d.defects)]].filter(r => r[1]); }
+    async function delTender(t) {
+      const refs = tenderRefs(t); if (refs.length) return toast(`「${Q.tLabel(t)}」已有 ${refs.map(r => r[0] + ' ' + r[1] + ' 筆').join('、')}，不可移除`, true);
+      const sws = d.subworks.filter(s => s.tenderId === t.id), tps = d.templates.filter(x => x.tenderId === t.id);
+      if (!confirm(`移除標案「${t.code} ${Q.tLabel(t)}」？\n將一併移除 ${sws.length} 個分項工程、${tps.length} 張表單範本，此動作無法復原。（可再從「＋ 新增標案」重新加入）`)) return;
+      for (const x of tps) await Q.del('templates', x.id); for (const x of sws) await Q.del('subworks', x.id); await Q.del('tenders', t.id);
+      swPick.value = null; await load(); toast('已移除標案');
+    }
     /* ---------- 新增標案：由標案管理系統（ProjBase）挑選 ----------
        依登入部門（WORK_SECTION_ID）列出：該部門的區段標＋底下全部子標（子標不比對部門）、該部門的單一標 */
     const pick = ref(null);
@@ -978,7 +987,7 @@ createApp({
       Q, d, now, loaded, page, menuOpen, toastMsg, toastNg, toast, go, tenderById, swById, tenderFilter, supervisors, reqCls, rel, openReqs, overdueReqs, openDefects, overdueDefects, weekHolds, spotRate, kpiSelf, todayAgenda, tplOf, usedCount,
       progTender, progFilter, progRows, progCount, holdTab, holdTabs, holdCount, holdList, holdByDate, selReqId, selReq, calView, sched, reqChips, lockedAfter, hoursBefore, doSchedule, doReject, doStart, doCancel,
       showSC, showSP, itemsOf, judgeText, valuesText, spotCount, defCls, defText, defTab, defList, defAct, defShow, defReview,
-      selTenderId, selTender, treeGroups, tDragId, tDragOver, tDragStart, tDragEnd, tDrop, grpOpen, grpIsOpen, treeOpen, swPick, treeAll, dept, deptName, setDept, allTenders, pick, pickData, pickSel, pickGroupAll, doPick, pickTender, pickSw, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, swForm, saveSw, moveSw, delSw, newTender, swImp, openSwImp, downloadSwSample, onSwFile, swImpOk, swImpBad, doSwImp,
+      selTenderId, selTender, treeGroups, tenderRefs, delTender, tDragId, tDragOver, tDragStart, tDragEnd, tDrop, grpOpen, grpIsOpen, treeOpen, swPick, treeAll, dept, deptName, setDept, allTenders, pick, pickData, pickSel, pickGroupAll, doPick, pickTender, pickSw, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, swForm, saveSw, moveSw, delSw, newTender, swImp, openSwImp, downloadSwSample, onSwFile, swImpOk, swImpBad, doSwImp,
       tplSw, tplUnit, tplUnits, unitForm, unitTplN, openUnitForm, addUnit, delUnit, swGroups, selTplId, tplTab, edit, previewOn, fieldIdx, tplList, tplHistory, pickTpl, editUsed, editStages, isPdf, newTplForm, onNewPdf, onEditPdf, createTpl, pdfUrl, downloadFile, wfCls, readPdf, TYPES, holdN, addItem, delItem, moveItem, addField, onType, saveEdit, delTpl, syncFromSelf, bulk, openBulk, onBulkFile, bulkOk, bulkView, doBulk, downloadBulkSample, exportSubwork, stageForm, stageItemN, openStageForm, stageAdd, stageMove, stageDel, stagePreset, applyStages, STAGE_PRESETS, newTpl, exportXlsx, dragId, dragOver, onDragStart, onDragEnd, onDrop, itemImp, openItemImp, onItemFile, itemImpForm, itemImpView, itemImpErrs, doItemImp,
       linkOpts, adminUser, swText, projOf, projOpts, projText, tendersOfProj, qf, qfOpts, qfList, qfSet, qfClear, ex, exOpts, exList, exRows, exSet, exClear, downloadRec, downloadBatch, recCode,
       docForm, userForm, docProj, docList, editProj, refDocs, saveDoc, newDoc, editDoc, onDocFile, saveUser, delRow, saveParams, resetDemo, navItems, navTree, collapsed, toggleGroup, titles, todayStr
