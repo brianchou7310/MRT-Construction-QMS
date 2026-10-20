@@ -364,11 +364,6 @@
     }
   }
   async function postSeed() { await migrateKeys(); await migrateReqSub(); await migrateScLinks(); await seedLinked(); await migrateUnits(); await migrateUnitsWall(); }
-  // 單元示範資料：CF671「五、連續壁工程」設定 P01～P16 共 16 個單元（單元清單；範本可再掛到各單元下）
-  async function migrateUnitsWall() {
-    const sw = await get('subworks', 'S671-5'); if (!sw || 'unitList' in sw) return;
-    sw.unitList = Array.from({ length: 16 }, (_, i) => 'P' + String(i + 1).padStart(2, '0')); await put('subworks', sw);
-  }
   // 單元示範資料：鑽掘混凝土基樁（S671-6）設定 BP-01、BP-02 兩個單元，各掛自己的表單範本
   async function migrateUnits() {
     const sw = await get('subworks', 'S671-6'); if (!sw || 'unitList' in sw) return;
@@ -376,6 +371,28 @@
     const t = await get('templates', 'TP-S6'); if (t && !t.unitNo) { t.unitNo = 'BP-01'; await put('templates', t); }
     const add = [mini('TP-S6-2', 'S671-6', 'self', '1-6-2', '鑽掘混凝土基樁自主檢查表（BP-02）', 4, { unitNo: 'BP-02' }), mini('TP-SP-S6', 'S671-6', 'spot', 'SP-1-6', '鑽掘混凝土基樁施工品質抽查記錄表', 4, { unitNo: 'BP-01' })];
     for (const x of add) if (!(await get('templates', x.id))) await put('templates', ensureKeys(x));
+  }
+  // 單元示範資料：CF671「五、連續壁工程」設定 P11、P12、P13 三個單元，檢查表／抽查紀錄表只掛在單元下（分項工程層不掛）
+  // P12 沿用原範本代碼與紀錄；P11、P13 複製一份（代碼加單元尾碼），已有紀錄的 templateId 一併對應到該單元的範本
+  async function migrateUnitsWall() {
+    const sw = await get('subworks', 'S671-5'); if (!sw) return;
+    const tpls = (await all('templates')).filter(t => t.subworkId === 'S671-5');
+    if (tpls.some(t => t.unitNo)) return; // 已是單元層級
+    const units = ['P11', 'P12', 'P13'], main = 'P12';
+    sw.unitList = units; await put('subworks', sw);
+    const ids = new Set(tpls.map(t => t.id));
+    for (const t of tpls) {
+      t.unitNo = main; await put('templates', t);
+      for (const u of units.filter(x => x !== main)) {
+        const c = clone(t); c.id = `${t.id}-${u}`; c.unitNo = u; c.used = 0; if (c.pairedSelf) c.pairedSelf = `${c.pairedSelf}-${u}`;
+        if (!(await get('templates', c.id))) await put('templates', c);
+      }
+    }
+    for (const store of ['selfChecks', 'spotChecks']) {
+      for (const r of await all(store)) {
+        if (r.subworkId === 'S671-5' && units.includes(r.unit) && r.unit !== main && ids.has(r.templateId)) { r.templateId = `${r.templateId}-${r.unit}`; await put(store, r); }
+      }
+    }
   }
   // 舊版抽查紀錄（單項 measures/judge）轉為完整表單結構
   async function migrateSpots() {
@@ -490,7 +507,9 @@
   // 會驗可用的抽查紀錄表：同分項工程已發布者；預設為含本停留點對應項目的線上抽查表
   async function spotOptions(reqId) {
     const r = await get('requests', reqId), sc = r.scId ? await get('selfChecks', r.scId) : null, sub = (sc && sc.subworkId) || r.subworkId;
-    const tpls = (await all('templates')).filter(t => t.kind === 'spot' && t.status === 'published' && t.subworkId === sub && t.fillMode !== 'pdf').sort((a, b) => (a.order == null ? 1e9 : a.order) - (b.order == null ? 1e9 : b.order));
+    let tpls = (await all('templates')).filter(t => t.kind === 'spot' && t.status === 'published' && t.subworkId === sub && t.fillMode !== 'pdf');
+    const unit = (sc && sc.unit) || r.unit || ((String(r.location || '').match(/單元\s*([A-Za-z0-9-]+)/) || [])[1] || ''), byUnit = tpls.filter(t => (t.unitNo || '') === unit), lvl = tpls.filter(t => !t.unitNo);
+    tpls = (byUnit.length ? byUnit : lvl.length ? lvl : tpls).sort((a, b) => (a.order == null ? 1e9 : a.order) - (b.order == null ? 1e9 : b.order));
     const def = (r.itemKey && tpls.find(t => t.items.some(i => i.srcKey === r.itemKey))) || tpls.find(t => t.items.some(i => i.srcNo === r.itemNo)) || tpls[0] || null;
     return { tpls, def };
   }

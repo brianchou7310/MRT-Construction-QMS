@@ -286,7 +286,7 @@
         </template></div></div>
     <div>
       <div class="card mb" v-if="selTender.id">
-        <div class="row"><h2 class="grow">{{ selTender.name }} <span class="chip" :class="selTender.step==='B'?'ok':''">{{ selTender.status }}</span></h2></div>
+        <div class="row"><h2 class="grow">{{ selTender.name }} <span class="chip" :class="selTender.step==='B'?'ok':''">{{ selTender.status }}</span></h2><button class="btn sm danger" @click="delTender(selTender)" title="移除此標案（已有填寫紀錄者不可移除）">移除標案</button></div>
         <div class="muted small mt" v-if="selTender.parentCode">隸屬 {{ selTender.parentCode }} {{ selTender.parentName }}</div>
         <div class="kv"><div><div class="k">標案編號</div>{{ selTender.code }}<span class="muted small">（{{ Q.PROJ_TYPE_TEXT[selTender.type] || '—' }}）</span></div><div><div class="k">契約編號</div>{{ selTender.contId || '—' }}</div><div><div class="k">路線</div>{{ selTender.line || '—' }}</div><div><div class="k">承包商</div>{{ selTender.contractor || '—' }}</div><div><div class="k">監造工務所</div>{{ selTender.sectionName || '—' }}<span class="muted small" v-if="selTender.sectionId">（{{ selTender.sectionId }}）</span></div><div><div class="k">開工日／預定完工日</div>{{ selTender.start || '—' }} ～ {{ selTender.end || '—' }}</div><div><div class="k">契約金額</div>{{ selTender.amount ? 'NT$ ' + Number(selTender.amount).toLocaleString() : '—' }}</div><div><div class="k">主要施工地點</div>{{ selTender.site || '—' }}</div></div>
       </div>

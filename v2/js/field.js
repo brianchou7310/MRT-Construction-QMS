@@ -276,7 +276,7 @@ createApp({
     const returnTo = ref(null);
     const linkedRec = code => !cur.value ? null : d.selfChecks.filter(s => s.tenderId === cur.value.tenderId && (s.unit || '') === (cur.value.unit || '') && (cur.value.unit || s.subworkId === cur.value.subworkId) && s.templateCode === code && s.id !== cur.value.id).sort((a, b) => (b.status === 'signed') - (a.status === 'signed') || b.updatedAt - a.updatedAt)[0] || null;
     const linkedDone = code => { const r = linkedRec(code); return !!(r && r.status === 'signed'); };
-    const linkedTpl = code => { const l = d.templates.filter(t => t.kind === 'self' && t.status === 'published' && t.code === code); return l.find(t => curTpl.value && t.subworkId === curTpl.value.subworkId) || l[0] || null; };
+    const linkedTpl = code => { const l = d.templates.filter(t => t.kind === 'self' && t.status === 'published' && t.code === code); return l.find(t => curTpl.value && t.subworkId === curTpl.value.subworkId && (t.unitNo || '') === (curTpl.value.unitNo || '')) || l.find(t => curTpl.value && t.subworkId === curTpl.value.subworkId) || l[0] || null; };
     const linkName = code => { const t = linkedTpl(code); return t ? t.name : (Q.LINKED[code] || ''); };
     const preLinked = computed(() => curTpl.value ? [...new Set(curTpl.value.items.filter(i => i.type === 'linked' && i.linked && i.stage === firstStage.value).map(i => i.linked))] : []);
     const linkStatus = code => { const r = linkedRec(code); return !r ? '尚未建立' : r.status === 'signed' ? (r.fillMode === 'pdf' ? '已結案' : '已簽認') : (r.fillMode === 'pdf' ? r.wfStatus : '填寫中'); };
