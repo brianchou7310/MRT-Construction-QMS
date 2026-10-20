@@ -24,7 +24,7 @@ createApp({
       // 依後台身份（部門）只顯示該部門負責的標案及其資料；allTenders 保留全部，供「新增標案」判斷是否已加入
       allTenders.value = tenders;
       const vis = new Set(tenders.filter(t => Q.tenderInDept(t, dept.value)).map(t => t.id)), inT = x => vis.has(x.tenderId), keys = new Set(tenders.filter(t => vis.has(t.id)).map(Q.projKey));
-      Object.assign(d, { tenders: tenders.filter(t => vis.has(t.id)), subworks: subworks.filter(inT), templates: templates.filter(inT), selfChecks: selfChecks.filter(inT), requests: requests.filter(inT), spotChecks: spotChecks.filter(inT), defects: defects.filter(inT), docs: docs.filter(x => !dept.value || keys.has(x.projKey)), users, params });
+      Object.assign(d, { tenders: Q.sortTenders(tenders.filter(t => vis.has(t.id))), subworks: subworks.filter(inT), templates: templates.filter(inT), selfChecks: selfChecks.filter(inT), requests: requests.filter(inT), spotChecks: spotChecks.filter(inT), defects: defects.filter(inT), docs: docs.filter(x => !dept.value || keys.has(x.projKey)), users, params });
       if (d.tenders.length && !d.tenders.some(t => t.id === selTenderId.value)) selTenderId.value = d.tenders[0].id;
       if (tenderFilter.value !== 'all' && !d.tenders.some(t => t.id === tenderFilter.value)) tenderFilter.value = 'all';
       now.value = Date.now(); loaded.value = true;
@@ -131,9 +131,22 @@ createApp({
     // 左側樹狀：各層可收合；點分項工程時右側直接篩選到該項
     const treeOpen = reactive({ T671: true }), grpOpen = reactive({}), swPick = ref(null);
     // 標案樹：區段標 → 子標；單一標另成一組
-    const treeGroups = computed(() => { const m = new Map(); d.tenders.slice().sort((a, b) => a.code.localeCompare(b.code)).forEach(t => { const k = t.parentCode || ''; if (!m.has(k)) m.set(k, { key: k, code: k, name: t.parentName || '', items: [] }); m.get(k).items.push(t); });
+    const treeGroups = computed(() => { const m = new Map(); d.tenders.slice().forEach(t => { const k = t.parentCode || ''; if (!m.has(k)) m.set(k, { key: k, code: k, name: t.parentName || '', items: [] }); m.get(k).items.push(t); });
       return [...m.values()].sort((a, b) => (a.key ? 0 : 1) - (b.key ? 0 : 1) || a.key.localeCompare(b.key)); });
     const grpIsOpen = g => grpOpen[g.key || '_'] !== false;
+    // 標案架構：同一區段標內的子標可拖曳調整順序（排序同步套用到表單範本、現場新增表單等下拉選單）
+    const tDragId = ref(null), tDragOver = ref(null);
+    function tDragStart(e, t) { tDragId.value = t.id; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', t.id); } catch (x) { /* ignore */ } }
+    function tDragEnd() { tDragId.value = null; tDragOver.value = null; }
+    async function tDrop(target) {
+      const id = tDragId.value; tDragEnd(); if (!id || id === target.id) return;
+      const mover = d.tenders.find(x => x.id === id); if (!mover) return;
+      if ((mover.parentCode || '') !== (target.parentCode || '')) return toast('只能在同一個區段標內調整子標順序', true);
+      const list = d.tenders.filter(x => (x.parentCode || '') === (target.parentCode || '')), from = list.findIndex(x => x.id === id), to = list.findIndex(x => x.id === target.id);
+      const [m] = list.splice(from, 1); list.splice(to, 0, m);
+      for (let i = 0; i < list.length; i++) { const t = Q.clone(list[i]); t.order = i; await Q.put('tenders', t); }
+      await load(); toast('已調整子標順序，表單範本等下拉選單同步套用');
+    }
     function treeAll(open) { treeGroups.value.forEach(g => { grpOpen[g.key || '_'] = open; }); d.tenders.forEach(t => { treeOpen[t.id] = open; }); }
     function pickTender(t) { if (selTenderId.value === t.id && !swPick.value) { treeOpen[t.id] = !treeOpen[t.id]; return; } selTenderId.value = t.id; swPick.value = null; treeOpen[t.id] = true; }
     function pickSw(s) { selTenderId.value = s.tenderId; swSearch.value = ''; swStatus.value = ''; swPick.value = s.id; swPage.value = 1; }
@@ -247,7 +260,7 @@ createApp({
 
     /* ---------- 表單範本 ---------- */
     // 分項工程下拉：先依標號，再依項次(order)排列
-    const swGroups = computed(() => d.tenders.slice().sort((a, b) => a.code.localeCompare(b.code)).map(t => ({ tender: t, subs: d.subworks.filter(s => s.tenderId === t.id).sort((a, b) => a.order - b.order) })).filter(g => g.subs.length));
+    const swGroups = computed(() => d.tenders.slice().map(t => ({ tender: t, subs: d.subworks.filter(s => s.tenderId === t.id).sort((a, b) => a.order - b.order) })).filter(g => g.subs.length));
     const tplSw = ref('S671-5'), selTplId = ref(null), tplTab = ref('items'), edit = ref(null), previewOn = ref(false), fieldIdx = ref(-1);
     // 單元（選用）：標案 → 分項工程 → [單元] → 表單
     const tplUnit = ref(''), unitForm = ref(null);
@@ -883,7 +896,7 @@ createApp({
     const projOf = r => Q.projKey(tenderById(r.tenderId));
     const projOpts = computed(() => Q.projOptions(d.tenders));
     const projText = k => (projOpts.value.find(x => x.v === k) || {}).l || k || '—';
-    const tendersOfProj = k => d.tenders.filter(t => !k || Q.projKey(t) === k).sort((a, b) => a.code.localeCompare(b.code));
+    const tendersOfProj = k => d.tenders.filter(t => !k || Q.projKey(t) === k);
     const qf = reactive({ self: { proj: '', tender: '', sw: '', unit: '' }, spot: { proj: '', tender: '', sw: '', unit: '' } });
     const QF_LV = ['proj', 'tender', 'sw', 'unit'];
     const qfSrc = kind => kind === 'self' ? d.selfChecks : d.spotChecks;
@@ -946,7 +959,7 @@ createApp({
       } catch (e) { console.error(e); toast('批次下載失敗：' + e.message, true); }
       finally { ex.busy = ''; }
     }
-    const navItems = [['dashboard', '查驗總覽'], ['g', '查驗作業'], ['holds', '停留點會驗', 'badge'], ['defects', '缺失追蹤', 'dbadge'], ['g', '查詢統計'], ['selfchecks', '自主檢查紀錄'], ['spots', '抽查紀錄'], ['export', '批次下載'], ['g', '基本資料'], ['projects', '標案與分項工程'], ['templates', '表單範本'], ['docs', '參考文件'], ['g', '系統'], ['users', '帳號與權限'], ['params', '參數設定']];
+    const navItems = [['dashboard', '查驗總覽'], ['g', '查驗作業'], ['holds', '停留點會驗', 'badge'], ['defects', '缺失追蹤', 'dbadge'], ['g', '基本資料'], ['projects', '標案與分項工程'], ['templates', '表單範本'], ['docs', '參考文件'], ['g', '查詢統計'], ['selfchecks', '自主檢查紀錄'], ['spots', '抽查紀錄'], ['export', '批次下載'], ['g', '系統'], ['users', '帳號與權限'], ['params', '參數設定']];
     // 側邊選單：分組可收合（狀態記在 localStorage）
     const navTree = (() => { const t = []; navItems.forEach(n => { if (n[0] === 'g') t.push({ group: n[1], items: [] }); else if (t.length) t[t.length - 1].items.push(n); else t.push({ link: n }); }); return t; })();
     const collapsed = reactive((() => { try { return JSON.parse(localStorage.getItem('qms-nav-collapsed') || '{}'); } catch (e) { return {}; } })());
@@ -965,7 +978,7 @@ createApp({
       Q, d, now, loaded, page, menuOpen, toastMsg, toastNg, toast, go, tenderById, swById, tenderFilter, supervisors, reqCls, rel, openReqs, overdueReqs, openDefects, overdueDefects, weekHolds, spotRate, kpiSelf, todayAgenda, tplOf, usedCount,
       progTender, progFilter, progRows, progCount, holdTab, holdTabs, holdCount, holdList, holdByDate, selReqId, selReq, calView, sched, reqChips, lockedAfter, hoursBefore, doSchedule, doReject, doStart, doCancel,
       showSC, showSP, itemsOf, judgeText, valuesText, spotCount, defCls, defText, defTab, defList, defAct, defShow, defReview,
-      selTenderId, selTender, treeGroups, grpOpen, grpIsOpen, treeOpen, swPick, treeAll, dept, deptName, setDept, allTenders, pick, pickData, pickSel, pickGroupAll, doPick, pickTender, pickSw, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, swForm, saveSw, moveSw, delSw, newTender, swImp, openSwImp, downloadSwSample, onSwFile, swImpOk, swImpBad, doSwImp,
+      selTenderId, selTender, treeGroups, tDragId, tDragOver, tDragStart, tDragEnd, tDrop, grpOpen, grpIsOpen, treeOpen, swPick, treeAll, dept, deptName, setDept, allTenders, pick, pickData, pickSel, pickGroupAll, doPick, pickTender, pickSw, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, swForm, saveSw, moveSw, delSw, newTender, swImp, openSwImp, downloadSwSample, onSwFile, swImpOk, swImpBad, doSwImp,
       tplSw, tplUnit, tplUnits, unitForm, unitTplN, openUnitForm, addUnit, delUnit, swGroups, selTplId, tplTab, edit, previewOn, fieldIdx, tplList, tplHistory, pickTpl, editUsed, editStages, isPdf, newTplForm, onNewPdf, onEditPdf, createTpl, pdfUrl, downloadFile, wfCls, readPdf, TYPES, holdN, addItem, delItem, moveItem, addField, onType, saveEdit, delTpl, syncFromSelf, bulk, openBulk, onBulkFile, bulkOk, bulkView, doBulk, downloadBulkSample, exportSubwork, stageForm, stageItemN, openStageForm, stageAdd, stageMove, stageDel, stagePreset, applyStages, STAGE_PRESETS, newTpl, exportXlsx, dragId, dragOver, onDragStart, onDragEnd, onDrop, itemImp, openItemImp, onItemFile, itemImpForm, itemImpView, itemImpErrs, doItemImp,
       linkOpts, adminUser, swText, projOf, projOpts, projText, tendersOfProj, qf, qfOpts, qfList, qfSet, qfClear, ex, exOpts, exList, exRows, exSet, exClear, downloadRec, downloadBatch, recCode,
       docForm, userForm, docProj, docList, editProj, refDocs, saveDoc, newDoc, editDoc, onDocFile, saveUser, delRow, saveParams, resetDemo, navItems, navTree, collapsed, toggleGroup, titles, todayStr

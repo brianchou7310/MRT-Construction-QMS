@@ -34,6 +34,7 @@ createApp({
         d.tenders = d.tenders.filter(t => vis.has(t.id)); ['subworks', 'templates', 'selfChecks', 'requests', 'spotChecks', 'defects'].forEach(n => { d[n] = d[n].filter(inT); }); d.docs = d.docs.filter(x => keys.has(x.projKey));
       }
       if (tenderSel.value !== 'all' && !d.tenders.some(t => t.id === tenderSel.value)) tenderSel.value = 'all';
+      d.tenders = Q.sortTenders(d.tenders);
       now.value = Date.now(); loaded.value = true;
     }
     const tplOf = id => d.templates.find(t => t.id === id);
@@ -172,7 +173,7 @@ createApp({
     const where = (unit, swName) => unit ? '單元 ' + unit : swName;
     // 標號選單「全部」：所有標案同屬一個區段標時顯示該區段標
     const allTenderLabel = computed(() => { const ps = [...new Set(d.tenders.map(t => t.parentCode || ''))]; return ps.length === 1 && ps[0] ? `${ps[0]} 區段標` : '全部標案'; });
-    const tenderOpts = () => d.tenders.slice().sort((a, b) => a.code.localeCompare(b.code));
+    const tenderOpts = () => d.tenders.slice();
     function cascade(f, kind, from) {
       if (from === 'tender') f.subworkId = (swOpts(f.tenderId, kind)[0] || {}).id || '';
       if (from === 'tender' || from === 'sw') { const u = unitOpts(f.subworkId, kind); f.unit = u.includes(f.unit) ? f.unit : (u[0] || ''); }
