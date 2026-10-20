@@ -267,6 +267,11 @@
   // 畫面用的短名稱：去掉共同前綴「臺北都會區大眾捷運系統」與「…區段標-」
   function tLabel(t) { if (!t) return ''; const n0 = String(t.name || ''); let n = n0.replace(/^臺北都會區大眾捷運系統/, '').replace(/^.*?區段標\s*[-－]?\s*/, '').replace(new RegExp('^' + String(t.code || '#').replace(/[^\w]/g, '') + '(施工標|標)?\\s*[-－]?\\s*'), '').trim(); return `${t.code} ${n || n0}`.trim(); }
   // 區段標／單一標鍵值：子標取上層區段標，單一標取本身標號
+  // 標案排序：區段標群組（有區段標者在前，依區段標代號）→ 同群組依「標案架構」拖曳順序(order)→ 代號
+  function sortTenders(list) {
+    return (list || []).slice().sort((a, b) => { const ka = a.parentCode || '', kb = b.parentCode || '';
+      return (ka ? 0 : 1) - (kb ? 0 : 1) || ka.localeCompare(kb) || (a.order == null ? 1e9 : a.order) - (b.order == null ? 1e9 : b.order) || String(a.code).localeCompare(String(b.code)); });
+  }
   const projKey = t => t ? (t.parentCode || t.code || '') : '';
   function projOptions(tenders) { const m = new Map(); (tenders || []).slice().sort((a, b) => projKey(a).localeCompare(projKey(b))).forEach(t => { const k = projKey(t); if (k && !m.has(k)) m.set(k, { v: k, l: `${k} ${t.parentCode ? '區段標' : '單一標'}`, name: t.parentCode ? t.parentName : t.name }); }); return [...m.values()]; }
   // 部門可見：標案本身或其區段標屬於該部門
@@ -358,7 +363,12 @@
       if (sc) { sp.scId = sc.id; await put('spotChecks', sp); }
     }
   }
-  async function postSeed() { await migrateKeys(); await migrateReqSub(); await migrateScLinks(); await seedLinked(); await migrateUnits(); }
+  async function postSeed() { await migrateKeys(); await migrateReqSub(); await migrateScLinks(); await seedLinked(); await migrateUnits(); await migrateUnitsWall(); }
+  // 單元示範資料：CF671「五、連續壁工程」設定 P01～P16 共 16 個單元（單元清單；範本可再掛到各單元下）
+  async function migrateUnitsWall() {
+    const sw = await get('subworks', 'S671-5'); if (!sw || 'unitList' in sw) return;
+    sw.unitList = Array.from({ length: 16 }, (_, i) => 'P' + String(i + 1).padStart(2, '0')); await put('subworks', sw);
+  }
   // 單元示範資料：鑽掘混凝土基樁（S671-6）設定 BP-01、BP-02 兩個單元，各掛自己的表單範本
   async function migrateUnits() {
     const sw = await get('subworks', 'S671-6'); if (!sw || 'unitList' in sw) return;
@@ -640,7 +650,7 @@
     LINKED, JUDGE, STAGES, DEF_STAGES, stagesOf, stageName, HOLD_TEXT, REQ_TEXT, H, D,
     fmtDT, fmtD, fmtFull, toLocalInput, fromLocalInput, nextHour, atDay, relTime, uid, clone, hashOf,
     evalField, suggest, rangeText, stageItems, stageDone, lockReason, holdState,
-    STEP_TEXT, PROJ_TYPE_TEXT, DEPTS, rocDate, tenderFromProj, tLabel, tenderInDept, projKey, projOptions,
+    STEP_TEXT, PROJ_TYPE_TEXT, DEPTS, rocDate, sortTenders, tenderFromProj, tLabel, tenderInDept, projKey, projOptions,
     tickOverdue, newSelfCheck, saveSelf, applyHold, schedule, reject, spotOptions, startInspection, cancelInspection, reportFix, reviewDefect, newSpotCheck, autoNa, migrateSpots, wfLock, wfCancel, wfUpload, wfVendorSign, wfClose, wfUnfreeze, pdfBlobUrl, downloadPdf, downloadAny, openAny, canPreview, fileToDataUrl, fmtSize, dataUrlSize, createDefect, finalizeSelf, finalizeSpot, setDefectStatus, saveTemplate, putMany, F, I, ensureKeys, baseId
   };
 })();

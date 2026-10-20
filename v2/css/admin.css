@@ -90,3 +90,5 @@
 .pick-list .pk-row.dis { opacity: .6; cursor: default; }
 .pick-list .pk-row input { width: auto; margin: 0; }
 .pick-list .pk-grp .tw { display: inline-block; width: 16px; font-style: normal; }
+
+.tree a.l2.tdrag { cursor: grab; } .tree a.l2.tdrag.dragging { opacity: .4; } .tree a.l2.tdrag.over { box-shadow: 0 -3px 0 var(--primary); }

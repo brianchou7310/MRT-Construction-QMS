@@ -274,13 +274,13 @@
   <div class="page-head"><div><h1>標案與分項工程</h1></div></div>
   <div class="cols2">
     <div class="card"><div class="row mb"><h3 class="grow">標案架構</h3><button class="btn sm" @click="newTender">＋ 新增標案</button></div>
-      <div class="row small mb" style="gap:10px"><a @click="treeAll(true)">全部展開</a><a @click="treeAll(false)">全部收合</a></div>
+      <div class="row small mb" style="gap:10px"><a @click="treeAll(true)">全部展開</a><a @click="treeAll(false)">全部收合</a><span class="muted">拖曳子標可調整順序</span></div>
       <div class="tree">
         <div class="muted small" v-if="!d.tenders.length" style="padding:10px 4px">{{ deptName }}尚未加入標案，請按「＋ 新增標案」從標案管理系統挑選。</div>
         <template v-for="g in treeGroups" :key="g.key || '_'">
           <a class="l1" @click="grpOpen[g.key || '_'] = !grpIsOpen(g)" :title="g.name"><span class="ell"><i class="tw">{{ grpIsOpen(g) ? '▾' : '▸' }}</i><b>{{ g.key ? g.code + ' 區段標' : '單一標' }}</b></span><span class="muted small nowrap">{{ g.items.length }} 標</span></a>
           <template v-if="grpIsOpen(g)"><template v-for="t in g.items" :key="t.id">
-            <a class="l2" :class="{on: selTenderId===t.id && !swPick}" @click="pickTender(t)" :title="t.name"><span class="ell"><i class="tw" @click.stop="treeOpen[t.id]=!treeOpen[t.id]">{{ treeOpen[t.id] ? '▾' : '▸' }}</i>{{ Q.tLabel(t) }}</span><span class="muted small nowrap">{{ d.subworks.filter(s=>s.tenderId===t.id).length }} 項</span></a>
+            <a class="l2 tdrag" :class="{on: selTenderId===t.id && !swPick, dragging: tDragId===t.id, over: tDragOver===t.id && tDragId!==t.id}" draggable="true" @dragstart="tDragStart($event,t)" @dragend="tDragEnd" @dragover.prevent="tDragOver=t.id" @dragleave="tDragOver===t.id && (tDragOver=null)" @drop.prevent="tDrop(t)" @click="pickTender(t)" :title="t.name + '（可拖曳調整順序）'"><span class="ell"><i class="tw" @click.stop="treeOpen[t.id]=!treeOpen[t.id]">{{ treeOpen[t.id] ? '▾' : '▸' }}</i>{{ Q.tLabel(t) }}</span><span class="muted small nowrap">{{ d.subworks.filter(s=>s.tenderId===t.id).length }} 項</span></a>
             <template v-if="treeOpen[t.id]"><a class="l3" v-for="s in d.subworks.filter(s=>s.tenderId===t.id).sort((a,b)=>a.order-b.order)" :key="s.id" :class="{on: swPick===s.id}" @click="pickSw(s)" :title="s.no + '、' + s.name"><span class="ell">{{ s.no }}、{{ s.name }}</span></a></template>
           </template></template>
         </template></div></div>
