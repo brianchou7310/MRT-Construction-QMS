@@ -14,7 +14,7 @@
 
 # 系統功能總覽（程式閱讀後的整理）
 
-> 本節是閱讀 `v2/` 全部程式（`db.js`、`admin.js`／`admin.html`、`field.js`／`field.html`、`formpdf.js`、`projbase.js`、匯入匯出範本）後整理的功能理解，方便新成員快速掌握系統；後面的「新增／修正紀錄」是各次修改的歷程。
+> 本節是閱讀 `v3/` 全部程式（`db.js`、`admin.js`／`admin.html`、`field.js`／`field.html`、`formpdf.js`、`projbase.js`、匯入匯出範本）後整理的功能理解，方便新成員快速掌握系統；後面的「新增／修正紀錄」是各次修改的歷程。
 
 ## 1. 系統定位
 
