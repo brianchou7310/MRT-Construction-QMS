@@ -72,29 +72,6 @@
   }
 
   /* ---------- 檢查項目規則 ---------- */
-  // 單一數值欄位判定：ok / ng / null(未填)
-  function evalField(f, raw) {
-    if (raw === '' || raw == null || isNaN(Number(raw))) return null;
-    const v = Number(raw);
-    if (f.min != null && f.min !== '' && v < Number(f.min)) return 'ng';
-    if (f.max != null && f.max !== '' && v > Number(f.max)) return 'ng';
-    return 'ok';
-  }
-  // 項目建議判定：所有有範圍的欄位都填了且全在容許範圍 → ok；任一超出 → ng
-  function suggest(item, values) {
-    const fs = (item.fields || []).filter(f => (f.min !== undefined && f.min !== '' && f.min !== null) || (f.max !== undefined && f.max !== '' && f.max !== null));
-    if (!fs.length) return null;
-    const rs = fs.map(f => evalField(f, (values || {})[f.key]));
-    if (rs.includes('ng')) return 'ng';
-    if (rs.every(r => r === 'ok')) return 'ok';
-    return null;
-  }
-  function rangeText(f) {
-    if (f.min !== undefined && f.min !== '' && f.min !== null && f.max !== undefined && f.max !== '' && f.max !== null) return `${f.min} ~ ${f.max}`;
-    if (f.max !== undefined && f.max !== '' && f.max !== null) return `≤ ${f.max}`;
-    if (f.min !== undefined && f.min !== '' && f.min !== null) return `≥ ${f.min}`;
-    return '';
-  }
   function stageItems(tpl, stage) { return tpl.items.filter(i => i.stage === stage); }
   function stageDone(sc, tpl, stage) { return stageItems(tpl, stage).every(i => sc.answers[i.no] && sc.answers[i.no].judge); }
   // 鎖定原因：前一階段未完成 / 前面有停留點尚未放行
@@ -111,24 +88,23 @@
   const REQ_TEXT = { pending: '待回覆', scheduled: '已排定', inspecting: '檢驗中', passed: '合格放行', failed: '不合格', rejected: '已退回' };
 
   /* ---------- 示範資料 ---------- */
-  const F = (key, label, unit, min, max) => ({ key, label, unit, min: min == null ? '' : min, max: max == null ? '' : max });
-  const I = (no, stage, name, std, o = {}) => Object.assign({ no, stage, name, std, type: 'option', fields: [], hold: false, photo: false, linked: '', ref: 'CF671-PL-0032' }, o);
+  const I = (no, stage, name, std, o = {}) => Object.assign({ no, stage, name, std, type: 'option', hold: false, photo: false, linked: '', ref: 'CF671-PL-0032' }, o);
 
   function items55() {
     return [
       I(1, 'pre', '導溝施作', '詳導溝施工自主檢查表', { type: 'linked', linked: '5-4' }),
-      I(2, 'pre', '單元位置', '放樣於導溝面上，詳施工圖', { type: 'number', photo: true, fields: [F('len', '單元長度', 'm'), F('el', '導溝高程 EL', 'm')] }),
+      I(2, 'pre', '單元位置', '放樣於導溝面上，詳施工圖', { photo: true }),
       I(3, 'pre', '鋼筋籠製作', '詳鋼筋籠施工自主檢查表', { type: 'linked', linked: '5-6' }),
-      I(4, 'pre', '穩定液液面高度控制', '不低於內導溝面下（GL-0.5m ± 5cm）', { type: 'number', fields: [F('gl', '穩定液面高程 GL', 'm', -0.55, -0.45)] }),
-      I(5, 'during', '開挖寬度及深度', '1. 寬度 100 ± 5cm\n2. 不得超過設計深度 50cm', { type: 'number', fields: [F('w', '寬度', 'cm', 95, 105), F('over', '超挖深度', 'cm', null, 50)] }),
+      I(4, 'pre', '穩定液液面高度控制', '不低於內導溝面下（GL-0.5m ± 5cm）'),
+      I(5, 'during', '開挖寬度及深度', '1. 寬度 100 ± 5cm\n2. 不得超過設計深度 50cm'),
       I(6, 'during', '端鈑處理（公單元、母單元）', '先施作單元端部鋼刷清除汙泥與雜物', { photo: true }),
-      I(7, 'during', '溝底沉泥清除及深度確認', '實際深度 ≥ 設計深度\nS1 溝底 EL=98.5／S2 EL=96.0／S3 EL=101.0', { type: 'number', fields: [F('s1', 'S1 溝底 EL', 'm', null, 98.5)] }),
-      I(8, 'during', '垂直度（超音波檢測）', '≦ 1/300', { type: 'number', hold: true, photo: true, fields: [F('v', '垂直度 1/N 之 N', '', 300)] }),
+      I(7, 'during', '溝底沉泥清除及深度確認', '實際深度 ≥ 設計深度\nS1 溝底 EL=98.5／S2 EL=96.0／S3 EL=101.0'),
+      I(8, 'during', '垂直度（超音波檢測）', '≦ 1/300', { hold: true, photo: true }),
       I(9, 'during', '穩定液檢測（澆置混凝土前）', '詳連續壁穩定液自主檢查紀錄表', { type: 'linked', linked: '5-7', hold: true }),
-      I(10, 'during', '鋼筋籠吊放高程及位置確認', '壁體垂直方向偏差 25mm\n其他方向 75mm\n鋼筋籠頂高程 EL 122.9m', { type: 'number', hold: true, photo: true, fields: [F('dv', '垂直方向偏差', 'mm', null, 25), F('do', '其他方向', 'mm', null, 75), F('el', '籠頂高程 EL', 'm', 122.85, 122.95)] }),
-      I(11, 'during', '特密管安裝', '1. 出口離槽底面 1.5m 以內\n2. 特密管長度符合開挖深度\n4. 特密管間距 ≦ 300cm', { type: 'number', hold: true, fields: [F('gap', '出口離槽底', 'm', null, 1.5), F('sp', '特密管間距', 'cm', null, 300)] }),
-      I(12, 'during', '混凝土試體取樣', "1. fc' ≧ 250 kgf/cm²\n2. 溫度 ≦ 32°C\n3. 坍度 19 ± 4.0cm", { type: 'number', hold: true, fields: [F('fc', "fc'", 'kgf/cm²', 250), F('t', '溫度', '°C', null, 32), F('s', '坍度', 'cm', 15, 23)] }),
-      I(13, 'during', '端鈑外回填碎石（母單元、公母單元）', '碎石回填 2m', { type: 'number', fields: [F('h', '回填高', 'm', 2)] }),
+      I(10, 'during', '鋼筋籠吊放高程及位置確認', '壁體垂直方向偏差 25mm\n其他方向 75mm\n鋼筋籠頂高程 EL 122.9m', { hold: true, photo: true }),
+      I(11, 'during', '特密管安裝', '1. 出口離槽底面 1.5m 以內\n2. 特密管長度符合開挖深度\n4. 特密管間距 ≦ 300cm', { hold: true }),
+      I(12, 'during', '混凝土試體取樣', "1. fc' ≧ 250 kgf/cm²\n2. 溫度 ≦ 32°C\n3. 坍度 19 ± 4.0cm", { hold: true }),
+      I(13, 'during', '端鈑外回填碎石（母單元、公母單元）', '碎石回填 2m'),
       I(14, 'during', '混凝土澆置紀錄', '詳連續壁混凝土灌漿紀錄表', { type: 'linked', linked: '5-9' }),
       I(15, 'post', '場地清理', '是否清理完成'),
       I(16, 'post', '開口安衛措施', '護欄、鐵板或核可材料覆蓋', { hold: true, photo: true })
@@ -136,7 +112,7 @@
   }
   function mini(id, subworkId, kind, code, name, n, extra) {
     const its = [];
-    for (let i = 1; i <= n; i++) its.push(I(i, i === 1 ? 'pre' : i < n ? 'during' : 'post', `${name} 檢查項目 ${i}`, '依施工圖及規範', { type: i % 2 ? 'option' : 'number', fields: i % 2 ? [] : [F('v', '實測值', 'mm', null, 25)] }));
+    for (let i = 1; i <= n; i++) its.push(I(i, i === 1 ? 'pre' : i < n ? 'during' : 'post', `${name} 檢查項目 ${i}`, '依施工圖及規範', {}));
     return Object.assign({ id, tenderId: 'T671', subworkId, kind, code, name, version: 1, status: 'published', source: 'CF671-PL-0032', fillMode: 'online', items: its, used: 0 }, extra || {});
   }
 
@@ -198,9 +174,9 @@
     // 進行中的自主檢查（P12）
     const ans = {};
     const J = (no, judge, values, photos) => { ans[no] = { judge, values: values || {}, photos: photos || [], note: '' }; };
-    J(1, 'ok'); J(2, 'ok', { len: 6, el: 124.05 }, ['*']); J(3, 'ok'); J(4, 'ok', { gl: -0.48 });
-    J(5, 'ok', { w: 103, over: 12 }); J(6, 'ok', {}, ['*']); J(7, 'ok', { s1: 98.42 });
-    J(8, 'ok', { v: 420 }, ['*']); J(9, 'ok'); J(10, 'ok', { dv: 18, do: 40, el: 122.91 }, ['*', '*', '*']);
+    J(1, 'ok'); J(2, 'ok', {}, ['*']); J(3, 'ok'); J(4, 'ok');
+    J(5, 'ok'); J(6, 'ok', {}, ['*']); J(7, 'ok');
+    J(8, 'ok', {}, ['*']); J(9, 'ok'); J(10, 'ok', {}, ['*', '*', '*']);
     const sc = {
       id: 'SC-CF671-261005-002', tenderId: 'T671', tenderCode: 'CF671', templateId: 'TP-5-5', templateVer: 1, templateCode: '5-5', templateName: '連續壁施工自主檢查表',
       subworkId: 'S671-5', subworkName: 'Y01站連續壁施工', unit: 'P12', location: 'Y01站 單元 P12（公單元）', date: now, contractor: '大陸工程股份有限公司',
@@ -219,7 +195,7 @@
     out.requests.push({
       id: 'HP-CF671-1004-003', tenderId: 'T671', tenderCode: 'CF671', subworkId: 'S671-5', scId: sc.id, itemNo: 10, title: '鋼筋籠吊放高程及位置確認', subworkName: '連續壁工程', checkName: '表5-5 連續壁施工自主檢查表', location: 'Y01站 單元 P12（公單元）', unit: 'P12',
       appliedAt: A, replyDue: A + 8 * H, scheduledAt: A + 18 * H, applicant: '大陸工程 品管人員', status: 'pending', shortNotice: true, shortReason: '配合混凝土車預約時段，需於明早吊放完成。', inspector: '', photoCount: 3,
-      std: '壁體垂直方向偏差 25mm\n其他方向 75mm\n鋼筋籠頂高程 EL 122.9m', values: { dv: 18, do: 40, el: 122.91 },
+      std: '壁體垂直方向偏差 25mm\n其他方向 75mm\n鋼筋籠頂高程 EL 122.9m',
       notices: [{ at: A, text: '廠商送出會驗申請（附照片 3 張）', level: 'info' }, { at: A, text: 'Email 已寄送監造人員（2 位）', level: 'info' }]
     });
     const mkReq = (id, title, loc, applied, sched, status, sw) => ({ id, tenderId: 'T671', tenderCode: 'CF671', subworkId: 'S671-5', scId: '', itemNo: 0, title, subworkName: sw || '連續壁工程', checkName: '', location: loc, unit: '', appliedAt: applied, replyDue: applied + 8 * H, scheduledAt: sched, applicant: '大陸工程 品管人員', status, shortNotice: false, shortReason: '', inspector: status === 'pending' ? '' : '示範工務所同仁', photoCount: 2, std: '依施工圖及規範', values: {}, notices: [{ at: applied, text: '廠商送出會驗申請', level: 'info' }, { at: applied, text: 'Email 已寄送監造人員（2 位）', level: 'info' }] });
@@ -363,8 +339,16 @@
       if (sc) { sp.scId = sc.id; await put('spotChecks', sp); }
     }
   }
-  async function postSeed() { await migrateKeys(); await migrateReqSub(); await migrateScLinks(); await seedLinked(); await migrateUnits(); await migrateUnitsWall(); await migrateUnitRule(); }
+  async function postSeed() { await migrateNoNumber(); await migrateKeys(); await migrateReqSub(); await migrateScLinks(); await seedLinked(); await migrateUnits(); await migrateUnitsWall(); await migrateUnitRule(); }
   // 分項工程有設定單元時，表單不可掛在分項工程層：舊資料的分項層表單移到該分項工程的第一個單元
+  // 移除「數值」判定類型：既有範本的數值項目改為選項，並清除數值欄位
+  async function migrateNoNumber() {
+    for (const t of await all('templates')) {
+      let ch = false;
+      (t.items || []).forEach(i => { if (i.type === 'number') { i.type = 'option'; ch = true; } if ('fields' in i) { delete i.fields; ch = true; } });
+      if (ch) await put('templates', t);
+    }
+  }
   async function migrateUnitRule() {
     for (const sw of await all('subworks')) {
       const first = (sw.unitList || [])[0]; if (!first) continue;
@@ -505,7 +489,7 @@
       id: `SP-${tender.code}-${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(n, 3)}`, kind: request ? 'hold' : 'random', requestId: request ? request.id : '', scId: sc ? sc.id : '', itemNo: request ? request.itemNo : 0, focusNo: focus,
       templateId: tpl.id, templateVer: tpl.version, templateName: tpl.name, subworkId: tpl.subworkId, tenderId: tender.id, tenderCode: tender.code, unit: unit || (request && request.unit) || '', location: location || (request && request.location) || (sc && sc.location) || (unit ? `單元 ${unit}` : (sw ? sw.name : '')),
       title: focus ? tpl.items.find(i => i.no === focus).name : (request ? request.title : tpl.name), subworkName: sw ? sw.name : '', answers,
-      calc: { thickness: '1.0', length: sc && sc.answers[2] ? String((sc.answers[2].values || {}).len || '') : '', depth: '' }, status: 'draft', signatures: {}, date: Date.now(), createdAt: Date.now(),
+      calc: { thickness: '1.0', length: '', depth: '' }, status: 'draft', signatures: {}, date: Date.now(), createdAt: Date.now(),
       fillMode: tpl.fillMode || 'online', pdfFile: null,
       wfStatus: '未開始', lockedBy: null, lastUpdatedBy: null, version: 0, logs: []
     };
@@ -675,8 +659,8 @@
     ready, open, all, get, put, del, seed, getParams, onChange: f => listeners.push(f),
     LINKED, JUDGE, STAGES, DEF_STAGES, stagesOf, stageName, HOLD_TEXT, REQ_TEXT, H, D,
     fmtDT, fmtD, fmtFull, toLocalInput, fromLocalInput, nextHour, atDay, relTime, uid, clone, hashOf,
-    evalField, suggest, rangeText, stageItems, stageDone, lockReason, holdState,
+    stageItems, stageDone, lockReason, holdState,
     STEP_TEXT, PROJ_TYPE_TEXT, DEPTS, rocDate, sortTenders, tenderFromProj, tLabel, tenderInDept, projKey, projOptions,
-    tickOverdue, newSelfCheck, saveSelf, applyHold, schedule, reject, spotOptions, startInspection, cancelInspection, reportFix, reviewDefect, newSpotCheck, autoNa, migrateSpots, wfLock, wfCancel, wfUpload, wfVendorSign, wfClose, wfUnfreeze, pdfBlobUrl, downloadPdf, downloadAny, openAny, canPreview, fileToDataUrl, fmtSize, dataUrlSize, createDefect, finalizeSelf, finalizeSpot, setDefectStatus, saveTemplate, putMany, F, I, ensureKeys, baseId
+    tickOverdue, newSelfCheck, saveSelf, applyHold, schedule, reject, spotOptions, startInspection, cancelInspection, reportFix, reviewDefect, newSpotCheck, autoNa, migrateSpots, wfLock, wfCancel, wfUpload, wfVendorSign, wfClose, wfUnfreeze, pdfBlobUrl, downloadPdf, downloadAny, openAny, canPreview, fileToDataUrl, fmtSize, dataUrlSize, createDefect, finalizeSelf, finalizeSpot, setDefectStatus, saveTemplate, putMany, I, ensureKeys, baseId
   };
 })();
