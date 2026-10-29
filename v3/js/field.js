@@ -119,10 +119,6 @@ createApp({
     const selReqId = ref(null), sched = reactive({ dt: '', reason: '', rejecting: false, cancelling: false, tplId: '', tplOpts: [] });
     const selReq = computed(() => d.requests.find(r => r.id === selReqId.value));
     function selectReq(r) { selReqId.value = r.id; sched.dt = Q.toLocalInput(r.scheduledAt); sched.reason = ''; sched.rejecting = false; sched.cancelling = false; sched.tplOpts = []; sched.tplId = ''; Q.spotOptions(r.id).then(o => { if (selReqId.value !== r.id) return; sched.tplOpts = o.tpls.map(t => ({ id: t.id, name: t.name, pdf: t.fillMode === 'pdf' })); sched.tplId = o.def ? o.def.id : ''; }); }
-    const reqChips = r => {
-      const sc = d.selfChecks.find(s => s.id === r.scId), tpl = sc && tplOf(sc.templateId), it = tpl && tpl.items.find(i => i.no === r.itemNo); if (!it) return [];
-      return it.fields.filter(f => (r.values || {})[f.key] !== undefined && r.values[f.key] !== '').map(f => ({ label: f.label, v: r.values[f.key], unit: f.unit }));
-    };
     const reqPhotos = r => { const sc = d.selfChecks.find(s => s.id === r.scId); const a = sc && sc.answers[r.itemNo]; return a && a.photos && a.photos.length ? a.photos : Array.from({ length: r.photoCount || 0 }, () => '*'); };
     const lockedAfter = r => { const sc = d.selfChecks.find(s => s.id === r.scId), tpl = sc && tplOf(sc.templateId); return tpl ? tpl.items.filter(i => i.hold && i.no > r.itemNo && Q.holdState(sc, i.no) !== 'passed').map(i => i.name) : []; };
     async function doSchedule() { const ts = Q.fromLocalInput(sched.dt); if (!ts) return toast('請選擇時間', true); const r = selReq.value; await Q.schedule(r.id, ts, me.value.name, r.status === 'scheduled'); await load(); toast('已排定並通知廠商'); }
@@ -227,7 +223,6 @@ createApp({
     const hstate = it => Q.holdState(cur.value, it.no);
     const hreq = it => d.requests.find(r => r.id === ((cur.value.hold[it.no] || {}).requestId));
     const itemEditable = it => !readonly.value && !lockOf(it) && ['none', 'failed'].includes(hstate(it));
-    const sugg = it => Q.suggest(it, ensure(it.no).values);
     const itemIcon = it => { const j = ans(it.no).judge; return j === 'ok' ? '○' : j === 'ng' ? '╳' : j === 'na' ? '╱' : ''; };
 
     function queueSave() { if (!cur.value || cur.value.status === 'signed') return; saveMsg.value = '儲存中…'; clearTimeout(saveTimer); saveTimer = setTimeout(flush, 500); }
@@ -271,7 +266,6 @@ createApp({
     function addPhoto(it) { if (!itemEditable(it)) return toast('此項目目前不可編輯', true); pickPhoto(`${cur.value.tenderCode}・${where(cur.value.unit, cur.value.subworkName)}・${it.name}`, url => { ensure(it.no).photos.push(url); queueSave(); }); }
     function addDemoPhoto(it) { if (!itemEditable(it)) return toast('此項目目前不可編輯', true); demoPhoto(`${cur.value.tenderCode}・${where(cur.value.unit, cur.value.subworkName)}・${it.name}`, url => { ensure(it.no).photos.push(url); queueSave(); }); }
     function delPhoto(it, i) { if (!itemEditable(it)) return; ensure(it.no).photos.splice(i, 1); const a = ensure(it.no); if (it.photo && !a.photos.length && a.judge === 'ok') a.judge = null; queueSave(); }
-    function useSuggest(it) { const s = sugg(it); if (s) setJudge(it, s); }
     /* 關聯子表單：連到同一單元的真實紀錄，簽認／結案後才算完成 */
     const returnTo = ref(null);
     const linkedRec = code => !cur.value ? null : d.selfChecks.filter(s => s.tenderId === cur.value.tenderId && (s.unit || '') === (cur.value.unit || '') && (cur.value.unit || s.subworkId === cur.value.subworkId) && s.templateCode === code && s.id !== cur.value.id).sort((a, b) => (b.status === 'signed') - (a.status === 'signed') || b.updatedAt - a.updatedAt)[0] || null;
@@ -350,8 +344,7 @@ createApp({
     const spTotal = computed(() => spTpl.value ? spTpl.value.items.length : 0);
     const spSummary = computed(() => { const a = sp.value ? Object.values(sp.value.answers) : []; return { ok: a.filter(x => x.judge === 'ok').length, ng: a.filter(x => x.judge === 'ng').length, na: a.filter(x => x.judge === 'na').length, none: a.filter(x => !x.judge).length, photos: a.reduce((n, x) => n + (x.photos || []).length, 0) }; });
     const spStageStat = st => { const l = spTpl.value ? Q.stageItems(spTpl.value, st) : []; return `${l.filter(i => spA(i.no).judge).length}/${l.length}`; };
-    const spSelfVals = it => { const sc = spSc.value; if (!sc) return {}; const st = tplOf(sc.templateId), si = st && it.srcKey && st.items.find(x => x.key === it.srcKey); const a = sc.answers[si ? si.no : (it.srcNo || it.no)]; return (a && a.values) || {}; };
-    const spSugg = it => Q.suggest(it, spA(it.no).values);
+    const spSelfJudge = it => { const sc = spSc.value; if (!sc) return null; const st = tplOf(sc.templateId), si = st && it.srcKey && st.items.find(x => x.key === it.srcKey); const a = sc.answers[si ? si.no : (it.srcNo || it.no)]; return (a && a.judge) || null; };
     const spArea = computed(() => { const l = Number(sp.value && sp.value.calc.length), dp = Number(sp.value && sp.value.calc.depth); return l && dp ? (l * dp).toFixed(2) : ''; });
     const spLocked = computed(() => spReq.value ? lockedAfter(spReq.value) : []);
     const spAll = computed(() => d.spotChecks.slice().sort((a, b) => b.createdAt - a.createdAt));
@@ -378,7 +371,6 @@ createApp({
       if (j === 'ok' && it.photo && !a.photos.length) return toast('此項必須拍照後才能判定 ○', true);
       a.judge = j; spSave(); if (j === 'ng') toast('已判定缺失；簽認後系統將自動建立缺失追蹤');
     }
-    function spUseSuggest(it) { const s = spSugg(it); if (s) spJudge(it, s); }
     const spLabel = it => `${sp.value.tenderCode}・${where(sp.value.unit, sp.value.subworkName)}・${it.name}`;
     function spPhoto(it) { if (!spEditable.value) return toast('目前不可編輯', true); pickPhoto(spLabel(it), u => { sp.value.answers[it.no].photos.push(u); spSave(); }); }
     function spDemoPhoto(it) { if (!spEditable.value) return toast('目前不可編輯', true); demoPhoto(spLabel(it), u => { sp.value.answers[it.no].photos.push(u); spSave(); }); }
@@ -544,12 +536,12 @@ createApp({
 
     return {
       Q, d, loaded, now, view, todoTab, tenderSel, dept, deptName, projOf, projOpts, docProj, docList, fc, fsp, scOpts, spOpts, setF, clearF, NO_UNIT, scAll, spAll, allTenderLabel, role, isSup, me, wide, toastMsg, toastNg, toast, tplOf, rel, hh, todayLabel, reqCls,
-      todoReqs, lockedCards, rejectedCards, defTodos, draftSpots, pdfTodos, openPdfTodo, openDefects, todoCount, holdFilter, holdsList, selReqId, selReq, sched, selectReq, reqChips, reqPhotos, lockedAfter, doSchedule, doReject, doStart, doCancel,
+      todoReqs, lockedCards, rejectedCards, defTodos, draftSpots, pdfTodos, openPdfTodo, openDefects, todoCount, holdFilter, holdsList, selReqId, selReq, sched, selectReq, reqPhotos, lockedAfter, doSchedule, doReject, doStart, doCancel,
       pf, pfPreview, pfUrl, pfTpl, pfRec, pfSelf, pfSt, wfCls, pfCanLock, pfIsLocker, pfCanClose, pfCanVendor, pfCanUnfreeze, pfHint, pfDownloadBlank, pfDownloadCur, pfLock, pfCancel, wfUp, wfCert, wfVen, wfUnf, openWfUp, onWfUpFile, submitWfUp, openWfVen, onWfVenFile, submitWfVen, openWfCert, submitWfCert, openWfUnf, submitWfUnf, dlLog, leavePdf, isDirector, scList, scProgress, newForm, qrForm, tenderOpts, swOpts, tplOpts, unitOpts, ut, cascade, openNew, createSc, scanQr, pickQr,
-      cur, curTpl, stageTab, itemNo, saveMsg, docShow, linkShow, applyForm, readonly, stageList, curItem, shownItems, judged, total, stageStat, stageDone, ans, ensure, lockOf, hstate, hreq, itemEditable, sugg, itemIcon,
-      flush, queueSave, openSc, gotoItem, setStage, step, setJudge, addPhoto, addDemoPhoto, delPhoto, useSuggest, linkName, preLinked, linkedRec, linkedDone, linkedTpl, linkStatus, openLinked, createLinked, returnTo, confirmQr, canApply, openApply, applyShort, applyHours, submitApply, holdText, wasRejected,
+      cur, curTpl, stageTab, itemNo, saveMsg, docShow, linkShow, applyForm, readonly, stageList, curItem, shownItems, judged, total, stageStat, stageDone, ans, ensure, lockOf, hstate, hreq, itemEditable, itemIcon,
+      flush, queueSave, openSc, gotoItem, setStage, step, setJudge, addPhoto, addDemoPhoto, delPhoto, linkName, preLinked, linkedRec, linkedDone, linkedTpl, linkStatus, openLinked, createLinked, returnTo, confirmQr, canApply, openApply, applyShort, applyHours, submitApply, holdText, wasRejected,
       summary, holdItems, holdPending, attachCodes, canSubmit, goSign, finishStage, stageTabs, firstStage, stageNext, spStageTabs, spNextStage, leaveForm,
-      sp, spStage, spItemNo, spSaveMsg, spNew, spTpl, spReq, spSc, spEditable, spStageList, spCurItem, spShown, spA, spJudged, spTotal, spSummary, spStageStat, spSelfVals, spSugg, spArea, spLocked, spList, spProgress, spSave, spFlush, openSpot, spGoto, spSetStage, spJudge, spUseSuggest, spPhoto, spDemoPhoto, spDelPhoto, spGoSign, leaveSpot, openSpotNew, createSpot,
+      sp, spStage, spItemNo, spSaveMsg, spNew, spTpl, spReq, spSc, spEditable, spStageList, spCurItem, spShown, spA, spJudged, spTotal, spSummary, spStageStat, spSelfJudge, spArea, spLocked, spList, spProgress, spSave, spFlush, openSpot, spGoto, spSetStage, spJudge, spPhoto, spDemoPhoto, spDelPhoto, spGoSign, leaveSpot, openSpotNew, createSpot,
       signCtx, signHash, signAgree, canvasEl, drawn, signers, signIdx, curSigner, signSummary, sDown, sMove, sUp, clearSign, applySaved, saveSig, confirmSign, cancelSign,
       defCls, defText, defAct, defForm, defPhoto, submitFix, submitReview, resetDemo, clearSigs, navItems, nav, navActive, printForm
     };

@@ -113,8 +113,6 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
 }
 @media print { .rail, .fbar, .stab, .btn, .cam, .judge button:not(.on) { display: none !important; } .page { height: auto; overflow: visible; } .form, .fbody, .fgrid, .dpane { height: auto; overflow: visible; display: block; } .ipane { display: none; } .icard { break-inside: avoid; } }
 
-.mtbl { width: 100%; border-collapse: collapse; margin: 8px 0; } .mtbl th { background: var(--th); color: var(--th-text); font-weight: 600; font-size: 13px; padding: 6px 8px; text-align: left; border: 1px solid var(--cell-line); }
-.mtbl td { padding: 6px 8px; border: 1px solid var(--cell-line); vertical-align: middle; } .mtbl input { width: 100%; min-width: 80px; font-size: 18px; padding: 8px; }
 
 .pdfbody { padding-bottom: 90px; max-width: 760px; width: 100%; margin: 0 auto; } .pdfbody .card { position: relative; } .pdfbody h4 { margin-bottom: 8px; }
 .stepno { position: absolute; left: 14px; top: 14px; width: 28px; height: 28px; border-radius: 50%; background: var(--primary); color: #fff; display: grid; place-items: center; font-weight: 700; }

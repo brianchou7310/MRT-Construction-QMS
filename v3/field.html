@@ -92,7 +92,6 @@
       <div class="infobox mt"><div><div class="small muted">預定會驗</div><b>{{ Q.fmtFull(selReq.scheduledAt) }}</b></div><div><div class="small muted">申請人</div><b>{{ selReq.applicant }}</b></div><div><div class="small muted">回覆期限</div><b :style="selReq.status==='pending' && selReq.replyDue<now?'color:var(--ng)':''">{{ Q.fmtFull(selReq.replyDue) }}</b></div><div><div class="small muted">會驗人員</div><b>{{ selReq.inspector || '未指派' }}</b></div></div>
       <h4 class="mt">廠商自主檢查</h4>
       <div class="small muted">檢查標準</div><div class="pre">{{ selReq.std }}</div>
-      <div class="row wrap mt"><span class="chip blue big" v-for="c in reqChips(selReq)">{{ c.label }} <b>{{ c.v }}</b> {{ c.unit }}</span></div>
       <div class="thumbs mt"><div class="photo th" v-for="(p,i) in reqPhotos(selReq)" :key="i"><img v-if="p && p!=='*'" :src="p"><span v-else>示範照片 {{ i+1 }}</span></div></div>
       <div class="alert warn mt" v-if="selReq.shortNotice">申請距會驗不足 {{ d.params.holdAdvanceHours }} 小時。原因：{{ selReq.shortReason }}</div>
       <div class="alert gray mt" v-if="lockedAfter(selReq).length">後續 {{ lockedAfter(selReq).map(x=>'★'+x).join('、') }} 已鎖定，待本停留點放行。</div>
@@ -182,9 +181,6 @@
           <div class="lockmsg" v-if="lockOf(it)">🔒 {{ lockOf(it) }}</div>
           <template v-else>
             <div class="linked" v-if="it.type==='linked'"><a @click="linkShow=it.linked">開啟 表{{ it.linked }} {{ linkName(it.linked) }}</a><span class="chip ok" v-if="cur.linked[it.linked]">已完成 ○</span><span class="chip" v-else>未完成</span></div>
-            <div class="field" v-for="f in it.fields" :key="f.key"><label>{{ f.label }}</label><input type="number" inputmode="decimal" step="any" v-model="ensure(it.no).values[f.key]" @input="queueSave" :disabled="!itemEditable(it)"><span class="unit">{{ f.unit }}</span><span class="rg muted small" v-if="Q.rangeText(f)">{{ Q.rangeText(f) }}</span></div>
-            <div class="alert ok" v-if="sugg(it)==='ok'">實測值皆在容許範圍內，系統建議判定 ○ <a v-if="itemEditable(it) && ans(it.no).judge!=='ok'" @click="useSuggest(it)">套用</a></div>
-            <div class="alert ng" v-if="sugg(it)==='ng'">實測值超出容許範圍，系統建議判定 ╳ <a v-if="itemEditable(it) && ans(it.no).judge!=='ng'" @click="useSuggest(it)">套用</a></div>
             <div class="photos" v-if="it.photo || ans(it.no).photos.length">
               <div class="photo th" v-for="(p,i) in ans(it.no).photos" :key="i" @click="delPhoto(it,i)"><img v-if="p && p!=='*'" :src="p"><span v-else>示範照片</span></div>
               <button class="cam" :disabled="!itemEditable(it)" @click="addPhoto(it)">📷<small>拍照</small></button><button class="cam demo" :disabled="!itemEditable(it)" @click="addDemoPhoto(it)">🖼<small>示範照片</small></button>
@@ -265,13 +261,7 @@
           <div class="row"><h3 class="grow"><span class="muted">{{ it.no }}.</span> <span class="star" v-if="it.hold">★</span>{{ it.name }} <span class="chip warn" v-if="sp.focusNo===it.no">本次會驗項目</span></h3><a v-if="it.ref" @click="docShow=it.ref">參考文件</a></div>
           <div class="std pre">標準：{{ it.std || '—' }}</div>
           <div class="linked" v-if="it.type==='linked'"><span>連結表單：表{{ it.linked }} {{ linkName(it.linked) }}</span><span class="chip" :class="spSc && spSc.linked[it.linked] ? 'ok' : ''">廠商{{ spSc && spSc.linked[it.linked] ? '已完成 ○' : '未完成' }}</span></div>
-          <table class="mtbl" v-if="it.fields.length"><thead><tr><th>項目／標準</th><th>廠商自檢</th><th>抽查實測</th><th>判定</th></tr></thead><tbody>
-            <tr v-for="f in it.fields" :key="f.key"><td>{{ f.label }}<div class="small muted">{{ Q.rangeText(f) }} {{ f.unit }}</div></td>
-              <td>{{ spSelfVals(it)[f.key] ?? '—' }} {{ spSelfVals(it)[f.key] !== undefined && spSelfVals(it)[f.key] !== '' ? f.unit : '' }}</td>
-              <td><input type="number" inputmode="decimal" step="any" v-model="spA(it.no).values[f.key]" @input="spSave" :disabled="!spEditable"></td>
-              <td><span class="chip" :class="Q.evalField(f, spA(it.no).values[f.key])==='ok'?'ok':Q.evalField(f, spA(it.no).values[f.key])==='ng'?'ng':''" v-if="Q.rangeText(f)">{{ Q.evalField(f, spA(it.no).values[f.key])==='ok'?'符合':Q.evalField(f, spA(it.no).values[f.key])==='ng'?'超出':'—' }}</span></td></tr></tbody></table>
-          <div class="alert ok" v-if="spSugg(it)==='ok'">實測值皆在容許範圍內，系統建議判定 ○ <a v-if="spEditable && spA(it.no).judge!=='ok'" @click="spUseSuggest(it)">套用</a></div>
-          <div class="alert ng" v-if="spSugg(it)==='ng'">實測值超出容許範圍，系統建議判定 ╳ <a v-if="spEditable && spA(it.no).judge!=='ng'" @click="spUseSuggest(it)">套用</a></div>
+          <div class="small" v-if="spSelfJudge(it)">廠商自檢判定：<span class="chip" :class="spSelfJudge(it)==='ok'?'ok':spSelfJudge(it)==='ng'?'ng':''">{{ Q.JUDGE[spSelfJudge(it)] }}</span></div>
           <div class="photos" v-if="it.photo || spA(it.no).photos.length || it.hold">
             <div class="photo th" v-for="(p,i) in spA(it.no).photos" :key="i" @click="spDelPhoto(it,i)"><img v-if="p && p!=='*'" :src="p"><span v-else>示範照片</span></div>
             <button class="cam" :disabled="!spEditable" @click="spPhoto(it)">📷<small>拍照</small></button><button class="cam demo" :disabled="!spEditable" @click="spDemoPhoto(it)">🖼<small>示範照片</small></button>
