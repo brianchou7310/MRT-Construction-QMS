@@ -167,9 +167,10 @@ createApp({
     const SW_HEAD = ['項次', '分項工程', '數量', '單位', '狀態'], SW_ST = ['施工中', '未開始', '已完成'];
     const swImp = ref(null);
     function openSwImp() { if (!selTenderId.value) return toast('請先選擇標案', true); swImp.value = { fileName: '', rows: [], err: '', mode: 'upsert' }; }
+    // 匯入樣本：標案尚無分項工程 → 空白樣本（標題＋一列範例）；已有分項工程 → 帶出現有全部分項工程，可直接修改後匯入
     function swSample() {
-      const cur = d.subworks.filter(s => s.tenderId === selTenderId.value).sort((a, b) => a.order - b.order).slice(0, 2).map(s => [s.no, s.name, s.qty, s.unit, s.status]);
-      return [SW_HEAD].concat(cur, [['99', '（範例）新增分項工程名稱', 100, 'M', '未開始']]);
+      const cur = d.subworks.filter(s => s.tenderId === selTenderId.value).sort((a, b) => a.order - b.order).map(s => [s.no, s.name, s.qty, s.unit, s.status]);
+      return cur.length ? [SW_HEAD].concat(cur) : [SW_HEAD, ['99', '（範例）新增分項工程名稱', 100, 'M', '未開始']];
     }
     function downloadSwSample() {
       const ws = XLSX.utils.aoa_to_sheet(swSample()); ws['!cols'] = [8, 36, 10, 8, 10].map(w => ({ wch: w }));
