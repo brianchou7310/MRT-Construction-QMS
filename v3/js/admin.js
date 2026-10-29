@@ -412,7 +412,7 @@ createApp({
       forms.forEach(f => { if (forms.filter(x => x.code === f.code).length > 1 && !f.errs.some(e => e.includes('重複'))) f.errs.push(`表單第 ${f.line} 列：表號 ${f.code} 在「表單」工作表出現多次`); });
       // 檢查項目
       b.loose = [];
-      const iSeen = {};
+      const iSeen = {}, skippedRef = new Set();
       shI.filter(r => r['表號'] !== '' && r['表號'] != null).forEach(r => {
         const code = String(r['表號']).trim(), fm = byCode[code], L = `檢查項目第 ${r._line} 列`;
         if (!fm) { b.loose.push(`${L}：表號 ${code} 不在「表單」工作表`); return; }
@@ -428,12 +428,13 @@ createApp({
           if (!it.stage || !it.name || !it.typeText) e.push(`${L}：階段、檢查項目、判定類型必填`);
           if (it.stage && !fm.stageNames.includes(it.stage)) e.push(`${L}：階段「${it.stage}」不在此表單的階段（${fm.stageNames.join('／')}）`);
           if (it.typeText && !it.type) e.push(`${L}：判定類型「${it.typeText}」須為 選項／照片／文字／連結表單`);
-          if (it.ref && !d.docs.some(x => x.code === it.ref && x.projKey === swKey)) e.push(`${L}：引用文件編號「${it.ref}」不存在於 ${swKey} 的參考文件`);
+          if (it.ref && !d.docs.some(x => x.code === it.ref && x.projKey === swKey)) { skippedRef.add(it.ref); it.ref = ''; }   // 引用文件不存在（例如跨標案匯入）：略過不檢核，匯入後不帶引用
           if (it.type === 'linked' && !it.linked) e.push(`${L}：判定類型為連結表單時須填連結表號`);
           if (it.linked && !fileSelf.includes(it.linked) && !sysSelf(it.linked)) e.push(`${L}：連結表號「${it.linked}」不存在`);
         }
         fm.items.push(it);
       });
+      if (skippedRef.size) b.loose.push(`引用文件編號 ${[...skippedRef].join('、')} 不存在於 ${swKey} 的參考文件，已略過（匯入後該項目不引用文件）`);
       for (const fm of forms) fm.items.filter(i => i.ex && i.unit).forEach(i => { if (!fm.items.some(x => !x.unit && x.no === i.no)) fm.errs.push(`檢查項目第 ${i.line} 列：排除的項次 ${i.no} 沒有對應的共用項目`); });
       // 依單元展開（共用＋單元覆蓋），並檢查展開後的結果
       forms.forEach(fm => {
