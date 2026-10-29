@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="images/logo.png">
+<title>捷運施工查驗系統 - 後台管理 v3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/common.css">
+<link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+<div id="app" v-cloak>
+<template v-if="loaded">
+<header class="app-header">
+  <button class="btn sm hamburger" style="background:transparent;color:#fff;border-color:#fff" @click="menuOpen=!menuOpen">☰</button>
+  <img class="logo-img" src="images/logo.png" alt="捷運工程局">
+  <h1>捷運施工查驗系統</h1>
+  <div class="right"><span class="chip hide-sm">雛形示範資料</span><a href="field.html" target="_blank" class="hide-sm">現場作業</a><span class="user" title="切換身份（雛形示範）"><span class="avatar">{{ dept ? dept : '管' }}</span><select class="id-sel" :value="dept" @change="setDept($event.target.value)"><option value="">系統管理員（全部標案）</option><option v-for="x in Q.DEPTS" :key="x.id" :value="x.id">{{ x.name }}（{{ x.id }}）</option></select></span></div>
+</header>
+<div class="layout">
+  <!-- 側邊選單 -->
+  <aside class="side" :class="{open: menuOpen}">
+    <template v-for="g in navTree">
+      <a v-if="g.link" class="lvl1" :class="{on: page===g.link[0]}" @click="go(g.link[0])"><span>{{ g.link[1] }}</span></a>
+      <template v-else>
+        <div class="grp" :class="{closed: collapsed[g.group]}" @click="toggleGroup(g.group)" role="button" :aria-expanded="!collapsed[g.group]">
+          <span>{{ g.group }}</span>
+          <span class="badge" v-if="collapsed[g.group] && g.items.some(i=>i[2]==='badge') && openReqs.length">{{ openReqs.length }}</span>
+          <span class="chev">⌄</span>
+        </div>
+        <div class="sub" v-show="!collapsed[g.group]">
+          <a v-for="n in g.items" :key="n[0]" :class="{on: page===n[0]}" @click="go(n[0])">
+            <span>{{ n[1] }}</span>
+            <span class="badge" v-if="n[2]==='badge' && openReqs.length">{{ openReqs.length }}</span>
+            <span class="badge" v-if="n[2]==='dbadge' && openDefects.length">{{ openDefects.length }}</span>
+          </a>
+        </div>
+      </template>
+    </template>
+    <div class="bottom">
+      <a href="field.html" target="_blank">→ 開啟現場作業（平板／手機）</a>
+      <a @click="resetDemo">↺ 還原示範資料</a>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="crumbbar"><span class="ic">☰</span><span>{{ titles[page] || '' }}</span></div>
+
+    <div class="content">
+
+<!-- ================= 停留點會驗管理 ================= -->
+<template v-if="page==='holds'">
+  <div class="page-head">
+    <div><h1>停留點會驗管理</h1><div class="muted">規則：廠商須於會驗前 {{ d.params.holdAdvanceHours }} 小時申請・監造須於 {{ d.params.replyHours }} 小時內回覆・逾時寄 Email 提醒並通知主管</div></div>
+    <div class="row"><select v-model="tenderFilter" style="width:auto"><option value="all">全部標別</option><option v-for="t in d.tenders" :value="t.id">{{ Q.tLabel(t) }}</option></select><button class="btn" @click="calView=!calView">{{ calView?'切換清單檢視':'切換日曆檢視' }}</button></div>
+  </div>
+  <div class="tabs"><a v-for="t in holdTabs" :key="t[0]" :class="{on: holdTab===t[0]}" @click="holdTab=t[0]">{{ t[1] }} {{ holdCount(t[0]) }}</a></div>
+  <div class="cols3">
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="tbl-scroll"><table class="table">
+        <thead><tr><th>申請編號</th><th>停留點項目</th><th>位置</th><th>預定會驗</th><th>回覆期限</th></tr></thead>
+        <tbody v-if="!calView">
+          <tr v-for="r in holdList" :key="r.id" class="click" :class="{sel: r.id===selReqId}" @click="selReqId=r.id">
+            <td class="nowrap">{{ r.id }}</td><td>{{ r.checkName }}<br><span class="star">★ {{ r.title }}</span></td><td>{{ r.location }}</td><td class="nowrap">{{ Q.fmtDT(r.scheduledAt) }}</td>
+            <td><span class="chip" v-if="r.status==='pending'" :class="rel(r.replyDue).late?'ng':rel(r.replyDue).soon?'warn':''">{{ rel(r.replyDue).text }}</span><span class="chip" v-else :class="reqCls(r)">{{ Q.REQ_TEXT[r.status] }}</span></td>
+          </tr>
+          <tr v-if="!holdList.length"><td colspan="5" class="muted">沒有資料</td></tr>
+        </tbody>
+        <tbody v-else v-for="g in holdByDate" :key="g[0]">
+          <tr class="stage-row"><td colspan="5">{{ g[0] }}</td></tr>
+          <tr v-for="r in g[1]" :key="r.id" class="click" :class="{sel: r.id===selReqId}" @click="selReqId=r.id"><td>{{ r.id }}</td><td><span class="star">★ {{ r.title }}</span></td><td>{{ r.location }}</td><td>{{ Q.fmtDT(r.scheduledAt).slice(6) }}</td><td><span class="chip" :class="reqCls(r)">{{ Q.REQ_TEXT[r.status] }}</span></td></tr>
+        </tbody>
+      </table></div>
+    </div>
+    <div class="card" v-if="selReq">
+      <div class="row"><span class="muted small grow">{{ selReq.id }}</span><span class="chip" :class="reqCls(selReq)">{{ Q.REQ_TEXT[selReq.status] }}<template v-if="selReq.status==='pending' && selReq.replyDue<now">・已逾時</template></span></div>
+      <h3 class="mt star" style="font-size:19px">★ {{ selReq.title }}</h3>
+      <div class="muted">{{ selReq.tenderCode }}｜{{ selReq.subworkName }}｜{{ selReq.location }}</div>
+      <div class="form-grid mt">
+        <div><div class="muted small">預定會驗時間</div>{{ Q.fmtFull(selReq.scheduledAt) }}</div><div><div class="muted small">申請送出</div>{{ Q.fmtFull(selReq.appliedAt) }}</div>
+        <div><div class="muted small">檢查標準</div><div class="pre">{{ selReq.std }}</div></div>
+        <div><div class="muted small">廠商自主檢查</div>{{ selReq.checkName || '—' }}<template v-if="selReq.itemNo"> 第 {{ selReq.itemNo }} 項</template></div>
+      </div>
+      <div class="row wrap mt" v-if="reqChips(selReq).length"><span class="chip blue" v-for="c in reqChips(selReq)">{{ c }}</span></div>
+      <div class="alert warn mt" v-if="selReq.shortNotice">申請距會驗僅 {{ hoursBefore(selReq) }} 小時，少於規定的 {{ d.params.holdAdvanceHours }} 小時。原因：{{ selReq.shortReason }}</div>
+      <div class="alert gray mt" v-if="lockedAfter(selReq).length">後續項目「{{ lockedAfter(selReq).map(x=>'★'+x).join('」「') }}」已鎖定，待本停留點合格放行。</div>
+      <h4 class="mt mb">通知歷程</h4>
+      <ul class="timeline"><li v-for="n in selReq.notices" :class="n.level">{{ Q.fmtDT(n.at) }} {{ n.text }}</li></ul>
+      <template v-if="selReq.status==='pending' || selReq.status==='scheduled'">
+        <hr style="border:0;border-top:1px solid var(--line)">
+        <h4 class="mb">排定會驗時間與人員</h4>
+        <input type="datetime-local" v-model="sched.dt"><select class="mt" v-model="sched.inspector"><option v-for="u in supervisors" :value="u.name">{{ u.org }} {{ u.role }}（{{ u.name }}）</option></select>
+        <div class="mt" v-if="sched.rejecting"><label class="f">退回原因</label><textarea rows="2" v-model="sched.reason"></textarea>
+          <div class="row mt"><button class="btn danger" @click="doReject">確認退回</button><button class="btn" @click="sched.rejecting=false">取消</button></div></div>
+        <div class="row mt" v-else><button class="btn primary grow" @click="doSchedule">{{ selReq.status==='pending'?'確認排定':'改期' }}</button><button class="btn danger" @click="sched.rejecting=true">退回</button></div>
+        <template v-if="selReq.status==='scheduled'"><label class="f mt" v-if="sched.tplOpts.length">會驗使用的抽查紀錄表</label><select v-if="sched.tplOpts.length" v-model="sched.tplId"><option v-for="o in sched.tplOpts" :key="o.id" :value="o.id">{{ o.name }}</option></select>
+        <div class="row mt"><button class="btn green grow" @click="doStart">開始會驗（建立抽查紀錄）</button></div></template>
+      </template>
+      <div class="mt" v-if="selReq.status==='inspecting'"><div class="alert info">抽查進行中，請至「現場作業」頁完成抽查紀錄與簽認。</div>
+        <template v-if="sched.cancelling"><label class="f mt">取消原因（必填）</label><textarea rows="2" v-model="sched.reason"></textarea><div class="row mt"><button class="btn danger" @click="doCancel">確認取消會驗</button><button class="btn" @click="sched.cancelling=false">返回</button></div></template>
+        <div class="row mt" v-else><button class="btn danger" @click="sched.cancelling=true;sched.reason=''">取消會驗（抽查草稿作廢）</button></div></div>
+      <div class="alert ng mt" v-if="selReq.status==='rejected'">退回原因：{{ selReq.rejectReason || '—' }}</div>
+    </div>
+  </div>
+</template>
+
+<!-- ================= 自主檢查 / 抽查紀錄 ================= -->
+<template v-if="page==='selfchecks'">
+  <div class="page-head"><div><h1>自主檢查紀錄</h1><div class="muted">廠商於現場填寫的自主檢查表（含草稿）</div></div></div>
+  <div class="card mb"><div class="row wrap" style="gap:8px">
+    <select :value="qf.self.proj" @change="qfSet('self','proj',$event.target.value)" style="width:auto"><option value="">全部區段標／單一標</option><option v-for="o in projOpts" :key="o.v" :value="o.v">{{ o.l }}</option></select>
+    <select :value="qf.self.tender" @change="qfSet('self','tender',$event.target.value)" style="width:auto;max-width:260px"><option value="">全部標號</option><option v-for="t in tendersOfProj(qf.self.proj)" :key="t.id" :value="t.id">{{ Q.tLabel(t) }}</option></select>
+    <select :value="qf.self.sw" @change="qfSet('self','sw',$event.target.value)" style="width:auto;max-width:240px"><option value="">全部工項</option><option v-for="o in qfOpts.self.sws" :key="o.v" :value="o.v">{{ o.l }}</option></select>
+    <select :value="qf.self.unit" @change="qfSet('self','unit',$event.target.value)" style="width:auto" :disabled="!qfOpts.self.units.length"><option value="">{{ qfOpts.self.units.length ? '全部單元' : '（無單元）' }}</option><option v-for="o in qfOpts.self.units" :key="o.v" :value="o.v">{{ o.l }}</option></select>
+    <a class="small" v-if="qf.self.proj||qf.self.tender||qf.self.sw||qf.self.unit" @click="qfClear('self')">清除條件</a>
+    <span class="grow"></span><span class="muted small">共 {{ qfList.self.length }} 筆<template v-if="qfList.self.length!==d.selfChecks.length"> ／ {{ d.selfChecks.length }}</template></span>
+  </div></div>
+  <div class="card tbl-scroll"><table class="table"><thead><tr><th>編號</th><th>區段標</th><th>標號</th><th>工項</th><th>單元</th><th>表單</th><th>位置</th><th>日期</th><th>進度</th><th>狀態</th></tr></thead><tbody>
+    <tr v-for="s in qfList.self" :key="s.id" class="click" @click="showSC=s">
+      <td class="nowrap">{{ s.id }}</td><td class="nowrap">{{ projOf(s) }}</td><td class="nowrap">{{ s.tenderCode }}</td><td>{{ swText(s) }}</td><td class="nowrap">{{ s.unit || '—' }}</td><td>表{{ s.templateCode }} {{ s.templateName }} <span class="chip">v{{ s.templateVer }}</span> <span class="chip warn" v-if="s.fillMode==='pdf'">PDF</span></td><td class="small">{{ s.location }}</td><td>{{ Q.fmtD(s.date) }}</td>
+      <td><template v-if="s.fillMode==='pdf'"><span class="chip" :class="wfCls(s.wfStatus)">{{ s.wfStatus }}</span> <span class="small muted" v-if="s.wfStatus==='鎖定中'">鎖定人 {{ s.lockedBy }}</span></template><template v-else>{{ Object.values(s.answers).filter(a=>a.judge).length }} / {{ (tplOf(s.templateId)||{items:[]}).items.length }}</template></td><td><span class="chip" :class="s.status==='signed'?'ok':'warn'">{{ s.status==='signed'?'已簽認':'填寫中' }}</span></td></tr>
+    <tr v-if="!qfList.self.length"><td colspan="10" class="muted">沒有符合條件的紀錄</td></tr>
+  </tbody></table></div>
+</template>
+<template v-if="page==='spots'">
+  <div class="page-head"><div><h1>抽查紀錄</h1><div class="muted">監造於現場填寫的抽查記錄表（檢驗停留點會驗或隨機抽查）</div></div></div>
+  <div class="card mb"><div class="row wrap" style="gap:8px">
+    <select :value="qf.spot.proj" @change="qfSet('spot','proj',$event.target.value)" style="width:auto"><option value="">全部區段標／單一標</option><option v-for="o in projOpts" :key="o.v" :value="o.v">{{ o.l }}</option></select>
+    <select :value="qf.spot.tender" @change="qfSet('spot','tender',$event.target.value)" style="width:auto;max-width:260px"><option value="">全部標號</option><option v-for="t in tendersOfProj(qf.spot.proj)" :key="t.id" :value="t.id">{{ Q.tLabel(t) }}</option></select>
+    <select :value="qf.spot.sw" @change="qfSet('spot','sw',$event.target.value)" style="width:auto;max-width:240px"><option value="">全部工項</option><option v-for="o in qfOpts.spot.sws" :key="o.v" :value="o.v">{{ o.l }}</option></select>
+    <select :value="qf.spot.unit" @change="qfSet('spot','unit',$event.target.value)" style="width:auto" :disabled="!qfOpts.spot.units.length"><option value="">{{ qfOpts.spot.units.length ? '全部單元' : '（無單元）' }}</option><option v-for="o in qfOpts.spot.units" :key="o.v" :value="o.v">{{ o.l }}</option></select>
+    <a class="small" v-if="qf.spot.proj||qf.spot.tender||qf.spot.sw||qf.spot.unit" @click="qfClear('spot')">清除條件</a>
+    <span class="grow"></span><span class="muted small">共 {{ qfList.spot.length }} 筆<template v-if="qfList.spot.length!==d.spotChecks.length"> ／ {{ d.spotChecks.length }}</template></span>
+  </div></div>
+  <div class="card tbl-scroll"><table class="table"><thead><tr><th>編號</th><th>區段標</th><th>標號</th><th>工項</th><th>單元</th><th>表單</th><th>位置</th><th>抽查時機</th><th>抽查結果</th><th>狀態</th></tr></thead><tbody>
+    <tr v-for="s in qfList.spot" :key="s.id" class="click" @click="showSP=s"><td class="nowrap">{{ s.id }}</td><td class="nowrap">{{ projOf(s) }}</td><td class="nowrap">{{ s.tenderCode }}</td><td>{{ swText(s) }}</td><td class="nowrap">{{ s.unit || '—' }}</td><td>{{ s.templateName }} <span class="chip">v{{ s.templateVer }}</span> <span class="chip warn" v-if="s.fillMode==='pdf'">PDF</span></td><td class="small">{{ s.location }}</td>
+      <td><span class="chip warn" v-if="s.kind==='hold'">檢驗停留點<template v-if="s.title">：★{{ s.title }}</template></span><span class="chip" v-else>隨機抽查</span></td>
+      <td><template v-if="s.fillMode==='pdf'"><span class="chip" :class="s.wfStatus==='已結案'?'ok':''">PDF 紀錄・{{ s.wfStatus }}</span></template><template v-else>○ {{ spotCount(s,'ok') }}　<span style="color:var(--ng)">╳ {{ spotCount(s,'ng') }}</span>　╱ {{ spotCount(s,'na') }}</template></td>
+      <td><span class="chip" :class="s.status==='signed'?'ok':'warn'">{{ s.status==='signed'?'已簽認':'填寫中' }}</span></td></tr>
+    <tr v-if="!qfList.spot.length"><td colspan="10" class="muted">沒有符合條件的紀錄</td></tr>
+  </tbody></table></div>
+</template>
+<template v-if="page==='export'">
+  <div class="page-head"><div><h1>批次下載</h1><div class="muted">依查詢條件下載自主檢查表、抽查紀錄表的填寫內容（表單版面 PDF）。批次下載會打包成 ZIP，並附「下載清單.xlsx」；以空白範本 PDF 填寫的紀錄附簽名後的 PDF。</div></div></div>
+  <div class="card mb"><div class="row wrap" style="gap:8px">
+    <select :value="ex.proj" @change="exSet('proj',$event.target.value)" style="width:auto"><option value="">全部區段標／單一標</option><option v-for="o in projOpts" :key="o.v" :value="o.v">{{ o.l }}</option></select>
+    <select :value="ex.tender" @change="exSet('tender',$event.target.value)" style="width:auto;max-width:260px"><option value="">全部標號</option><option v-for="t in tendersOfProj(ex.proj)" :key="t.id" :value="t.id">{{ Q.tLabel(t) }}</option></select>
+    <select :value="ex.sw" @change="exSet('sw',$event.target.value)" style="width:auto;max-width:240px"><option value="">全部工項</option><option v-for="o in exOpts.sws" :key="o.v" :value="o.v">{{ o.l }}</option></select>
+    <select :value="ex.unit" @change="exSet('unit',$event.target.value)" style="width:auto" :disabled="!exOpts.units.length"><option value="">{{ exOpts.units.length ? '全部單元' : '（無單元）' }}</option><option v-for="o in exOpts.units" :key="o.v" :value="o.v">{{ o.l }}</option></select>
+    <select :value="ex.kind" @change="exSet('kind',$event.target.value)" style="width:auto"><option value="">全部表單類別</option><option value="self">自主檢查表</option><option value="spot">抽查紀錄表</option></select>
+    <select :value="ex.tpl" @change="exSet('tpl',$event.target.value)" style="width:auto;max-width:280px"><option value="">全部表單</option><option v-for="o in exOpts.tpls" :key="o.v" :value="o.v">{{ o.l }}</option></select>
+    <select v-model="ex.status" style="width:auto"><option value="">全部狀態</option><option value="signed">已簽認</option><option value="draft">填寫中</option></select>
+    <a class="small" v-if="ex.proj||ex.tender||ex.sw||ex.unit||ex.kind||ex.tpl||ex.status" @click="exClear">清除條件</a>
+    <span class="grow"></span><span class="muted small">共 {{ exList.length }} 筆<template v-if="exList.length!==exRows.length"> ／ {{ exRows.length }}</template></span>
+    <button class="btn primary" :disabled="!exList.length || !!ex.busy" @click="downloadBatch">{{ ex.busy ? '產生中 ' + ex.busy : '⬇ 批次下載（' + exList.length + ' 筆，ZIP）' }}</button>
+  </div></div>
+  <div class="card tbl-scroll"><table class="table"><thead><tr><th>類別</th><th>紀錄編號</th><th>表單</th><th>區段標</th><th>標號</th><th>分項工程</th><th>單元</th><th>日期</th><th>狀態</th><th></th></tr></thead><tbody>
+    <tr v-for="x in exList" :key="x.kind+x.r.id"><td class="nowrap"><span class="chip" :class="x.kind==='self'?'blue':'warn'">{{ x.kind==='self'?'自主檢查表':'抽查紀錄表' }}</span></td><td class="nowrap">{{ x.r.id }}</td>
+      <td>{{ x.kind==='self' ? '表'+recCode(x.r)+' ' : '' }}{{ x.r.templateName }} <span class="chip">v{{ x.r.templateVer }}</span> <span class="chip warn" v-if="x.r.fillMode==='pdf'">PDF</span><span class="chip warn" v-if="x.kind==='spot' && x.r.kind==='hold'">★停留點</span></td>
+      <td class="nowrap">{{ projOf(x.r) }}</td><td class="nowrap">{{ x.r.tenderCode }}</td><td>{{ x.r.subworkName }}</td><td class="nowrap">{{ x.r.unit || '—' }}</td><td class="nowrap">{{ Q.fmtD(x.date) }}</td>
+      <td><span class="chip" :class="x.r.status==='signed'?'ok':'warn'">{{ x.r.status==='signed'?'已簽認':'填寫中' }}</span></td>
+      <td class="nowrap"><button class="btn sm" @click="downloadRec(x.kind, x.r)">⬇ PDF</button></td></tr>
+    <tr v-if="!exList.length"><td colspan="10" class="muted">沒有符合條件的表單</td></tr>
+  </tbody></table></div>
+</template>
+<template v-if="page==='defects'">
+  <div class="page-head"><div><h1>缺失追蹤</h1><div class="muted">自主檢查或抽查判定「╳ 缺失」時自動建立，改善期限 {{ d.params.defectDueDays }} 天</div></div>
+    <select v-model="tenderFilter" style="width:auto"><option value="all">全部標別</option><option v-for="t in d.tenders" :value="t.id">{{ Q.tLabel(t) }}</option></select></div>
+  <div class="tabs"><a :class="{on:defTab==='open'}" @click="defTab='open'">未結案</a><a :class="{on:defTab==='closed'}" @click="defTab='closed'">已結案</a><a :class="{on:defTab==='all'}" @click="defTab='all'">全部</a></div>
+  <div class="card tbl-scroll"><table class="table"><thead><tr><th>編號</th><th>缺失</th><th>位置</th><th>來源</th><th>改善期限</th><th>狀態</th><th></th></tr></thead><tbody>
+    <tr v-for="x in defList" :key="x.id"><td>{{ x.id }}</td><td><b>{{ x.title }}</b></td><td>{{ x.location }}</td><td>{{ x.source }}</td><td>{{ Q.fmtD(x.due) }}</td><td><span class="chip" :class="defCls(x)">{{ defText(x) }}</span></td>
+      <td class="nowrap"><button class="btn sm primary" v-if="x.status==='review'" @click="defAct(x)">複查</button><span class="small muted" v-else-if="x.status==='open'">待廠商改善</span><button class="btn sm" v-else @click="defAct(x)">檢視</button></td></tr>
+    <tr v-if="!defList.length"><td colspan="7" class="muted">沒有資料</td></tr></tbody></table></div>
+</template>
+
+<!-- 新增標案：由標案管理系統挑選 -->
+<div class="modal-bg" v-if="pick" @click.self="pick=null"><div class="modal wide"><h3>新增標案（{{ deptName }}<template v-if="dept">・{{ dept }}</template>）</h3>
+  <div class="muted small mb">資料來源：標案管理系統。列出{{ dept ? '本部門' : '全部' }}的區段標及其底下全部子標，以及{{ dept ? '本部門' : '全部' }}的單一標；勾選子標或單一標加入查驗系統。</div>
+  <div class="row wrap mb" style="gap:8px"><input type="search" v-model="pick.q" placeholder="搜尋標號、名稱、承包商" style="max-width:260px">
+    <select v-model="pick.step" style="width:auto"><option value="">全部階段</option><option v-for="(v,k) in Q.STEP_TEXT" :key="k" :value="k">{{ v }}</option></select>
+    <span class="grow"></span><span class="muted small">符合 {{ pickData.total }} 筆<template v-if="pickData.more">（僅顯示前 300 筆，請輸入條件縮小範圍）</template></span></div>
+  <div class="pick-list">
+    <div v-if="!pickData.groups.length && !pickData.singles.length" class="muted" style="padding:12px">沒有符合條件的標案</div>
+    <template v-for="x in pickData.groups" :key="x.g.PROJ_ID">
+      <div class="pk-grp"><a @click="pick.open[x.g.PROJ_ID] = pick.open[x.g.PROJ_ID]===false"><i class="tw">{{ pick.open[x.g.PROJ_ID]===false ? '▸' : '▾' }}</i><b>{{ x.g.PROJ_ID }}</b> {{ x.g.PROJ_NAME_C }}</a>
+        <span class="muted small nowrap">{{ Q.STEP_TEXT[x.g.STEP_TYPE] || '—' }}・子標 {{ x.n }}</span><a class="small nowrap" v-if="x.items.some(i=>!i.have)" @click="pickGroupAll(x, !x.items.filter(i=>!i.have).every(i=>pick.sel[i.r.PROJ_ID]))">全選／取消</a></div>
+      <template v-if="pick.open[x.g.PROJ_ID]!==false"><label class="pk-row sub" v-for="i in x.items" :key="i.r.PROJ_ID" :class="{dis: i.have}">
+        <input type="checkbox" :disabled="i.have" :checked="i.have || pick.sel[i.r.PROJ_ID]" @change="pick.sel[i.r.PROJ_ID]=$event.target.checked">
+        <b class="nowrap">{{ i.r.PROJ_ID }}</b><span class="grow">{{ i.r.PROJ_NAME_C }}<span class="muted small">　{{ i.r.CONT_COMP_NAME_C || '' }}・{{ i.r.WORK_SECTION_NAME }}</span></span>
+        <span class="chip" :class="i.r.STEP_TYPE==='B'?'ok':''">{{ Q.STEP_TEXT[i.r.STEP_TYPE] || '—' }}</span><span class="chip blue" v-if="i.have">已加入</span></label></template>
+    </template>
+    <template v-if="pickData.singles.length"><div class="pk-grp"><b>單一標</b><span class="muted small">{{ pickData.singles.length }} 筆</span></div>
+      <label class="pk-row sub" v-for="i in pickData.singles" :key="i.r.PROJ_ID" :class="{dis: i.have}">
+        <input type="checkbox" :disabled="i.have" :checked="i.have || pick.sel[i.r.PROJ_ID]" @change="pick.sel[i.r.PROJ_ID]=$event.target.checked">
+        <b class="nowrap">{{ i.r.PROJ_ID }}</b><span class="grow">{{ i.r.PROJ_NAME_C }}<span class="muted small">　{{ i.r.CONT_COMP_NAME_C || '' }}・{{ i.r.WORK_SECTION_NAME }}</span></span>
+        <span class="chip" :class="i.r.STEP_TYPE==='B'?'ok':''">{{ Q.STEP_TEXT[i.r.STEP_TYPE] || '—' }}</span><span class="chip blue" v-if="i.have">已加入</span></label></template>
+  </div>
+  <div class="foot"><span class="grow muted small">已勾選 {{ pickSel.length }} 筆</span><button class="btn" @click="pick=null">取消</button><button class="btn primary" :disabled="!pickSel.length" @click="doPick">加入 {{ pickSel.length || '' }} 個標案</button></div></div></div>
+<!-- 缺失複查 -->
+<div class="modal-bg" v-if="defShow" @click.self="defShow=null"><div class="modal"><h3>缺失 {{ defShow.x.id }}｜{{ defShow.x.title }}</h3>
+  <div class="alert info mb">{{ defShow.x.location }}｜來源：{{ defShow.x.source }}｜期限 {{ Q.fmtD(defShow.x.due) }}｜<span class="chip" :class="defCls(defShow.x)">{{ defText(defShow.x) }}</span></div>
+  <template v-if="defShow.x.fix"><label class="f">廠商改善說明（{{ defShow.x.fix.by }}・{{ Q.fmtDT(defShow.x.fix.at) }}）</label><div class="pre">{{ defShow.x.fix.note }}</div>
+    <div class="row wrap mt" v-if="(defShow.x.fix.photos||[]).length"><div class="photo th" v-for="(p,i) in defShow.x.fix.photos" :key="i" style="width:120px;height:90px;overflow:hidden;border-radius:6px"><img v-if="p && p!=='*'" :src="p" style="width:100%;height:100%;object-fit:cover"><span v-else>示範照片</span></div></div></template>
+  <div class="alert warn" v-else-if="defShow.x.status==='review'">廠商未附改善說明（示範資料）。</div>
+  <template v-if="(defShow.x.history||[]).length"><h4 class="mt mb">處理歷程</h4><ul class="timeline"><li v-for="(h,i) in defShow.x.history" :key="i">{{ Q.fmtDT(h.at) }} {{ h.text }}</li></ul></template>
+  <template v-if="defShow.x.status==='review'">
+    <template v-if="defShow.rejecting"><label class="f mt">退回原因（必填）</label><textarea rows="2" v-model="defShow.reason"></textarea>
+      <div class="foot"><button class="btn" @click="defShow.rejecting=false">返回</button><button class="btn danger" @click="defReview(false)">確認退回</button></div></template>
+    <div class="foot" v-else><button class="btn" @click="defShow=null">取消</button><button class="btn danger" @click="defShow.rejecting=true">退回重新改善</button><button class="btn primary" @click="defReview(true)">複查合格・結案</button></div></template>
+  <div class="foot" v-else><button class="btn primary" @click="defShow=null">關閉</button></div></div></div>
+
+<!-- ================= 標案與分項工程 ================= -->
+<template v-if="page==='projects'">
+  <div class="page-head"><div><h1>標案與分項工程</h1></div></div>
+  <div class="cols2">
+    <div class="card"><div class="row mb"><h3 class="grow">標案架構</h3><button class="btn sm" @click="newTender">＋ 新增標案</button></div>
+      <div class="row small mb" style="gap:10px"><a @click="treeAll(true)">全部展開</a><a @click="treeAll(false)">全部收合</a><span class="muted">拖曳子標可調整順序</span></div>
+      <div class="tree">
+        <div class="muted small" v-if="!d.tenders.length" style="padding:10px 4px">{{ deptName }}尚未加入標案，請按「＋ 新增標案」從標案管理系統挑選。</div>
+        <template v-for="g in treeGroups" :key="g.key || '_'">
+          <a class="l1" @click="grpOpen[g.key || '_'] = !grpIsOpen(g)" :title="g.name"><span class="ell"><i class="tw">{{ grpIsOpen(g) ? '▾' : '▸' }}</i><b>{{ g.key ? g.code + ' 區段標' : '單一標' }}</b></span><span class="muted small nowrap">{{ g.items.length }} 標</span></a>
+          <template v-if="grpIsOpen(g)"><template v-for="t in g.items" :key="t.id">
+            <a class="l2 tdrag" :class="{on: selTenderId===t.id && !swPick, dragging: tDragId===t.id, over: tDragOver===t.id && tDragId!==t.id}" draggable="true" @dragstart="tDragStart($event,t)" @dragend="tDragEnd" @dragover.prevent="tDragOver=t.id" @dragleave="tDragOver===t.id && (tDragOver=null)" @drop.prevent="tDrop(t)" @click="pickTender(t)" :title="t.name + '（可拖曳調整順序）'"><span class="ell"><i class="tw" @click.stop="treeOpen[t.id]=!treeOpen[t.id]">{{ treeOpen[t.id] ? '▾' : '▸' }}</i>{{ Q.tLabel(t) }}</span><span class="muted small nowrap">{{ d.subworks.filter(s=>s.tenderId===t.id).length }} 項</span></a>
+            <template v-if="treeOpen[t.id]"><a class="l3" v-for="s in d.subworks.filter(s=>s.tenderId===t.id).sort((a,b)=>a.order-b.order)" :key="s.id" :class="{on: swPick===s.id}" @click="pickSw(s)" :title="s.no + '、' + s.name"><span class="ell">{{ s.no }}、{{ s.name }}</span></a></template>
+          </template></template>
+        </template></div></div>
+    <div>
+      <div class="card mb" v-if="selTender.id">
+        <div class="row"><h2 class="grow">{{ selTender.name }} <span class="chip" :class="selTender.step==='B'?'ok':''">{{ selTender.status }}</span></h2><button class="btn sm danger" @click="delTender(selTender)" title="移除此標案（已有填寫紀錄者不可移除）">移除標案</button></div>
+        <div class="muted small mt" v-if="selTender.parentCode">隸屬 {{ selTender.parentCode }} {{ selTender.parentName }}</div>
+        <div class="kv"><div><div class="k">標案編號</div>{{ selTender.code }}<span class="muted small">（{{ Q.PROJ_TYPE_TEXT[selTender.type] || '—' }}）</span></div><div><div class="k">契約編號</div>{{ selTender.contId || '—' }}</div><div><div class="k">路線</div>{{ selTender.line || '—' }}</div><div><div class="k">承包商</div>{{ selTender.contractor || '—' }}</div><div><div class="k">監造工務所</div>{{ selTender.sectionName || '—' }}<span class="muted small" v-if="selTender.sectionId">（{{ selTender.sectionId }}）</span></div><div><div class="k">開工日／預定完工日</div>{{ selTender.start || '—' }} ～ {{ selTender.end || '—' }}</div><div><div class="k">契約金額</div>{{ selTender.amount ? 'NT$ ' + Number(selTender.amount).toLocaleString() : '—' }}</div><div><div class="k">主要施工地點</div>{{ selTender.site || '—' }}</div></div>
+      </div>
+      <div class="card">
+        <h3>分項工程（主要施工項目）</h3><div class="muted small mb">共 {{ swAll.length }} 項・已設定檢查表 {{ swAll.filter(s=>swTplText(s,'self')!=='未設定').length }} 項・以 ▲▼ 調整工序順序</div>
+        <div class="alert info mb row" v-if="swPick"><span class="grow">已篩選分項工程：<b>{{ (d.subworks.find(s=>s.id===swPick)||{}).name }}</b></span><a @click="swPick=null">✕ 顯示全部</a></div>
+        <div class="row wrap mb"><input type="search" v-model="swSearch" placeholder="搜尋分項工程" style="max-width:240px"><select v-model="swStatus" style="width:auto"><option value="">全部狀態</option><option>施工中</option><option>未開始</option><option>已完成</option></select><span class="grow"></span><button class="btn" @click="openSwImp">匯入分項工程</button><button class="btn primary" @click="swForm={id:'',name:'',no:'',qty:1,unit:'式',status:'施工中'}">＋ 新增分項工程</button></div>
+        <div class="tbl-scroll"><table class="table"><thead><tr><th></th><th>項次</th><th>分項工程</th><th class="right">數量</th><th>自主檢查表</th><th>抽查紀錄表</th><th>停留點</th><th></th></tr></thead><tbody>
+          <tr v-for="s in swPaged" :key="s.id" :class="{picked: swPick===s.id}"><td class="nowrap"><a @click="moveSw(s,-1)">▲</a> <a @click="moveSw(s,1)">▼</a></td><td>{{ s.no }}</td><td><b>{{ s.name }}</b></td><td class="right nowrap">{{ s.qty.toLocaleString() }} {{ s.unit }}</td>
+            <td><span class="chip" :class="swTplText(s,'self')==='未設定'?'':'blue'">{{ swTplText(s,'self') }}</span></td><td><span class="chip" :class="swTplText(s,'spot')==='未設定'?'':'blue'">{{ swTplText(s,'spot') }}</span></td><td><span class="star" v-if="swHold(s)">★ {{ swHold(s) }}</span></td>
+            <td class="nowrap"><button class="btn sm" @click="tplSw=s.id; go('templates')">範本</button> <button class="btn sm" @click="swForm=Q.clone(s)">編輯</button> <button class="btn sm danger" @click="delSw(s)">刪</button></td></tr>
+        </tbody></table></div>
+        <div class="row mt"><span class="muted small grow">第 {{ (swPage-1)*15+1 }}–{{ Math.min(swPage*15, swAll.length) }} 項，共 {{ swAll.length }} 項</span><button class="btn sm" :disabled="swPage<=1" @click="swPage--">‹</button><span>{{ swPage }} / {{ swPages }}</span><button class="btn sm" :disabled="swPage>=swPages" @click="swPage++">›</button></div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<!-- ================= 表單範本 ================= -->
+<template v-if="page==='templates'">
+  <div class="page-head"><div><h1>表單範本</h1><div class="muted">自主檢查表（廠商）與抽查紀錄表（監造）。已使用的範本修改後會另存新版本。</div></div></div>
+  <div class="cols2">
+    <div class="card">
+      <button class="btn block mb" @click="openBulk">⬆ 匯入此分項全部表單</button>
+      <label class="f">分項工程</label><select v-model="tplSw"><optgroup v-for="g in swGroups" :key="g.tender.id" :label="g.tender.code + ' ' + g.tender.name"><option v-for="s in g.subs" :key="s.id" :value="s.id">{{ g.tender.code }}｜{{ s.no }}、{{ s.name }}</option></optgroup></select>
+      <template v-if="tplUnits.length"><label class="f mt">單元</label><select v-model="tplUnit"><option v-for="u in tplUnits" :key="u" :value="u">{{ u }}（{{ unitTplN(tplSw, u) }} 張）</option></select></template>
+      <div class="row mt"><button class="btn sm" @click="openUnitForm">＋ 單元</button><button class="btn primary sm" @click="newTpl('self')">＋ 自主檢查表</button><button class="btn sm" @click="newTpl('spot')">＋ 抽查紀錄表</button></div>
+      <h4 class="tpl-group">自主檢查表（廠商）<span class="chip">{{ tplList('self').length }}</span></h4>
+      <div class="tpl-item" v-for="t in tplList('self')" :key="t.id" :class="{on: selTplId===t.id, dragging: dragId===t.id, over: dragOver===t.id && dragId!==t.id}" draggable="true" @dragstart="onDragStart($event,t)" @dragend="onDragEnd" @dragover.prevent="dragOver=t.id" @dragleave="dragOver===t.id && (dragOver=null)" @drop.prevent="onDrop('self',t)" @click="pickTpl(t)" title="拖曳可調整順序"><span class="grip">⋮⋮</span><div class="tpl-body"><b>表{{ t.code }} {{ t.name }}</b><div class="muted small"><template v-if="t.fillMode==='pdf'"><span class="chip warn">空白範本 PDF</span>・v{{ t.version }}</template><template v-else><span class="chip blue">線上表單</span> {{ t.items.length }} 項・<span class="star">★{{ t.items.filter(i=>i.hold).length }}</span>・v{{ t.version }}</template></div></div></div>
+      <h4 class="tpl-group">抽查紀錄表（監造）<span class="chip">{{ tplList('spot').length }}</span></h4>
+      <div class="tpl-item" v-for="t in tplList('spot')" :key="t.id" :class="{on: selTplId===t.id, dragging: dragId===t.id, over: dragOver===t.id && dragId!==t.id}" draggable="true" @dragstart="onDragStart($event,t)" @dragend="onDragEnd" @dragover.prevent="dragOver=t.id" @dragleave="dragOver===t.id && (dragOver=null)" @drop.prevent="onDrop('spot',t)" @click="pickTpl(t)" title="拖曳可調整順序"><span class="grip">⋮⋮</span><div class="tpl-body"><b>{{ t.name }}</b><div class="muted small"><template v-if="t.fillMode==='pdf'"><span class="chip warn">空白範本 PDF</span>・v{{ t.version }}</template><template v-else><span class="chip blue">線上表單</span> {{ t.items.length }} 項・<span class="star">★{{ t.items.filter(i=>i.hold).length }}</span>・v{{ t.version }}</template></div></div></div>
+      <div class="muted small mt" v-if="!tplList('self').length && !tplList('spot').length">此分項尚未設定範本</div>
+    </div>
+    <div class="card" v-if="edit">
+      <div class="row wrap"><h2 class="grow">{{ edit.kind==='self'?'表'+edit.code+' ':'' }}{{ edit.name }} <span class="chip" v-if="edit.unitNo">單元 {{ edit.unitNo }}</span> <span class="chip" :class="edit.kind==='self'?'blue':'warn'">{{ edit.kind==='self'?'自主檢查表':'抽查紀錄表' }}</span> <span class="chip ok">v{{ edit.version }} 已發布</span></h2></div>
+      <div class="muted small mt">來源：{{ edit.source || '—' }}</div>
+      <div class="row wrap mt"><label class="f" style="margin:0">填寫方式（二選一）</label><div class="seg"><button :class="{on: edit.fillMode!=='pdf'}" @click="edit.fillMode='online'">線上表單</button><button :class="{on: edit.fillMode==='pdf'}" @click="edit.fillMode='pdf'">空白範本（PDF）</button></div>
+        <span class="muted small" v-if="edit.fillMode==='pdf'">現場下載空白 PDF → 離線填寫簽名 → 上傳簽名後的 PDF 即完成（無逐項判定、停留點）</span><span class="muted small" v-else>現場直接線上逐項填寫、拍照、手寫簽認</span></div>
+      <div class="row wrap mt"><template v-if="edit.fillMode!=='pdf'"><button class="btn" @click="exportXlsx">匯出 Excel</button><button class="btn" @click="openItemImp">匯入檢查項目</button><button class="btn" @click="previewOn=true">預覽表單</button><button class="btn" v-if="edit.kind==='spot'" @click="syncFromSelf">從自主檢查表同步項目</button></template><span class="grow"></span><button class="btn danger" @click="delTpl">刪除此表單</button><button class="btn primary" @click="saveEdit">{{ editUsed>0?'另存為 v'+(edit.version+1):'儲存' }}</button></div>
+      <div class="alert warn mt" v-if="editUsed>0">此版本已有 {{ editUsed }} 張紀錄使用，修改後將另存新版本；已填寫的表單保留 v{{ edit.version }} 內容。</div>
+      <div class="tabs mt"><template v-if="edit.fillMode!=='pdf'"><a :class="{on:tplTab==='items'}" @click="tplTab='items'">檢查項目</a><a :class="{on:tplTab==='head'}" @click="tplTab='head'">表頭與簽認欄</a><a :class="{on:tplTab==='defect'}" @click="tplTab='defect'">缺失複查設定</a></template><a v-else :class="{on:tplTab==='file'}" @click="tplTab='file'">範本檔案（PDF）</a><a :class="{on:tplTab==='ver'}" @click="tplTab='ver'">版本紀錄</a></div>
+
+      <template v-if="tplTab==='file' && edit.fillMode==='pdf'">
+        <div class="row wrap mb"><label class="f" style="margin:0">表單名稱</label><input type="text" v-model="edit.name" style="max-width:300px"><label class="f" style="margin:0">表號</label><input type="text" v-model="edit.code" style="max-width:90px"></div>
+        <div class="filecard" v-if="edit.pdf"><div class="fic">PDF</div><div class="grow"><b>{{ edit.pdf.name }}</b><div class="muted small">{{ Q.fmtSize(edit.pdf.size) }}・上傳於 {{ Q.fmtFull(edit.pdf.at) }}</div></div>
+          <button class="btn sm" @click="downloadFile(edit.pdf)">下載</button><label class="btn sm">重新上傳<input type="file" accept="application/pdf,.pdf" hidden @change="onEditPdf"></label></div>
+        <label class="dropzone" v-else><input type="file" accept="application/pdf,.pdf" hidden @change="onEditPdf"><div class="ic">PDF</div><div>點擊選取空白範本 PDF（上限 10 MB）</div></label>
+        <iframe class="pdf-frame mt" v-if="pdfUrl" :src="pdfUrl" title="PDF 預覽"></iframe>
+        <div class="alert info mt">現場作業選到此範本時，會顯示「下載空白範本」與「上傳簽名後 PDF」。PDF 表單視為一般表格紀錄，不設停留點、不做合格／不合格判定；停留點會驗只能使用線上表單的抽查紀錄表。</div>
+      </template>
+      <template v-if="tplTab==='items' && edit.fillMode!=='pdf'">
+        <div class="row wrap mb"><label class="f" style="margin:0">表單名稱</label><input type="text" v-model="edit.name" style="max-width:300px"><label class="f" style="margin:0">表號</label><input type="text" v-model="edit.code" style="max-width:90px"><button class="btn sm" @click="openStageForm" title="可改成挖掘前／挖掘中／挖掘後等">階段：{{ Q.stagesOf(edit).map(x=>x.name).join('／') }}　✎</button><span class="muted small">判定符號：○ 合格　╳ 有缺失需改正　╱ 無此檢查項目　<span class="star">★</span> 檢驗停留點（共 {{ holdN }} 項）</span></div>
+        <div class="tbl-scroll"><table class="table">
+          <thead><tr><th></th><th>序</th><th>檢查項目</th><th>檢查標準</th><th>判定類型</th><th>★停留點</th><th>必拍照</th><th>引用文件</th><th></th></tr></thead>
+          <tbody v-for="st in editStages" :key="st.key">
+            <tr class="stage-row"><td colspan="9"><div class="row"><span class="grow">{{ st.name }}</span><button class="btn sm" @click="addItem(st.key)">＋ 新增項目</button></div></td></tr>
+            <tr v-for="x in st.items" :key="x.idx">
+              <td class="nowrap"><a @click="moveItem(x.idx,-1)">▲</a><a @click="moveItem(x.idx,1)">▼</a></td><td>{{ x.idx+1 }}</td>
+              <td style="min-width:170px"><input type="text" v-model="x.it.name"></td><td style="min-width:200px"><textarea rows="2" v-model="x.it.std"></textarea></td>
+              <td style="min-width:110px"><select v-model="x.it.type" @change="onType(x.it)"><option v-for="(l,k) in TYPES" :value="k">{{ l }}</option></select>
+                <select v-if="x.it.type==='linked'" v-model="x.it.linked" class="mt"><option value="" disabled>選擇連結表單…</option><option v-for="o in linkOpts" :key="o.code" :value="o.code">表{{ o.code }} {{ o.name }}</option></select><div class="small" style="color:var(--ng)" v-if="x.it.type==='linked' && !linkOpts.length">此分項工程尚無其他自主檢查表可連結</div>
+                <a v-if="x.it.type==='number'" class="small" @click="fieldIdx=x.idx">欄位 {{ x.it.fields.length }}（編輯）</a></td>
+              <td><input type="checkbox" v-model="x.it.hold"></td><td><input type="checkbox" v-model="x.it.photo"></td>
+              <td style="min-width:120px"><select v-model="x.it.ref" :title="'可引用 ' + editProj + ' 的參考文件'"><option value="">—</option><option v-for="dc in refDocs" :key="dc.id" :value="dc.code">{{ dc.code }}</option><option v-if="x.it.ref && !refDocs.some(dc=>dc.code===x.it.ref)" :value="x.it.ref">{{ x.it.ref }}（不屬於 {{ editProj }}）</option></select></td>
+              <td><button class="btn sm danger" @click="delItem(x.idx)">刪</button></td></tr>
+          </tbody></table></div>
+      </template>
+      <template v-if="tplTab==='head' && edit.fillMode!=='pdf'">
+        <h4 class="mb">表頭欄位</h4>
+        <table class="table"><tbody><tr v-for="r in [['工程名稱','由標案自動帶入'],['施工廠商','由標案自動帶入'],['分項工程名稱','由分項工程自動帶入'],['檢查位置','現場填寫・掃描單元 QR Code'],['檢查日期','自動填入當日'],edit.kind==='spot'?['抽查時機','檢驗停留點（必填★）／隨機抽查（任選）']:['檢查結果圖例','○ 合格　╳ 缺失　╱ 無此項']]"><td>{{ r[0] }}</td><td class="right"><span class="chip blue">{{ r[1] }}</span></td></tr></tbody></table>
+        <h4 class="mt mb">簽認欄</h4>
+        <table class="table"><tbody><tr v-for="r in (edit.kind==='self'?['現場工程師（檢查人員）','工地授權代表或其授權主管']:['監造工務所（抽查人員）','施工廠商隨同人員'])"><td>{{ r }}</td><td class="right"><span class="chip">手寫簽名</span></td></tr></tbody></table>
+        <template v-if="edit.kind==='spot'"><h4 class="mt mb">計價欄位（本表專用）</h4><table class="table"><thead><tr><th>欄位</th><th>單位</th><th>來源</th></tr></thead><tbody><tr><td>單元厚度</td><td>m</td><td>帶入施工圖設定值，可修改</td></tr><tr><td>單元長度</td><td>m</td><td>帶入表5-5 第 2 項</td></tr><tr><td>計價深度</td><td>m</td><td>現場填寫</td></tr><tr><td>計價面積</td><td>m²</td><td><span class="chip blue">自動計算</span> 單元長度 × 計價深度</td></tr></tbody></table></template>
+        <h4 class="mt mb">表尾備註（列印時顯示）</h4>
+        <ol class="small muted" style="margin:0;padding-left:20px"><li>★ 為檢驗停留點。</li><li>檢查結果合格者註明「○」，不合格者註明「╳」，如無需檢查之項目則打「╱」。</li><li>嚴重缺失、缺失複查未能及時完成改善者，應填具「缺點改進工作指示通知／回報單」進行追蹤改善。</li></ol>
+      </template>
+      <template v-if="tplTab==='defect' && edit.fillMode!=='pdf'"><div class="alert info">任一項判定「╳ 缺失」時，系統於簽認完成後自動建立缺失追蹤單，改善期限 {{ d.params.defectDueDays }} 天（可於「參數設定」調整）。</div>
+        <table class="table mt"><tbody><tr><td>☐ 已完成改善（檢附改善前中後照片）</td><td class="right"><span class="chip">上傳照片</span></td></tr><tr><td>☐ 未完成改善，另填「缺失改善追蹤表」</td><td class="right"><span class="chip ng">自動開立</span></td></tr></tbody></table></template>
+      <template v-if="tplTab==='ver'"><table class="table"><thead><tr><th>版本</th><th>狀態</th><th>項目數</th><th>使用紀錄</th></tr></thead><tbody><tr v-for="t in tplHistory" :key="t.id"><td>v{{ t.version }}</td><td><span class="chip" :class="t.status==='published'?'ok':''">{{ t.status==='published'?'已發布':'已被取代' }}</span></td><td>{{ t.items.length }}</td><td>{{ usedCount(t) }} 張</td></tr></tbody></table></template>
+    </div>
+    <div class="card muted" v-else>請從左側選擇或新增範本</div>
+  </div>
+</template>
+
+<!-- ================= 參考文件 / 帳號 / 參數 ================= -->
+<template v-if="page==='docs'">
+  <div class="page-head"><div><h1>參考文件</h1><div class="muted">參考文件以區段標或單一標為鍵值；表單範本的項目只能引用同一區段標／單一標的文件，現場作業可由此開啟參考。</div></div><button class="btn primary" @click="newDoc" :disabled="!projOpts.length">＋ 新增文件</button></div>
+  <div class="card mb"><div class="row wrap" style="gap:8px"><select v-model="docProj" style="width:auto"><option value="">全部區段標／單一標</option><option v-for="o in projOpts" :key="o.v" :value="o.v">{{ o.l }}</option></select><span class="muted small" v-if="docProj">{{ (projOpts.find(o=>o.v===docProj)||{}).name }}</span><span class="grow"></span><span class="muted small">共 {{ docList.length }} 筆</span></div></div>
+  <div class="card tbl-scroll"><table class="table"><thead><tr><th>區段標／單一標</th><th>文件編號</th><th>名稱</th><th>備註</th><th>檔案</th><th></th></tr></thead><tbody><tr v-if="!docList.length"><td colspan="6" class="muted">沒有參考文件</td></tr><tr v-for="x in docList" :key="x.id"><td class="nowrap">{{ projText(x.projKey) }}</td><td>{{ x.code }}</td><td>{{ x.name }}</td><td>{{ x.note }}</td>
+    <td><template v-if="x.file"><a @click="Q.downloadAny(x.file)">⬇ {{ x.file.name }}</a><div class="small muted">{{ Q.fmtSize(x.file.size) }}・{{ Q.fmtD(x.file.at) }}</div></template><span class="chip" v-else>尚未上傳</span></td>
+    <td class="nowrap"><button class="btn sm" @click="editDoc(x)">編輯</button> <button class="btn sm danger" @click="delRow('docs',x.id)">刪除</button></td></tr></tbody></table></div>
+</template>
+<template v-if="page==='users'">
+  <div class="page-head"><div><h1>帳號與權限</h1><div class="muted">示範用名單，現場作業的簽認人員與監造指派來源。</div></div><button class="btn primary" @click="userForm={id:'',name:'',role:'廠商品管人員',org:'',email:''}">＋ 新增帳號</button></div>
+  <div class="card tbl-scroll"><table class="table"><thead><tr><th>姓名</th><th>角色</th><th>單位</th><th>Email</th><th></th></tr></thead><tbody><tr v-for="x in d.users" :key="x.id"><td>{{ x.name }}</td><td><span class="chip blue">{{ x.role }}</span></td><td>{{ x.org }}</td><td>{{ x.email }}</td><td class="nowrap"><button class="btn sm" @click="userForm=Q.clone(x)">編輯</button> <button class="btn sm danger" @click="delRow('users',x.id)">刪除</button></td></tr></tbody></table></div>
+</template>
+<template v-if="page==='params'">
+  <div class="page-head"><div><h1>參數設定</h1></div></div>
+  <div class="card" style="max-width:560px"><div class="form-grid" style="grid-template-columns:1fr">
+    <div><label class="f">停留點會驗須提前申請（小時）</label><input type="number" v-model="d.params.holdAdvanceHours"></div>
+    <div><label class="f">監造回覆期限（小時）</label><input type="number" v-model="d.params.replyHours"></div>
+    <div><label class="f">照片壓縮上限（KB）</label><input type="number" v-model="d.params.photoMaxKB"></div>
+    <div><label class="f">缺失改善期限（天）</label><input type="number" v-model="d.params.defectDueDays"></div></div>
+    <div class="row mt"><button class="btn primary" @click="saveParams">儲存</button></div></div>
+</template>
+
+    </div>
+  </div>
+</div>
+</template>
+
+<!-- ================= 彈窗 ================= -->
+
+<div class="modal-bg" v-if="swForm" @click.self="swForm=null"><div class="modal"><h3>{{ swForm.id?'編輯':'新增' }}分項工程</h3><div class="form-grid">
+  <div><label class="f">項次</label><input type="text" v-model="swForm.no"></div><div><label class="f">名稱</label><input type="text" v-model="swForm.name"></div>
+  <div><label class="f">數量</label><input type="number" v-model="swForm.qty"></div><div><label class="f">單位</label><input type="text" v-model="swForm.unit"></div>
+  <div><label class="f">狀態</label><select v-model="swForm.status"><option>施工中</option><option>未開始</option><option>已完成</option></select></div></div>
+  <div class="foot"><button class="btn" @click="swForm=null">取消</button><button class="btn primary" @click="saveSw">儲存</button></div></div></div>
+
+<div class="modal-bg" v-if="swImp" @click.self="swImp=null"><div class="modal wide"><h3>匯入分項工程 → {{ selTender.name }}</h3>
+  <div class="alert info mb">上傳 Excel（.xlsx／.xls，讀取第一個工作表）或 CSV。第一列為欄位標題：<b>分項工程</b>（必填）、項次、數量、單位（預設「式」）、狀態（施工中／未開始／已完成，預設施工中）。可先下載樣本，裡面會帶出本標案目前的分項工程當參考。</div>
+  <div class="row wrap mb"><input type="file" accept=".xlsx,.xls,.csv,text/csv" @change="onSwFile"><button class="btn" @click="downloadSwSample">下載匯入樣本（.xlsx）</button></div>
+  <div class="alert ng mb" v-if="swImp.err">{{ swImp.err }}</div>
+  <template v-if="swImp.rows.length">
+    <div class="row wrap mb"><label><input type="radio" value="upsert" v-model="swImp.mode"> 名稱或項次相同時更新原資料，其餘新增</label><label><input type="radio" value="append" v-model="swImp.mode"> 全部新增</label></div>
+    <div class="tbl-scroll" style="max-height:340px"><table class="table"><thead><tr><th>列</th><th>項次</th><th>分項工程</th><th class="right">數量</th><th>單位</th><th>狀態</th><th>處理方式</th><th>驗證結果</th></tr></thead><tbody>
+      <tr v-for="r in swImp.rows" :class="{err: r.errs.length}"><td>{{ r.line }}</td><td>{{ r.no }}</td><td>{{ r.name }}</td><td class="right">{{ r.errs.length ? r.qtyText : r.qty.toLocaleString() }}</td><td>{{ r.unit }}</td><td>{{ r.status }}</td>
+        <td><span class="chip" :class="swImp.mode==='upsert' && r.hit ? 'warn' : 'blue'" v-if="!r.errs.length">{{ swImp.mode==='upsert' && r.hit ? '更新' : '新增' }}</span></td>
+        <td><span class="chip ok" v-if="!r.errs.length">通過</span><div v-else style="color:var(--ng)" class="small"><div v-for="e in r.errs">{{ e }}</div></div></td></tr></tbody></table></div>
+    <div class="mt">可匯入 <b>{{ swImpOk.length }}</b> 列，<b :style="swImpBad?'color:var(--ng)':''">{{ swImpBad }}</b> 列有錯誤將略過</div>
+  </template>
+  <div class="foot"><button class="btn" @click="swImp=null">取消</button><button class="btn primary" :disabled="!swImpOk.length" @click="doSwImp">匯入</button></div></div></div>
+<div class="modal-bg" v-if="unitForm" @click.self="unitForm=null"><div class="modal"><h3>單元管理</h3>
+  <div class="alert info mb">分項工程：<b>{{ (swById(tplSw)||{}).no }}、{{ (swById(tplSw)||{}).name }}</b><br>單元為選用層級：<b>設定單元後，自主檢查表與抽查紀錄表只能掛在單元下，不可掛在分項工程層</b>，現場新增自主檢查／隨機抽查時就要先選單元。同一分項工程內的單元編號不可重複。</div>
+  <label class="f">單元編號</label><div class="row"><input type="text" v-model="unitForm.code" placeholder="例：P12、BP-01、A區" @keyup.enter="addUnit" @input="unitForm.err=''"><button class="btn primary" @click="addUnit">新增</button></div>
+  <div class="alert ng mt" v-if="unitForm.err">{{ unitForm.err }}</div>
+  <h4 class="mt">已設定的單元（{{ tplUnits.length }}）</h4>
+  <div class="muted small" v-if="!tplUnits.length">尚未設定單元，表單範本直接掛在分項工程下。</div>
+  <table class="table" v-else><thead><tr><th>單元編號</th><th class="right">表單範本</th><th></th></tr></thead><tbody>
+    <tr v-for="u in tplUnits" :key="u"><td><b>{{ u }}</b></td><td class="right">{{ unitTplN(tplSw, u) }} 張</td><td class="right nowrap"><button class="btn sm" @click="tplUnit=u; unitForm=null">設定表單</button> <button class="btn sm danger" @click="delUnit(u)">刪</button></td></tr></tbody></table>
+  <div class="foot"><button class="btn primary" @click="unitForm=null">完成</button></div></div></div>
+<div class="modal-bg" v-if="docForm" @click.self="docForm=null"><div class="modal"><h3>{{ docForm.isNew ? '新增參考文件' : '編輯參考文件' }}</h3><div class="form-grid"><div style="grid-column:1/-1"><label class="f">區段標／單一標（鍵值）</label><select v-model="docForm.projKey"><option value="" disabled>請選擇</option><option v-for="o in projOpts" :key="o.v" :value="o.v">{{ o.l }}　{{ o.name }}</option></select></div><div><label class="f">文件編號</label><input type="text" v-model="docForm.code" :disabled="!docForm.isNew" placeholder="例：CF671-SP-0010"></div><div><label class="f">名稱</label><input type="text" v-model="docForm.name"></div><div style="grid-column:1/-1"><label class="f">備註</label><input type="text" v-model="docForm.note" placeholder="例：第 5 章 品質管理（p.5-10）"></div></div>
+  <label class="f mt">文件檔案（PDF、Word、Excel、圖檔等，上限 20 MB）</label>
+  <div class="filecard" v-if="docForm.file"><div class="fic">{{ (docForm.file.name.split('.').pop() || '').toUpperCase().slice(0,4) }}</div><div class="grow"><b>{{ docForm.file.name }}</b><div class="small muted">{{ Q.fmtSize(docForm.file.size) }}</div></div><label class="btn sm">更換<input type="file" hidden @change="onDocFile"></label><button class="btn sm danger" @click="docForm.file=null">移除</button></div>
+  <label class="dropzone" v-else><input type="file" hidden @change="onDocFile"><div class="ic">⬆</div><div>點擊選取檔案上傳</div></label>
+  <div class="small muted mt">上傳後，現場作業「參考文件」與檢查項目的「參考文件」連結都可以下載。</div>
+  <div class="foot"><button class="btn" @click="docForm=null">取消</button><button class="btn primary" @click="saveDoc">儲存</button></div></div></div>
+<div class="modal-bg" v-if="userForm" @click.self="userForm=null"><div class="modal"><h3>帳號</h3><div class="form-grid"><div><label class="f">姓名</label><input type="text" v-model="userForm.name"></div><div><label class="f">角色</label><select v-model="userForm.role"><option>系統管理員</option><option>廠商品管人員</option><option>工地授權代表</option><option>捷運局工務所同仁</option><option>捷運局工務所主任</option></select></div><div><label class="f">單位</label><input type="text" v-model="userForm.org"></div><div><label class="f">Email</label><input type="email" v-model="userForm.email"></div></div><div class="foot"><button class="btn" @click="userForm=null">取消</button><button class="btn primary" @click="saveUser">儲存</button></div></div></div>
+
+<!-- 新增表單範本 -->
+<div class="modal-bg" v-if="newTplForm" @click.self="newTplForm=null"><div class="modal"><h3>新增{{ newTplForm.kind==='self' ? '自主檢查表' : '抽查紀錄表' }}</h3>
+  <label class="f">填寫方式（二選一）</label>
+  <div class="choice"><label :class="{on: newTplForm.fillMode==='online'}"><input type="radio" value="online" v-model="newTplForm.fillMode"><b>線上表單</b><span>逐項填寫、拍照、手寫簽認；可設定停留點與自動判定</span></label>
+    <label :class="{on: newTplForm.fillMode==='pdf'}"><input type="radio" value="pdf" v-model="newTplForm.fillMode"><b>空白範本（PDF）</b><span>上傳既有空白 PDF；現場下載離線填寫，簽名後上傳</span></label></div>
+  <div class="form-grid mt"><div><label class="f">表單名稱</label><input type="text" v-model="newTplForm.name"></div><div><label class="f">表號</label><input type="text" v-model="newTplForm.code" placeholder="例：5-10"></div></div>
+  <template v-if="newTplForm.fillMode==='pdf'"><label class="f mt">空白範本 PDF</label>
+    <div class="filecard" v-if="newTplForm.pdf"><div class="fic">PDF</div><div class="grow"><b>{{ newTplForm.pdf.name }}</b><div class="muted small">{{ Q.fmtSize(newTplForm.pdf.size) }}</div></div><label class="btn sm">更換<input type="file" accept="application/pdf,.pdf" hidden @change="onNewPdf"></label></div>
+    <label class="dropzone" v-else><input type="file" accept="application/pdf,.pdf" hidden @change="onNewPdf"><div class="ic">PDF</div><div>點擊選取空白範本 PDF（上限 10 MB）</div></label></template>
+  <div class="foot"><button class="btn" @click="newTplForm=null">取消</button><button class="btn primary" @click="createTpl">建立</button></div></div></div>
+
+<!-- 數值欄位編輯 -->
+<div class="modal-bg" v-if="fieldIdx>=0 && edit" @click.self="fieldIdx=-1"><div class="modal wide"><h3>數值欄位：{{ edit.items[fieldIdx].name }}</h3>
+  <div class="muted small mb">設定容許範圍後，現場輸入時系統會自動建議判定（範圍留白＝不判定）</div>
+  <div class="tbl-scroll"><table class="table"><thead><tr><th>代碼</th><th>名稱</th><th>單位</th><th>下限（≥）</th><th>上限（≤）</th><th></th></tr></thead><tbody>
+    <tr v-for="(f,i) in edit.items[fieldIdx].fields" :key="i"><td><input type="text" v-model="f.key"></td><td><input type="text" v-model="f.label"></td><td><input type="text" v-model="f.unit"></td><td><input type="number" step="any" v-model="f.min"></td><td><input type="number" step="any" v-model="f.max"></td><td><button class="btn sm danger" @click="edit.items[fieldIdx].fields.splice(i,1)">刪</button></td></tr></tbody></table></div>
+  <div class="foot"><button class="btn" @click="addField(edit.items[fieldIdx])">＋ 新增欄位</button><button class="btn primary" @click="fieldIdx=-1">完成</button></div></div></div>
+
+<!-- 匯入檢查項目 -->
+<div class="modal-bg" v-if="bulk" @click.self="bulk=null"><div class="modal wide"><h3>匯入此分項全部表單 → {{ (swById(tplSw)||{}).no }}、{{ (swById(tplSw)||{}).name }}</h3>
+  <div class="alert info mb">一次匯入本分項工程的<b>單元、線上表單（自主檢查表／抽查紀錄表）、檢查項目與數值欄位檢核條件</b>。可先按「匯出目前內容」取得本分項全部線上表單，修改後再匯入；新建時可下載「空白範本（含範例資料）」參考格式（工作表：單元、表單、檢查項目、數值欄位、可連結表單）。空白範本 PDF 請在系統內個別建立。<br>同表號已存在時會更新該表單，已有填寫紀錄則另存新版本，舊紀錄保留原內容。</div>
+  <div class="row wrap mb"><input type="file" accept=".xlsx,.xls" @change="onBulkFile"><button class="btn" @click="exportSubwork">匯出目前內容（.xlsx）</button><button class="btn" @click="downloadBulkSample">空白範本（含範例資料）</button><span class="muted small" v-if="bulk.fileName">{{ bulk.fileName }}</span></div>
+  <div class="alert ng mb" v-if="bulk.err">{{ bulk.err }}</div>
+  <div class="alert ok mb" v-if="bulk.done">匯入完成：新增 {{ bulk.done.add }} 張、更新 {{ bulk.done.upd }} 張、另存新版 {{ bulk.done.ver }} 張<template v-if="bulk.done.units">，新增單元 {{ bulk.done.units }} 個</template>。</div>
+  <template v-if="bulk.forms.length && !bulk.done">
+    <div class="mb" v-if="bulk.units.length"><b>單元</b>：<span class="chip" v-for="u in bulk.units" :key="u.code" :class="u.errs.length ? 'ng' : u.exists ? '' : 'blue'" :title="u.errs.join('；')">{{ u.code }}{{ u.errs.length ? '（' + u.errs[0] + '）' : u.exists ? '（已存在）' : '（新增）' }}</span></div>
+    <div class="alert warn mb" v-if="bulk.loose.length"><div v-for="e in bulk.loose">{{ e }}</div></div>
+    <div class="tbl-scroll"><table class="table"><thead><tr><th>表號</th><th>表單名稱</th><th>類型</th><th>建立位置（點選可預覽）</th><th>階段</th><th>檢核結果</th></tr></thead><tbody>
+      <tr v-for="f in bulk.forms" :key="f.code+f.line" :class="{err: f.errs.length}"><td class="nowrap"><b>{{ f.code }}</b></td><td>{{ f.name }}</td><td class="nowrap">{{ f.kindText }}</td>
+        <td><a v-for="u in f.units" :key="u" class="chip" :class="bulk.sel && bulk.sel.code===f.code && bulk.sel.unit===u ? 'blue' : ''" style="margin:0 4px 4px 0;cursor:pointer" @click="bulk.sel={code:f.code,unit:u}">{{ u || '分項工程層' }}<template v-if="f.views[u]">・{{ f.views[u].items.length }} 項・{{ f.views[u].action }}</template></a></td>
+        <td class="small">{{ f.stageNames.join('／') }}</td>
+        <td><span class="chip ok" v-if="!f.errs.length">可匯入</span><div v-else style="color:var(--ng)" class="small"><div v-for="e in f.errs">{{ e }}</div></div></td></tr></tbody></table></div>
+    <div class="mt">可匯入 <b>{{ bulkOk.length }}</b> 張表單（展開後共 <b>{{ bulkOk.reduce((n,f)=>n+f.units.length,0) }}</b> 張），<b :style="bulk.forms.length-bulkOk.length ? 'color:var(--ng)' : ''">{{ bulk.forms.length - bulkOk.length }}</b> 張有錯誤將略過</div>
+    <template v-if="bulkView"><h4 class="mt mb">展開預覽：{{ bulkView.fm.kind==='self' ? '表' : '' }}{{ bulkView.fm.code }} {{ bulkView.fm.name }}（{{ bulk.sel.unit ? '單元 ' + bulk.sel.unit : '分項工程層' }}）</h4>
+      <div class="tbl-scroll" style="max-height:360px"><table class="table"><thead><tr><th>階段</th><th>序</th><th>檢查項目</th><th>檢查標準</th><th>類型</th><th>★</th><th>拍照</th><th>數值欄位（檢核條件）</th><th>來源</th></tr></thead><tbody>
+        <tr v-for="(i,k) in bulkView.v.items" :key="k"><td class="nowrap">{{ i.stage }}</td><td>{{ k+1 }}</td><td>{{ i.name }}</td><td class="pre small">{{ i.std }}</td><td class="nowrap">{{ i.typeText }}<template v-if="i.linked">→表{{ i.linked }}</template></td><td><span class="star" v-if="i.hold">★</span></td><td>{{ i.photo ? 'Y' : '' }}</td>
+          <td class="small"><div v-for="f in i.fields">{{ f.label }}{{ f.unitText ? '（' + f.unitText + '）' : '' }}：{{ Q.rangeText(f) || '只記錄' }} <span class="chip" v-if="f.src!=='共用'" style="font-size:11px">{{ f.src }}</span></div></td>
+          <td><span class="chip" :class="i.src==='共用' ? '' : 'blue'">{{ i.src }}</span></td></tr></tbody></table></div></template>
+  </template>
+  <div class="foot"><button class="btn" @click="bulk=null">{{ bulk.done ? '關閉' : '取消' }}</button><button class="btn primary" v-if="!bulk.done" :disabled="!bulkOk.length" @click="doBulk">匯入 {{ bulkOk.length }} 張表單</button></div></div></div>
+<div class="modal-bg" v-if="stageForm" @click.self="stageForm=null"><div class="modal"><h3>階段設定 → {{ edit && edit.name }}</h3>
+  <div class="alert info mb">階段決定現場填寫時的頁籤與順序：前一個階段的項目都判定完，才能填下一個階段。可改名、新增、刪除、調整順序（例：挖掘前／挖掘中／挖掘後）。已有填寫紀錄的表單，儲存後會另存新版本，舊紀錄維持原本的階段。</div>
+  <label class="f">快速套用</label><div class="row wrap mb"><button class="btn sm" v-for="p in STAGE_PRESETS" :key="p.join()" @click="stagePreset(p)">{{ p.join('／') }}</button></div>
+  <table class="table"><thead><tr><th style="width:56px">順序</th><th>階段名稱</th><th class="right">檢查項目</th><th></th></tr></thead><tbody>
+    <tr v-for="(r,i) in stageForm.rows" :key="r.key"><td class="nowrap"><a @click="stageMove(i,-1)">▲</a> <a @click="stageMove(i,1)">▼</a></td><td><input type="text" v-model="r.name" placeholder="例：挖掘前" @input="stageForm.err=''"></td><td class="right">{{ stageItemN(r.key) }} 項</td><td class="right"><button class="btn sm danger" :disabled="stageItemN(r.key)>0 || stageForm.rows.length<=1" :title="stageItemN(r.key) ? '此階段還有檢查項目，不可刪除' : ''" @click="stageDel(i)">刪</button></td></tr>
+  </tbody></table>
+  <button class="btn sm mt" @click="stageAdd">＋ 新增階段</button>
+  <div class="alert ng mt" v-if="stageForm.err">{{ stageForm.err }}</div>
+  <div class="foot"><button class="btn" @click="stageForm=null">取消</button><button class="btn primary" @click="applyStages">套用</button></div></div></div>
+<div class="modal-bg" v-if="itemImp" @click.self="itemImp=null"><div class="modal wide"><h3>匯入檢查項目 → {{ edit && ((edit.kind==='self' ? '表' + edit.code + ' ' : '') + edit.name) }}{{ edit && edit.unitNo ? '（單元 ' + edit.unitNo + '）' : '' }}</h3>
+  <div class="alert info mb">使用與「匯入此分項全部表單」相同的 Excel 格式（工作表：表單、檢查項目、數值欄位，可含單元）。建議先按「匯出 Excel」取得目前內容，修改後再匯入。系統會找檔案中與目前表號相同的表單；檢查項目、數值欄位的檢核條件與階段設定會一起匯入，按「儲存」才會生效。</div>
+  <div class="row wrap mb"><input type="file" accept=".xlsx,.xls" @change="onItemFile"><button class="btn" @click="exportXlsx">匯出目前內容（.xlsx）</button><button class="btn" @click="downloadBulkSample">空白範本（含範例資料）</button><span class="muted small" v-if="itemImp.fileName">{{ itemImp.fileName }}</span></div>
+  <div class="alert ng mb" v-if="itemImp.err">{{ itemImp.err }}</div>
+  <template v-if="itemImp.res && itemImpForm">
+    <div class="row wrap mb"><label class="f" style="margin:0">檔案中的表單</label><select v-model="itemImp.code" style="max-width:300px" @change="itemImp.unit=itemImpForm.units[0]"><option v-for="f in itemImp.res.forms" :key="f.code+f.line" :value="f.code">{{ f.code }} {{ f.name }}</option></select>
+      <template v-if="itemImpForm.units.length>1 || itemImpForm.units[0]"><label class="f" style="margin:0">套用單元</label><select v-model="itemImp.unit" style="width:auto"><option v-for="u in itemImpForm.units" :key="u" :value="u">{{ u || '分項工程層' }}</option></select></template>
+      <span class="chip">階段：{{ itemImpForm.stageNames.join('／') }}</span></div>
+    <div class="row wrap mb"><label><input type="radio" value="replace" v-model="itemImp.mode"> 取代全部現有項目（建議）</label><label><input type="radio" value="append" v-model="itemImp.mode"> 加在現有項目後面</label></div>
+    <div class="alert ng mb" v-if="itemImpErrs.length"><div v-for="e in itemImpErrs">{{ e }}</div></div>
+    <div class="tbl-scroll" style="max-height:380px" v-if="itemImpView"><table class="table"><thead><tr><th>階段</th><th>序</th><th>檢查項目</th><th>檢查標準</th><th>類型</th><th>★</th><th>拍照</th><th>數值欄位（檢核條件）</th><th>來源</th></tr></thead><tbody>
+      <tr v-for="(i,k) in itemImpView.items" :key="k"><td class="nowrap">{{ i.stage }}</td><td>{{ k+1 }}</td><td>{{ i.name }}</td><td class="pre small">{{ i.std }}</td><td class="nowrap">{{ i.typeText }}<template v-if="i.linked">→表{{ i.linked }}</template></td><td><span class="star" v-if="i.hold">★</span></td><td>{{ i.photo ? 'Y' : '' }}</td>
+        <td class="small"><div v-for="f in i.fields">{{ f.label }}{{ f.unitText ? '（' + f.unitText + '）' : '' }}：{{ Q.rangeText(f) || '只記錄' }}</div></td><td><span class="chip" :class="i.src==='共用' ? '' : 'blue'">{{ i.src }}</span></td></tr></tbody></table></div>
+    <div class="mt" v-if="itemImpView">共 <b>{{ itemImpView.items.length }}</b> 項</div>
+  </template>
+  <div class="foot"><button class="btn" @click="itemImp=null">取消</button><button class="btn primary" :disabled="!itemImpView || itemImpErrs.length>0" @click="doItemImp">匯入</button></div></div></div>
+
+<!-- 預覽表單 -->
+<div class="modal-bg" v-if="previewOn && edit" @click.self="previewOn=false"><div class="modal wide"><h3>預覽：{{ edit.name }} v{{ edit.version }}</h3><div class="tbl-scroll"><table class="table"><thead><tr><th>序</th><th>檢查項目</th><th>檢查標準</th><th>實際檢查情形（填寫欄位）</th><th>判定</th></tr></thead>
+  <tbody><template v-for="st in editStages"><tr class="stage-row"><td colspan="5">{{ st.name }}</td></tr>
+    <tr v-for="x in st.items"><td>{{ x.idx+1 }}</td><td><span class="star" v-if="x.it.hold">★</span>{{ x.it.name }}</td><td class="pre">{{ x.it.std }}</td>
+      <td><div v-for="f in x.it.fields">{{ f.label }} ____ {{ f.unit }} <span class="muted small">{{ Q.rangeText(f) }}</span></div><span v-if="x.it.type==='linked'">連結表{{ x.it.linked }}</span><span v-if="x.it.photo" class="chip warn">必拍照</span></td><td>○　╳　╱</td></tr></template></tbody></table></div>
+  <div class="foot"><button class="btn primary" @click="previewOn=false">關閉</button></div></div></div>
+
+<!-- 自主檢查紀錄明細 -->
+<div class="modal-bg" v-if="showSC" @click.self="showSC=null"><div class="modal wide"><h3>表{{ showSC.templateCode }} {{ showSC.templateName }} v{{ showSC.templateVer }}｜{{ showSC.id }}</h3>
+  <div class="muted mb">{{ showSC.subworkName }}｜{{ showSC.location }}｜{{ Q.fmtD(showSC.date) }}｜{{ showSC.contractor }}</div>
+  <div class="filecard mb" v-if="showSC.fillMode==='pdf'"><div class="fic">PDF</div><div class="grow"><template v-if="showSC.pdfFile"><b>{{ showSC.pdfFile.name }}</b><div class="muted small">簽名後 PDF・{{ Q.fmtSize(showSC.pdfFile.size) }}・{{ Q.fmtFull(showSC.pdfFile.at) }}</div></template><span class="muted" v-else>尚未上傳簽名後 PDF</span></div><button class="btn sm" v-if="showSC.pdfFile" @click="downloadFile(showSC.pdfFile)">下載</button></div>
+  <div class="mt" v-if="showSC.fillMode==='pdf'"><h4 class="mb">辦理軌跡（{{ showSC.wfStatus }}・V{{ showSC.version||0 }}）</h4><ul class="timeline" v-if="(showSC.logs||[]).length"><li v-for="(l,i) in showSC.logs.slice().reverse()" :key="i" :class="l.action.includes('結案')?'ok':''">{{ Q.fmtFull(l.at) }}｜<b>{{ l.user }}</b> <span class="chip">{{ l.action }}</span><div class="small muted">{{ l.detail }}</div><a class="small" v-if="l.file" @click="downloadFile(l.file)">⬇ {{ l.file.name }}</a> <img v-if="l.sig" :src="l.sig" style="height:30px;vertical-align:middle;border:1px solid var(--line);border-radius:4px"></li></ul><div class="muted small" v-else>尚無辦理紀錄</div></div>
+  <div class="tbl-scroll" v-if="showSC.fillMode!=='pdf'"><table class="table"><thead><tr><th>序</th><th>檢查項目</th><th>實測</th><th>判定</th><th>照片</th><th>停留點</th></tr></thead><tbody>
+    <tr v-for="x in itemsOf(showSC)"><td>{{ x.it.no }}</td><td><span class="star" v-if="x.it.hold">★</span>{{ x.it.name }}</td><td>{{ valuesText(x.it, x.a) }}</td><td><span class="chip" :class="x.a.judge==='ok'?'ok':x.a.judge==='ng'?'ng':''">{{ judgeText(x.a.judge) }}</span></td><td>{{ (x.a.photos||[]).length || '' }}</td><td><span v-if="x.it.hold" class="chip" :class="Q.holdState(showSC,x.it.no)==='passed'?'ok':''">{{ Q.HOLD_TEXT[Q.holdState(showSC,x.it.no)] }}</span></td></tr></tbody></table></div>
+  <div class="mt small muted" v-if="showSC.status==='signed'">已簽認：現場工程師 {{ (showSC.signatures.site||{}).name }}／工地授權代表 {{ (showSC.signatures.rep||{}).name }}｜內容雜湊 {{ (showSC.hash||'').slice(0,16) }}…</div>
+  <div class="foot"><button class="btn" @click="downloadRec('self', showSC)">⬇ 下載 PDF</button><button class="btn primary" @click="showSC=null">關閉</button></div></div></div>
+<div class="modal-bg" v-if="showSP" @click.self="showSP=null"><div class="modal wide"><h3>{{ showSP.templateName }} v{{ showSP.templateVer }}｜{{ showSP.id }}</h3>
+  <div class="muted mb">{{ showSP.location }}｜{{ showSP.kind==='hold' ? '檢驗停留點會驗 '+showSP.requestId : '隨機抽查' }}｜{{ Q.fmtD(showSP.date||showSP.createdAt) }}</div>
+  <div class="filecard mb" v-if="showSP.fillMode==='pdf'"><div class="fic">PDF</div><div class="grow"><template v-if="showSP.pdfFile"><b>{{ showSP.pdfFile.name }}</b><div class="muted small">簽名後 PDF・{{ Q.fmtSize(showSP.pdfFile.size) }}（一般表格紀錄，不做合格判定）</div></template><span class="muted" v-else>尚未上傳簽名後 PDF</span></div><button class="btn sm" v-if="showSP.pdfFile" @click="downloadFile(showSP.pdfFile)">下載</button></div>
+  <div class="mt" v-if="showSP.fillMode==='pdf'"><h4 class="mb">辦理軌跡（{{ showSP.wfStatus }}・V{{ showSP.version||0 }}）</h4><ul class="timeline" v-if="(showSP.logs||[]).length"><li v-for="(l,i) in showSP.logs.slice().reverse()" :key="i" :class="l.action.includes('結案')?'ok':''">{{ Q.fmtFull(l.at) }}｜<b>{{ l.user }}</b> <span class="chip">{{ l.action }}</span><div class="small muted">{{ l.detail }}</div><a class="small" v-if="l.file" @click="downloadFile(l.file)">⬇ {{ l.file.name }}</a> <img v-if="l.sig" :src="l.sig" style="height:30px;vertical-align:middle;border:1px solid var(--line);border-radius:4px"></li></ul><div class="muted small" v-else>尚無辦理紀錄</div></div>
+  <div class="tbl-scroll" v-if="showSP.fillMode!=='pdf'"><table class="table"><thead><tr><th>序</th><th>檢查項目</th><th>實測</th><th>判定</th><th>照片</th></tr></thead><tbody>
+    <tr v-for="x in itemsOf(showSP)" :style="showSP.focusNo===x.it.no?'font-weight:600':''"><td>{{ x.it.no }}</td><td><span class="star" v-if="x.it.hold">★</span>{{ x.it.name }} <span class="chip warn" v-if="showSP.focusNo===x.it.no">本次會驗</span></td><td>{{ valuesText(x.it, x.a) }}</td><td><span class="chip" :class="x.a.judge==='ok'?'ok':x.a.judge==='ng'?'ng':''">{{ judgeText(x.a.judge) }}</span></td><td>{{ (x.a.photos||[]).length || '' }}</td></tr></tbody></table></div>
+  <div class="mt small muted">計價：厚 {{ showSP.calc.thickness||'—' }} m × 長 {{ showSP.calc.length||'—' }} m × 深 {{ showSP.calc.depth||'—' }} m<template v-if="showSP.status==='signed'">｜內容雜湊 {{ (showSP.hash||'').slice(0,16) }}…</template></div>
+  <div class="foot"><button class="btn" @click="downloadRec('spot', showSP)">⬇ 下載 PDF</button><button class="btn primary" @click="showSP=null">關閉</button></div></div></div>
+
+<div class="toast" :class="{ng: toastNg}" v-if="toastMsg">{{ toastMsg }}</div>
+</div>
+<script src="lib/vue.global.prod.js"></script>
+<script src="lib/xlsx.full.min.js"></script>
+<script src="templates/export-template.js"></script>
+<script src="js/drawer.js"></script>
+<script src="js/sample-pdfs.js"></script>
+<script src="lib/html2canvas.min.js"></script>
+<script src="lib/jspdf.umd.min.js"></script>
+<script src="lib/jszip.min.js"></script>
+<script src="js/formpdf.js"></script>
+<script src="js/projbase.js"></script>
+<script src="js/db.js"></script>
+<script src="js/admin.js"></script>
+</body>
+</html>
