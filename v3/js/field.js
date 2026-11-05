@@ -219,7 +219,7 @@ createApp({
     const stageStat = st => { const l = curTpl.value ? Q.stageItems(curTpl.value, st) : []; return `${l.filter(i => ans(i.no).judge).length}/${l.length}`; };
     const stageDone = st => curTpl.value && Q.stageDone(cur.value, curTpl.value, st);
     function ans(no) { const a = cur.value && cur.value.answers[no]; return a || { judge: null, values: {}, photos: [], note: '' }; }
-    function ensure(no) { if (!cur.value.answers[no]) cur.value.answers[no] = { judge: null, values: {}, photos: [], note: '' }; return cur.value.answers[no]; }
+    function ensure(no) { if (!cur.value.answers[no]) { const it = curTpl.value && curTpl.value.items.find(i => i.no === no); cur.value.answers[no] = { judge: null, values: {}, photos: [], note: '', text: it && it.type === 'text' ? (it.defText || '') : '' }; } return cur.value.answers[no]; }
     const lockOf = it => cur.value && curTpl.value ? Q.lockReason(cur.value, curTpl.value, it) : null;
     const hstate = it => Q.holdState(cur.value, it.no);
     const hreq = it => d.requests.find(r => r.id === ((cur.value.hold[it.no] || {}).requestId));
