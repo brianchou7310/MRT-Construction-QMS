@@ -278,6 +278,7 @@
         <div class="alert info mt">現場作業選到此範本時，會顯示「下載空白範本」與「上傳簽名後 PDF」。PDF 表單視為一般表格紀錄，不設停留點、不做合格／不合格判定；停留點會驗只能使用線上表單的抽查紀錄表。</div>
       </template>
       <template v-if="tplTab==='items' && edit.fillMode!=='pdf'">
+        <div class="row wrap mb" v-if="edit.kind==='spot'"><label class="f" style="margin:0">配對自主檢查表</label><select v-model="pairCode" style="max-width:340px"><option value="">（不配對）</option><option v-for="o in pairOpts" :key="o.code" :value="o.code">表{{ o.code }} {{ o.name }}</option></select><span class="muted small">選定後會自動同步項目；現場抽查時依「對應項目」帶出廠商自檢的判定與實際檢查情形。{{ pairOpts.length ? '' : '（此單元尚無自主檢查表）' }}</span></div>
         <div class="row wrap mb"><label class="f" style="margin:0">表單名稱</label><input type="text" v-model="edit.name" style="max-width:300px"><label class="f" style="margin:0">表號</label><input type="text" v-model="edit.code" style="max-width:90px"><button class="btn sm" @click="openStageForm" title="可改成挖掘前／挖掘中／挖掘後等">階段：{{ Q.stagesOf(edit).map(x=>x.name).join('／') }}　✎</button><span class="muted small">判定符號：○ 合格　╳ 有缺失需改正　╱ 無此檢查項目　<span class="star">★</span> 檢驗停留點（共 {{ holdN }} 項）</span></div>
         <div class="tbl-scroll"><table class="table">
           <thead><tr><th></th><th>序</th><th>{{ edit.kind==='spot' ? '抽查項目' : '檢查項目' }}</th><th>{{ edit.kind==='spot' ? '設計圖說、規範之抽查標準（定性定量）' : '設計圖說、規範之檢查標準(定量定性)' }}</th><th>判定類型</th><th>{{ edit.kind==='spot' ? '實際抽查情形（載明抽查數值及單位）' : '實際檢查情形(敘述檢查值)' }}</th><th>★停留點</th><th>必拍照</th><th>引用文件</th><th></th></tr></thead>
@@ -285,7 +286,7 @@
             <tr class="stage-row"><td colspan="10"><div class="row"><span class="grow">{{ st.name }}</span><button class="btn sm" @click="addItem(st.key)">＋ 新增項目</button></div></td></tr>
             <tr v-for="x in st.items" :key="x.idx">
               <td class="nowrap"><a @click="moveItem(x.idx,-1)">▲</a><a @click="moveItem(x.idx,1)">▼</a></td><td>{{ x.idx+1 }}</td>
-              <td style="min-width:170px"><input type="text" v-model="x.it.name"></td><td style="min-width:200px"><textarea rows="2" v-model="x.it.std"></textarea></td>
+              <td style="min-width:170px"><input type="text" v-model="x.it.name"><div class="small mt" v-if="edit.kind==='spot' && edit.pairedSelf"><span class="muted" v-if="srcOf(x.it)">↔ 自主檢查表第 {{ srcOf(x.it).no }} 項</span><span style="color:var(--ng)" v-else>未對應自主檢查表</span></div></td><td style="min-width:200px"><textarea rows="2" v-model="x.it.std"></textarea></td>
               <td style="min-width:110px"><select v-model="x.it.type" @change="onType(x.it)"><option v-for="(l,k) in TYPES" :value="k">{{ l }}</option></select>
                 <select v-if="x.it.type==='linked'" v-model="x.it.linked" class="mt"><option value="" disabled>選擇連結表單…</option><option v-for="o in linkOpts" :key="o.code" :value="o.code">表{{ o.code }} {{ o.name }}</option></select><div class="small" style="color:var(--ng)" v-if="x.it.type==='linked' && !linkOpts.length">此分項工程尚無其他自主檢查表可連結</div></td>
               <td class="small muted" style="min-width:180px"><template v-if="x.it.type==='text'"><textarea rows="2" v-model="x.it.defText" placeholder="預設文字（現場可修改，可留白）"></textarea></template><template v-else>—</template></td>

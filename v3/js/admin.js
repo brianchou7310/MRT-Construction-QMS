@@ -473,6 +473,7 @@ createApp({
           const items = v.items.map((i, k) => { const prev = old && old.items.find(x => x.name === i.name); return Object.assign(Q.I(k + 1, stages.find(s => s.name === i.stage).key, i.name, i.std, { type: i.type, hold: !!i.hold, photo: !!i.photo || i.type === 'photo', ref: i.ref, linked: i.type === 'linked' ? i.linked : '', defText: i.type === 'text' ? (i.defText || '') : '' }), prev && prev.key ? { key: prev.key } : {}); });
           let pairedSelf = '';
           if (fm.pair) { const sp = d.templates.concat(saved).filter(t => t.subworkId === sw.id && t.kind === 'self' && t.status === 'published' && t.code === fm.pair).sort((a, b) => ((b.unitNo || '') === u) - ((a.unitNo || '') === u) || b.version - a.version)[0]; pairedSelf = sp ? sp.id : ''; }
+          if (pairedSelf) { const ps = d.templates.concat(saved).find(x => x.id === pairedSelf); if (ps) items.forEach(i => { const si = ps.items.find(x => x.name === i.name) || (old && (old.items.find(x => x.name === i.name) || {}).srcKey ? ps.items.find(x => x.key === old.items.find(y => y.name === i.name).srcKey) : null); if (si) { i.srcKey = si.key; i.srcNo = si.no; } }); }
           const base = { tenderId: sw.tenderId, subworkId: sw.id, unitNo: u, kind: fm.kind, code: fm.code, name: fm.name, source: fm.source || ('匯入：' + b.fileName), fillMode: 'online', stages, items, order: fm.order, pairedSelf };
           let t;
           if (!old) { t = Object.assign({ id: Q.uid('TP-'), version: 1, status: 'published', used: 0 }, base); await Q.put('templates', Q.ensureKeys(t)); res.add++; }
@@ -565,6 +566,15 @@ createApp({
       const saved = await Q.saveTemplate(t, asNew); await load(); pickTpl(d.templates.find(x => x.id === saved.id));
       toast(asNew ? `已另存為 v${saved.version}，舊版紀錄保留原內容` : '範本已儲存');
     }
+    // 抽查表配對自主檢查表：同分項工程、同單元的已發布自主檢查表（每個表號取最新版）
+    const latestSelf = code => d.templates.filter(t => t.kind === 'self' && t.status === 'published' && t.subworkId === edit.value.subworkId && (t.unitNo || '') === (edit.value.unitNo || '') && t.code === code).sort((a, b) => b.version - a.version)[0];
+    const pairOpts = computed(() => !edit.value || edit.value.kind !== 'spot' ? [] : [...new Map(d.templates.filter(t => t.kind === 'self' && t.status === 'published' && t.subworkId === edit.value.subworkId && (t.unitNo || '') === (edit.value.unitNo || '')).sort((a, b) => a.version - b.version).map(t => [t.code, { code: t.code, name: t.name }])).values()]);
+    const pairCode = computed({
+      get: () => { const p = edit.value && d.templates.find(t => t.id === edit.value.pairedSelf); return p ? p.code : ''; },
+      set: code => { if (!code) { edit.value.pairedSelf = ''; edit.value.items.forEach(i => { delete i.srcKey; delete i.srcNo; }); toast('已取消配對（項目對應一併清除）'); return; } const s = latestSelf(code); if (!s) return; edit.value.pairedSelf = s.id; syncFromSelf(); }
+    });
+    // 抽查項目對應的自主檢查表項目（以永久代碼 srcKey 比對，舊資料用 srcNo）
+    const srcOf = it => { const p = edit.value && d.templates.find(t => t.id === edit.value.pairedSelf); if (!p) return null; const self = latestSelf(p.code) || p; return self.items.find(si => (it.srcKey && si.key === it.srcKey) || (!it.srcKey && it.srcNo && si.no === it.srcNo)) || null; };
     function syncFromSelf() {
       const paired = d.templates.find(t => t.id === edit.value.pairedSelf); if (!paired) return toast('此抽查表未對應自主檢查表', true);
       // 永遠對應自主檢查表的「最新發布版本」，以項目永久代碼（key）比對，不受項次重排影響
@@ -957,7 +967,7 @@ createApp({
     return {
       Q, d, now, loaded, page, menuOpen, toastMsg, toastNg, toast, go, tenderById, swById, tenderFilter, supervisors, reqCls, rel, openReqs, overdueReqs, openDefects, overdueDefects, weekHolds, spotRate, kpiSelf, todayAgenda, tplOf, usedCount,
       progTender, progFilter, progRows, progCount, holdTab, holdTabs, holdCount, holdList, holdByDate, selReqId, selReq, calView, sched, lockedAfter, hoursBefore, doSchedule, doReject, doStart, doCancel,
-      showSC, showSP, itemsOf, reqText, judgeText, spotCount, defCls, defText, defTab, defList, defAct, defShow, defReview,
+      pairOpts, pairCode, srcOf, showSC, showSP, itemsOf, reqText, judgeText, spotCount, defCls, defText, defTab, defList, defAct, defShow, defReview,
       selTenderId, selTender, treeGroups, tenderRefs, delTender, tDragId, tDragOver, tDragStart, tDragEnd, tDrop, grpOpen, grpIsOpen, treeOpen, swPick, treeAll, dept, deptName, setDept, allTenders, pick, pickData, pickSel, pickGroupAll, doPick, pickTender, pickSw, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, swForm, saveSw, moveSw, delSw, newTender, swImp, openSwImp, downloadSwSample, onSwFile, swImpOk, swImpBad, doSwImp,
       tplSw, tplUnit, tplUnits, unitForm, unitTplN, openUnitForm, addUnit, delUnit, swGroups, selTplId, tplTab, edit, previewOn, tplList, tplHistory, pickTpl, editUsed, editStages, isPdf, newTplForm, onNewPdf, onEditPdf, createTpl, pdfUrl, downloadFile, wfCls, readPdf, TYPES, holdN, addItem, delItem, moveItem, onType, saveEdit, delTpl, syncFromSelf, bulk, openBulk, onBulkFile, bulkOk, bulkView, doBulk, downloadBulkSample, exportSubwork, stageForm, stageItemN, openStageForm, stageAdd, stageMove, stageDel, stagePreset, applyStages, STAGE_PRESETS, newTpl, exportXlsx, dragId, dragOver, onDragStart, onDragEnd, onDrop, itemImp, openItemImp, onItemFile, itemImpForm, itemImpView, itemImpErrs, doItemImp,
       linkOpts, adminUser, swText, projOf, projOpts, projText, tendersOfProj, qf, qfOpts, qfList, qfSet, qfClear, ex, exOpts, exList, exRows, exSet, exClear, downloadRec, downloadBatch, recCode,
