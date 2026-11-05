@@ -92,6 +92,7 @@
       <div class="infobox mt"><div><div class="small muted">預定會驗</div><b>{{ Q.fmtFull(selReq.scheduledAt) }}</b></div><div><div class="small muted">申請人</div><b>{{ selReq.applicant }}</b></div><div><div class="small muted">回覆期限</div><b :style="selReq.status==='pending' && selReq.replyDue<now?'color:var(--ng)':''">{{ Q.fmtFull(selReq.replyDue) }}</b></div><div><div class="small muted">會驗人員</div><b>{{ selReq.inspector || '未指派' }}</b></div></div>
       <h4 class="mt">廠商自主檢查</h4>
       <div class="small muted">檢查標準</div><div class="pre">{{ selReq.std }}</div>
+      <template v-if="reqText(selReq)"><div class="small muted mt">實際檢查情形（廠商填寫）</div><div class="pre">{{ reqText(selReq) }}</div></template>
       <div class="thumbs mt"><div class="photo th" v-for="(p,i) in reqPhotos(selReq)" :key="i"><img v-if="p && p!=='*'" :src="p"><span v-else>示範照片 {{ i+1 }}</span></div></div>
       <div class="alert warn mt" v-if="selReq.shortNotice">申請距會驗不足 {{ d.params.holdAdvanceHours }} 小時。原因：{{ selReq.shortReason }}</div>
       <div class="alert gray mt" v-if="lockedAfter(selReq).length">後續 {{ lockedAfter(selReq).map(x=>'★'+x).join('、') }} 已鎖定，待本停留點放行。</div>
@@ -181,6 +182,7 @@
           <div class="lockmsg" v-if="lockOf(it)">🔒 {{ lockOf(it) }}</div>
           <template v-else>
             <div class="linked" v-if="it.type==='linked'"><a @click="linkShow=it.linked">開啟 表{{ it.linked }} {{ linkName(it.linked) }}</a><span class="chip ok" v-if="cur.linked[it.linked]">已完成 ○</span><span class="chip" v-else>未完成</span></div>
+            <div v-if="it.type==='text'"><label class="f">實際檢查情形（敘述檢查值）</label><textarea rows="3" v-model="ensure(it.no).text" @input="queueSave" :disabled="!itemEditable(it)" placeholder="例：垂直方向偏差 18mm、籠頂高程 EL 122.91m"></textarea></div>
             <div class="photos" v-if="it.photo || ans(it.no).photos.length">
               <div class="photo th" v-for="(p,i) in ans(it.no).photos" :key="i" @click="delPhoto(it,i)"><img v-if="p && p!=='*'" :src="p"><span v-else>示範照片</span></div>
               <button class="cam" :disabled="!itemEditable(it)" @click="addPhoto(it)">📷<small>拍照</small></button><button class="cam demo" :disabled="!itemEditable(it)" @click="addDemoPhoto(it)">🖼<small>示範照片</small></button>
@@ -262,6 +264,8 @@
           <div class="std pre">標準：{{ it.std || '—' }}</div>
           <div class="linked" v-if="it.type==='linked'"><span>連結表單：表{{ it.linked }} {{ linkName(it.linked) }}</span><span class="chip" :class="spSc && spSc.linked[it.linked] ? 'ok' : ''">廠商{{ spSc && spSc.linked[it.linked] ? '已完成 ○' : '未完成' }}</span></div>
           <div class="small" v-if="spSelfJudge(it)">廠商自檢判定：<span class="chip" :class="spSelfJudge(it)==='ok'?'ok':spSelfJudge(it)==='ng'?'ng':''">{{ Q.JUDGE[spSelfJudge(it)] }}</span></div>
+          <div v-if="it.type==='text'"><div class="small muted">廠商實際檢查情形（自主檢查表）</div><div class="pre">{{ spSelfText(it) || '—' }}</div>
+            <label class="f">實際抽查情形（載明抽查數值及單位）</label><textarea rows="3" v-model="spA(it.no).text" @input="spSave" :disabled="!spEditable" placeholder="例：垂直方向偏差 20mm"></textarea></div>
           <div class="photos" v-if="it.photo || spA(it.no).photos.length || it.hold">
             <div class="photo th" v-for="(p,i) in spA(it.no).photos" :key="i" @click="spDelPhoto(it,i)"><img v-if="p && p!=='*'" :src="p"><span v-else>示範照片</span></div>
             <button class="cam" :disabled="!spEditable" @click="spPhoto(it)">📷<small>拍照</small></button><button class="cam demo" :disabled="!spEditable" @click="spDemoPhoto(it)">🖼<small>示範照片</small></button>

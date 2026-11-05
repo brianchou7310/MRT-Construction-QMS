@@ -80,7 +80,7 @@
       <div class="form-grid mt">
         <div><div class="muted small">預定會驗時間</div>{{ Q.fmtFull(selReq.scheduledAt) }}</div><div><div class="muted small">申請送出</div>{{ Q.fmtFull(selReq.appliedAt) }}</div>
         <div><div class="muted small">檢查標準</div><div class="pre">{{ selReq.std }}</div></div>
-        <div><div class="muted small">廠商自主檢查</div>{{ selReq.checkName || '—' }}<template v-if="selReq.itemNo"> 第 {{ selReq.itemNo }} 項</template></div>
+        <div><div class="muted small">廠商自主檢查</div>{{ selReq.checkName || '—' }}<template v-if="selReq.itemNo"> 第 {{ selReq.itemNo }} 項</template><template v-if="reqText(selReq)"><div class="muted small mt">實際檢查情形（廠商填寫）</div><div class="pre">{{ reqText(selReq) }}</div></template></div>
       </div>
       <div class="alert warn mt" v-if="selReq.shortNotice">申請距會驗僅 {{ hoursBefore(selReq) }} 小時，少於規定的 {{ d.params.holdAdvanceHours }} 小時。原因：{{ selReq.shortReason }}</div>
       <div class="alert gray mt" v-if="lockedAfter(selReq).length">後續項目「{{ lockedAfter(selReq).map(x=>'★'+x).join('」「') }}」已鎖定，待本停留點合格放行。</div>
@@ -280,14 +280,15 @@
       <template v-if="tplTab==='items' && edit.fillMode!=='pdf'">
         <div class="row wrap mb"><label class="f" style="margin:0">表單名稱</label><input type="text" v-model="edit.name" style="max-width:300px"><label class="f" style="margin:0">表號</label><input type="text" v-model="edit.code" style="max-width:90px"><button class="btn sm" @click="openStageForm" title="可改成挖掘前／挖掘中／挖掘後等">階段：{{ Q.stagesOf(edit).map(x=>x.name).join('／') }}　✎</button><span class="muted small">判定符號：○ 合格　╳ 有缺失需改正　╱ 無此檢查項目　<span class="star">★</span> 檢驗停留點（共 {{ holdN }} 項）</span></div>
         <div class="tbl-scroll"><table class="table">
-          <thead><tr><th></th><th>序</th><th>檢查項目</th><th>檢查標準</th><th>判定類型</th><th>★停留點</th><th>必拍照</th><th>引用文件</th><th></th></tr></thead>
+          <thead><tr><th></th><th>序</th><th>{{ edit.kind==='spot' ? '抽查項目' : '檢查項目' }}</th><th>{{ edit.kind==='spot' ? '設計圖說、規範之抽查標準（定性定量）' : '設計圖說、規範之檢查標準(定量定性)' }}</th><th>判定類型</th><th>{{ edit.kind==='spot' ? '實際抽查情形（載明抽查數值及單位）' : '實際檢查情形(敘述檢查值)' }}</th><th>★停留點</th><th>必拍照</th><th>引用文件</th><th></th></tr></thead>
           <tbody v-for="st in editStages" :key="st.key">
-            <tr class="stage-row"><td colspan="9"><div class="row"><span class="grow">{{ st.name }}</span><button class="btn sm" @click="addItem(st.key)">＋ 新增項目</button></div></td></tr>
+            <tr class="stage-row"><td colspan="10"><div class="row"><span class="grow">{{ st.name }}</span><button class="btn sm" @click="addItem(st.key)">＋ 新增項目</button></div></td></tr>
             <tr v-for="x in st.items" :key="x.idx">
               <td class="nowrap"><a @click="moveItem(x.idx,-1)">▲</a><a @click="moveItem(x.idx,1)">▼</a></td><td>{{ x.idx+1 }}</td>
               <td style="min-width:170px"><input type="text" v-model="x.it.name"></td><td style="min-width:200px"><textarea rows="2" v-model="x.it.std"></textarea></td>
               <td style="min-width:110px"><select v-model="x.it.type" @change="onType(x.it)"><option v-for="(l,k) in TYPES" :value="k">{{ l }}</option></select>
                 <select v-if="x.it.type==='linked'" v-model="x.it.linked" class="mt"><option value="" disabled>選擇連結表單…</option><option v-for="o in linkOpts" :key="o.code" :value="o.code">表{{ o.code }} {{ o.name }}</option></select><div class="small" style="color:var(--ng)" v-if="x.it.type==='linked' && !linkOpts.length">此分項工程尚無其他自主檢查表可連結</div></td>
+              <td class="small muted" style="min-width:120px"><template v-if="x.it.type==='text'">現場填寫敘述</template><template v-else>—</template></td>
               <td><input type="checkbox" v-model="x.it.hold"></td><td><input type="checkbox" v-model="x.it.photo"></td>
               <td style="min-width:120px"><select v-model="x.it.ref" :title="'可引用 ' + editProj + ' 的參考文件'"><option value="">—</option><option v-for="dc in refDocs" :key="dc.id" :value="dc.code">{{ dc.code }}</option><option v-if="x.it.ref && !refDocs.some(dc=>dc.code===x.it.ref)" :value="x.it.ref">{{ x.it.ref }}（不屬於 {{ editProj }}）</option></select></td>
               <td><button class="btn sm danger" @click="delItem(x.idx)">刪</button></td></tr>
@@ -434,10 +435,10 @@
   <div class="foot"><button class="btn" @click="itemImp=null">取消</button><button class="btn primary" :disabled="!itemImpView || itemImpErrs.length>0" @click="doItemImp">匯入</button></div></div></div>
 
 <!-- 預覽表單 -->
-<div class="modal-bg" v-if="previewOn && edit" @click.self="previewOn=false"><div class="modal wide"><h3>預覽：{{ edit.name }} v{{ edit.version }}</h3><div class="tbl-scroll"><table class="table"><thead><tr><th>序</th><th>檢查項目</th><th>檢查標準</th><th>實際檢查情形（填寫欄位）</th><th>判定</th></tr></thead>
+<div class="modal-bg" v-if="previewOn && edit" @click.self="previewOn=false"><div class="modal wide"><h3>預覽：{{ edit.name }} v{{ edit.version }}</h3><div class="tbl-scroll"><table class="table"><thead><tr><th>序</th><th>{{ edit.kind==='spot' ? '抽查項目' : '檢查項目' }}</th><th>{{ edit.kind==='spot' ? '設計圖說、規範之抽查標準（定性定量）' : '設計圖說、規範之檢查標準(定量定性)' }}</th><th>{{ edit.kind==='spot' ? '實際抽查情形（載明抽查數值及單位）' : '實際檢查情形(敘述檢查值)' }}</th><th>判定</th></tr></thead>
   <tbody><template v-for="st in editStages"><tr class="stage-row"><td colspan="5">{{ st.name }}</td></tr>
     <tr v-for="x in st.items"><td>{{ x.idx+1 }}</td><td><span class="star" v-if="x.it.hold">★</span>{{ x.it.name }}</td><td class="pre">{{ x.it.std }}</td>
-      <td><span v-if="x.it.type==='linked'">連結表{{ x.it.linked }}</span><span v-if="x.it.photo" class="chip warn">必拍照</span></td><td>○　╳　╱</td></tr></template></tbody></table></div>
+      <td><span v-if="x.it.type==='text'">________</span><span v-if="x.it.type==='linked'">連結表{{ x.it.linked }}</span><span v-if="x.it.photo" class="chip warn">必拍照</span></td><td>○　╳　╱</td></tr></template></tbody></table></div>
   <div class="foot"><button class="btn primary" @click="previewOn=false">關閉</button></div></div></div>
 
 <!-- 自主檢查紀錄明細 -->
@@ -445,16 +446,16 @@
   <div class="muted mb">{{ showSC.subworkName }}｜{{ showSC.location }}｜{{ Q.fmtD(showSC.date) }}｜{{ showSC.contractor }}</div>
   <div class="filecard mb" v-if="showSC.fillMode==='pdf'"><div class="fic">PDF</div><div class="grow"><template v-if="showSC.pdfFile"><b>{{ showSC.pdfFile.name }}</b><div class="muted small">簽名後 PDF・{{ Q.fmtSize(showSC.pdfFile.size) }}・{{ Q.fmtFull(showSC.pdfFile.at) }}</div></template><span class="muted" v-else>尚未上傳簽名後 PDF</span></div><button class="btn sm" v-if="showSC.pdfFile" @click="downloadFile(showSC.pdfFile)">下載</button></div>
   <div class="mt" v-if="showSC.fillMode==='pdf'"><h4 class="mb">辦理軌跡（{{ showSC.wfStatus }}・V{{ showSC.version||0 }}）</h4><ul class="timeline" v-if="(showSC.logs||[]).length"><li v-for="(l,i) in showSC.logs.slice().reverse()" :key="i" :class="l.action.includes('結案')?'ok':''">{{ Q.fmtFull(l.at) }}｜<b>{{ l.user }}</b> <span class="chip">{{ l.action }}</span><div class="small muted">{{ l.detail }}</div><a class="small" v-if="l.file" @click="downloadFile(l.file)">⬇ {{ l.file.name }}</a> <img v-if="l.sig" :src="l.sig" style="height:30px;vertical-align:middle;border:1px solid var(--line);border-radius:4px"></li></ul><div class="muted small" v-else>尚無辦理紀錄</div></div>
-  <div class="tbl-scroll" v-if="showSC.fillMode!=='pdf'"><table class="table"><thead><tr><th>序</th><th>檢查項目</th><th>判定</th><th>照片</th><th>停留點</th></tr></thead><tbody>
-    <tr v-for="x in itemsOf(showSC)"><td>{{ x.it.no }}</td><td><span class="star" v-if="x.it.hold">★</span>{{ x.it.name }}</td><td><span class="chip" :class="x.a.judge==='ok'?'ok':x.a.judge==='ng'?'ng':''">{{ judgeText(x.a.judge) }}</span></td><td>{{ (x.a.photos||[]).length || '' }}</td><td><span v-if="x.it.hold" class="chip" :class="Q.holdState(showSC,x.it.no)==='passed'?'ok':''">{{ Q.HOLD_TEXT[Q.holdState(showSC,x.it.no)] }}</span></td></tr></tbody></table></div>
+  <div class="tbl-scroll" v-if="showSC.fillMode!=='pdf'"><table class="table"><thead><tr><th>序</th><th>檢查項目</th><th>實際檢查情形</th><th>判定</th><th>照片</th><th>停留點</th></tr></thead><tbody>
+    <tr v-for="x in itemsOf(showSC)"><td>{{ x.it.no }}</td><td><span class="star" v-if="x.it.hold">★</span>{{ x.it.name }}</td><td class="pre small">{{ x.a.text }}</td><td><span class="chip" :class="x.a.judge==='ok'?'ok':x.a.judge==='ng'?'ng':''">{{ judgeText(x.a.judge) }}</span></td><td>{{ (x.a.photos||[]).length || '' }}</td><td><span v-if="x.it.hold" class="chip" :class="Q.holdState(showSC,x.it.no)==='passed'?'ok':''">{{ Q.HOLD_TEXT[Q.holdState(showSC,x.it.no)] }}</span></td></tr></tbody></table></div>
   <div class="mt small muted" v-if="showSC.status==='signed'">已簽認：現場工程師 {{ (showSC.signatures.site||{}).name }}／工地授權代表 {{ (showSC.signatures.rep||{}).name }}｜內容雜湊 {{ (showSC.hash||'').slice(0,16) }}…</div>
   <div class="foot"><button class="btn" @click="downloadRec('self', showSC)">⬇ 下載 PDF</button><button class="btn primary" @click="showSC=null">關閉</button></div></div></div>
 <div class="modal-bg" v-if="showSP" @click.self="showSP=null"><div class="modal wide"><h3>{{ showSP.templateName }} v{{ showSP.templateVer }}｜{{ showSP.id }}</h3>
   <div class="muted mb">{{ showSP.location }}｜{{ showSP.kind==='hold' ? '檢驗停留點會驗 '+showSP.requestId : '隨機抽查' }}｜{{ Q.fmtD(showSP.date||showSP.createdAt) }}</div>
   <div class="filecard mb" v-if="showSP.fillMode==='pdf'"><div class="fic">PDF</div><div class="grow"><template v-if="showSP.pdfFile"><b>{{ showSP.pdfFile.name }}</b><div class="muted small">簽名後 PDF・{{ Q.fmtSize(showSP.pdfFile.size) }}（一般表格紀錄，不做合格判定）</div></template><span class="muted" v-else>尚未上傳簽名後 PDF</span></div><button class="btn sm" v-if="showSP.pdfFile" @click="downloadFile(showSP.pdfFile)">下載</button></div>
   <div class="mt" v-if="showSP.fillMode==='pdf'"><h4 class="mb">辦理軌跡（{{ showSP.wfStatus }}・V{{ showSP.version||0 }}）</h4><ul class="timeline" v-if="(showSP.logs||[]).length"><li v-for="(l,i) in showSP.logs.slice().reverse()" :key="i" :class="l.action.includes('結案')?'ok':''">{{ Q.fmtFull(l.at) }}｜<b>{{ l.user }}</b> <span class="chip">{{ l.action }}</span><div class="small muted">{{ l.detail }}</div><a class="small" v-if="l.file" @click="downloadFile(l.file)">⬇ {{ l.file.name }}</a> <img v-if="l.sig" :src="l.sig" style="height:30px;vertical-align:middle;border:1px solid var(--line);border-radius:4px"></li></ul><div class="muted small" v-else>尚無辦理紀錄</div></div>
-  <div class="tbl-scroll" v-if="showSP.fillMode!=='pdf'"><table class="table"><thead><tr><th>序</th><th>檢查項目</th><th>判定</th><th>照片</th></tr></thead><tbody>
-    <tr v-for="x in itemsOf(showSP)" :style="showSP.focusNo===x.it.no?'font-weight:600':''"><td>{{ x.it.no }}</td><td><span class="star" v-if="x.it.hold">★</span>{{ x.it.name }} <span class="chip warn" v-if="showSP.focusNo===x.it.no">本次會驗</span></td><td><span class="chip" :class="x.a.judge==='ok'?'ok':x.a.judge==='ng'?'ng':''">{{ judgeText(x.a.judge) }}</span></td><td>{{ (x.a.photos||[]).length || '' }}</td></tr></tbody></table></div>
+  <div class="tbl-scroll" v-if="showSP.fillMode!=='pdf'"><table class="table"><thead><tr><th>序</th><th>抽查項目</th><th>實際抽查情形</th><th>判定</th><th>照片</th></tr></thead><tbody>
+    <tr v-for="x in itemsOf(showSP)" :style="showSP.focusNo===x.it.no?'font-weight:600':''"><td>{{ x.it.no }}</td><td><span class="star" v-if="x.it.hold">★</span>{{ x.it.name }} <span class="chip warn" v-if="showSP.focusNo===x.it.no">本次會驗</span></td><td class="pre small">{{ x.a.text }}</td><td><span class="chip" :class="x.a.judge==='ok'?'ok':x.a.judge==='ng'?'ng':''">{{ judgeText(x.a.judge) }}</span></td><td>{{ (x.a.photos||[]).length || '' }}</td></tr></tbody></table></div>
   <div class="mt small muted">計價：厚 {{ showSP.calc.thickness||'—' }} m × 長 {{ showSP.calc.length||'—' }} m × 深 {{ showSP.calc.depth||'—' }} m<template v-if="showSP.status==='signed'">｜內容雜湊 {{ (showSP.hash||'').slice(0,16) }}…</template></div>
   <div class="foot"><button class="btn" @click="downloadRec('spot', showSP)">⬇ 下載 PDF</button><button class="btn primary" @click="showSP=null">關閉</button></div></div></div>
 

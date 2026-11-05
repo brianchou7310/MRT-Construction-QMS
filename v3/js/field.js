@@ -119,6 +119,7 @@ createApp({
     const selReqId = ref(null), sched = reactive({ dt: '', reason: '', rejecting: false, cancelling: false, tplId: '', tplOpts: [] });
     const selReq = computed(() => d.requests.find(r => r.id === selReqId.value));
     function selectReq(r) { selReqId.value = r.id; sched.dt = Q.toLocalInput(r.scheduledAt); sched.reason = ''; sched.rejecting = false; sched.cancelling = false; sched.tplOpts = []; sched.tplId = ''; Q.spotOptions(r.id).then(o => { if (selReqId.value !== r.id) return; sched.tplOpts = o.tpls.map(t => ({ id: t.id, name: t.name, pdf: t.fillMode === 'pdf' })); sched.tplId = o.def ? o.def.id : ''; }); }
+    const reqText = r => { const sc = d.selfChecks.find(s => s.id === r.scId); return sc && sc.answers[r.itemNo] ? sc.answers[r.itemNo].text || '' : ''; };
     const reqPhotos = r => { const sc = d.selfChecks.find(s => s.id === r.scId); const a = sc && sc.answers[r.itemNo]; return a && a.photos && a.photos.length ? a.photos : Array.from({ length: r.photoCount || 0 }, () => '*'); };
     const lockedAfter = r => { const sc = d.selfChecks.find(s => s.id === r.scId), tpl = sc && tplOf(sc.templateId); return tpl ? tpl.items.filter(i => i.hold && i.no > r.itemNo && Q.holdState(sc, i.no) !== 'passed').map(i => i.name) : []; };
     async function doSchedule() { const ts = Q.fromLocalInput(sched.dt); if (!ts) return toast('請選擇時間', true); const r = selReq.value; await Q.schedule(r.id, ts, me.value.name, r.status === 'scheduled'); await load(); toast('已排定並通知廠商'); }
@@ -344,7 +345,9 @@ createApp({
     const spTotal = computed(() => spTpl.value ? spTpl.value.items.length : 0);
     const spSummary = computed(() => { const a = sp.value ? Object.values(sp.value.answers) : []; return { ok: a.filter(x => x.judge === 'ok').length, ng: a.filter(x => x.judge === 'ng').length, na: a.filter(x => x.judge === 'na').length, none: a.filter(x => !x.judge).length, photos: a.reduce((n, x) => n + (x.photos || []).length, 0) }; });
     const spStageStat = st => { const l = spTpl.value ? Q.stageItems(spTpl.value, st) : []; return `${l.filter(i => spA(i.no).judge).length}/${l.length}`; };
-    const spSelfJudge = it => { const sc = spSc.value; if (!sc) return null; const st = tplOf(sc.templateId), si = st && it.srcKey && st.items.find(x => x.key === it.srcKey); const a = sc.answers[si ? si.no : (it.srcNo || it.no)]; return (a && a.judge) || null; };
+    const spSelfAns = it => { const sc = spSc.value; if (!sc) return null; const st = tplOf(sc.templateId), si = st && it.srcKey && st.items.find(x => x.key === it.srcKey); return sc.answers[si ? si.no : (it.srcNo || it.no)] || null; };
+    const spSelfJudge = it => (spSelfAns(it) || {}).judge || null;
+    const spSelfText = it => (spSelfAns(it) || {}).text || '';
     const spArea = computed(() => { const l = Number(sp.value && sp.value.calc.length), dp = Number(sp.value && sp.value.calc.depth); return l && dp ? (l * dp).toFixed(2) : ''; });
     const spLocked = computed(() => spReq.value ? lockedAfter(spReq.value) : []);
     const spAll = computed(() => d.spotChecks.slice().sort((a, b) => b.createdAt - a.createdAt));
@@ -536,12 +539,12 @@ createApp({
 
     return {
       Q, d, loaded, now, view, todoTab, tenderSel, dept, deptName, projOf, projOpts, docProj, docList, fc, fsp, scOpts, spOpts, setF, clearF, NO_UNIT, scAll, spAll, allTenderLabel, role, isSup, me, wide, toastMsg, toastNg, toast, tplOf, rel, hh, todayLabel, reqCls,
-      todoReqs, lockedCards, rejectedCards, defTodos, draftSpots, pdfTodos, openPdfTodo, openDefects, todoCount, holdFilter, holdsList, selReqId, selReq, sched, selectReq, reqPhotos, lockedAfter, doSchedule, doReject, doStart, doCancel,
+      todoReqs, lockedCards, rejectedCards, defTodos, draftSpots, pdfTodos, openPdfTodo, openDefects, todoCount, holdFilter, holdsList, selReqId, selReq, sched, selectReq, reqText, reqPhotos, lockedAfter, doSchedule, doReject, doStart, doCancel,
       pf, pfPreview, pfUrl, pfTpl, pfRec, pfSelf, pfSt, wfCls, pfCanLock, pfIsLocker, pfCanClose, pfCanVendor, pfCanUnfreeze, pfHint, pfDownloadBlank, pfDownloadCur, pfLock, pfCancel, wfUp, wfCert, wfVen, wfUnf, openWfUp, onWfUpFile, submitWfUp, openWfVen, onWfVenFile, submitWfVen, openWfCert, submitWfCert, openWfUnf, submitWfUnf, dlLog, leavePdf, isDirector, scList, scProgress, newForm, qrForm, tenderOpts, swOpts, tplOpts, unitOpts, ut, cascade, openNew, createSc, scanQr, pickQr,
       cur, curTpl, stageTab, itemNo, saveMsg, docShow, linkShow, applyForm, readonly, stageList, curItem, shownItems, judged, total, stageStat, stageDone, ans, ensure, lockOf, hstate, hreq, itemEditable, itemIcon,
       flush, queueSave, openSc, gotoItem, setStage, step, setJudge, addPhoto, addDemoPhoto, delPhoto, linkName, preLinked, linkedRec, linkedDone, linkedTpl, linkStatus, openLinked, createLinked, returnTo, confirmQr, canApply, openApply, applyShort, applyHours, submitApply, holdText, wasRejected,
       summary, holdItems, holdPending, attachCodes, canSubmit, goSign, finishStage, stageTabs, firstStage, stageNext, spStageTabs, spNextStage, leaveForm,
-      sp, spStage, spItemNo, spSaveMsg, spNew, spTpl, spReq, spSc, spEditable, spStageList, spCurItem, spShown, spA, spJudged, spTotal, spSummary, spStageStat, spSelfJudge, spArea, spLocked, spList, spProgress, spSave, spFlush, openSpot, spGoto, spSetStage, spJudge, spPhoto, spDemoPhoto, spDelPhoto, spGoSign, leaveSpot, openSpotNew, createSpot,
+      sp, spStage, spItemNo, spSaveMsg, spNew, spTpl, spReq, spSc, spEditable, spStageList, spCurItem, spShown, spA, spJudged, spTotal, spSummary, spStageStat, spSelfJudge, spSelfText, spArea, spLocked, spList, spProgress, spSave, spFlush, openSpot, spGoto, spSetStage, spJudge, spPhoto, spDemoPhoto, spDelPhoto, spGoSign, leaveSpot, openSpotNew, createSpot,
       signCtx, signHash, signAgree, canvasEl, drawn, signers, signIdx, curSigner, signSummary, sDown, sMove, sUp, clearSign, applySaved, saveSig, confirmSign, cancelSign,
       defCls, defText, defAct, defForm, defPhoto, submitFix, submitReview, resetDemo, clearSigs, navItems, nav, navActive, printForm
     };
