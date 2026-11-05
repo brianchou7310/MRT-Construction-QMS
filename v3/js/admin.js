@@ -424,7 +424,7 @@ createApp({
         const k = `${u}|${no}`; if (iSeen[code + '#' + k]) e.push(`${L}：項次 ${no}${u ? '（' + u + '）' : ''} 重複`); iSeen[code + '#' + k] = 1;
         if (ex && !unit) e.push(`${L}：「排除」只能用在單元列`);
         const it = { unit: u, no, ex, line: r._line, stage: r['階段'], name: r['檢查項目'], std: r['檢查標準'] == null ? '' : String(r['檢查標準']), typeText: r['判定類型'], type: BULK_TYPE[r['判定類型']],
-          hold: yn(r['停留點']), photo: yn(r['必拍照']), ref: String(r['引用文件編號'] || '').trim(), linked: String(r['連結表號'] || '').trim() };
+          hold: yn(r['停留點']), photo: yn(r['必拍照']), ref: String(r['引用文件編號'] || '').trim(), linked: String(r['連結表號'] || '').trim(), defText: r['預設文字'] == null ? '' : String(r['預設文字']) };
         if (!ex) {
           if (!it.stage || !it.name || !it.typeText) e.push(`${L}：階段、檢查項目、判定類型必填`);
           if (it.stage && !fm.stageNames.includes(it.stage)) e.push(`${L}：階段「${it.stage}」不在此表單的階段（${fm.stageNames.join('／')}）`);
@@ -470,7 +470,7 @@ createApp({
           const v = fm.views[u], old = v.old;
           const stages = fm.stageNames.map(n => { const o = old && Q.stagesOf(old).find(s => s.name === n); return o ? { key: o.key, name: n } : { key: SR[n] || Q.uid('ST'), name: n }; });
           // 同名項目沿用舊的永久代碼（key），讓抽查表對應與統計不中斷
-          const items = v.items.map((i, k) => { const prev = old && old.items.find(x => x.name === i.name); return Object.assign(Q.I(k + 1, stages.find(s => s.name === i.stage).key, i.name, i.std, { type: i.type, hold: !!i.hold, photo: !!i.photo || i.type === 'photo', ref: i.ref, linked: i.type === 'linked' ? i.linked : '' }), prev && prev.key ? { key: prev.key } : {}); });
+          const items = v.items.map((i, k) => { const prev = old && old.items.find(x => x.name === i.name); return Object.assign(Q.I(k + 1, stages.find(s => s.name === i.stage).key, i.name, i.std, { type: i.type, hold: !!i.hold, photo: !!i.photo || i.type === 'photo', ref: i.ref, linked: i.type === 'linked' ? i.linked : '', defText: i.type === 'text' ? (i.defText || '') : '' }), prev && prev.key ? { key: prev.key } : {}); });
           let pairedSelf = '';
           if (fm.pair) { const sp = d.templates.concat(saved).filter(t => t.subworkId === sw.id && t.kind === 'self' && t.status === 'published' && t.code === fm.pair).sort((a, b) => ((b.unitNo || '') === u) - ((a.unitNo || '') === u) || b.version - a.version)[0]; pairedSelf = sp ? sp.id : ''; }
           const base = { tenderId: sw.tenderId, subworkId: sw.id, unitNo: u, kind: fm.kind, code: fm.code, name: fm.name, source: fm.source || ('匯入：' + b.fileName), fillMode: 'online', stages, items, order: fm.order, pairedSelf };
@@ -492,8 +492,8 @@ createApp({
       const tpls = d.templates.filter(t => t.subworkId === sw.id && t.status === 'published' && t.fillMode !== 'pdf');
       const groups = new Map(); tpls.forEach(t => { if (!groups.has(t.code)) groups.set(t.code, []); groups.get(t.code).push(t); });
       const out = { 單元: unitOrder.map(u => [u, '']), 表單: [], 檢查項目: [], 可連結表單: linkableRows(sw.id) }, skipped = [];
-      const sameItem = (a, ta, b, tb) => Q.stageName(ta, a.stage) === Q.stageName(tb, b.stage) && (a.std || '') === (b.std || '') && a.type === b.type && !!a.hold === !!b.hold && !!a.photo === !!b.photo && (a.ref || '') === (b.ref || '') && (a.linked || '') === (b.linked || '');
-      const itemRow = (t, u, no, i) => [t.code, u, no, Q.stageName(t, i.stage), i.name, i.std || '', TYPE_TEXT[i.type] || '選項', i.hold ? 'Y' : 'N', i.photo ? 'Y' : 'N', i.ref || '', i.linked || '', ''];
+      const sameItem = (a, ta, b, tb) => Q.stageName(ta, a.stage) === Q.stageName(tb, b.stage) && (a.std || '') === (b.std || '') && a.type === b.type && !!a.hold === !!b.hold && !!a.photo === !!b.photo && (a.ref || '') === (b.ref || '') && (a.linked || '') === (b.linked || '') && (a.defText || '') === (b.defText || '');
+      const itemRow = (t, u, no, i) => [t.code, u, no, Q.stageName(t, i.stage), i.name, i.std || '', TYPE_TEXT[i.type] || '選項', i.hold ? 'Y' : 'N', i.photo ? 'Y' : 'N', i.ref || '', i.linked || '', '', i.type === 'text' ? (i.defText || '') : ''];
       [...groups.values()].sort((a, b) => (a[0].order ?? 1e9) - (b[0].order ?? 1e9) || a[0].code.localeCompare(b[0].code, 'zh-Hant', { numeric: true })).forEach(list => {
         const unitT = list.filter(t => t.unitNo).sort((a, b) => unitOrder.indexOf(a.unitNo) - unitOrder.indexOf(b.unitNo)), lvl = list.filter(t => !t.unitNo);
         if (unitT.length && lvl.length) skipped.push(list[0].code);
@@ -519,7 +519,7 @@ createApp({
               const bk = base.items.findIndex((b, k) => k > p && k < q && !used.has(k) && Q.stageName(base, b.stage) === Q.stageName(t, i.stage));
               if (bk >= 0) { pairOf[ui] = bk; used.add(bk); }
             });
-            base.items.forEach((b, k) => { if (!used.has(k)) I.push([code, u, shared[k].no, '', '', '', '', '', '', '', '', 'Y']); });
+            base.items.forEach((b, k) => { if (!used.has(k)) I.push([code, u, shared[k].no, '', '', '', '', '', '', '', '', 'Y', '']); });
             let prevNo = null, prevStage = null, off = 0, nextPlain = base.items.length;
             for (let ui = 0; ui < t.items.length; ui++) {
               const i = t.items[ui], stn = Q.stageName(t, i.stage);
@@ -650,7 +650,7 @@ createApp({
       const relOf = {}; [...relDoc.getElementsByTagName('Relationship')].forEach(r => { relOf[r.getAttribute('Id')] = r.getAttribute('Target').replace(/^\/?(xl\/)?/, ''); });
       const pathOf = {}; [...wbDoc.getElementsByTagName('sheet')].forEach(sh => { pathOf[sh.getAttribute('name')] = '/xl/' + relOf[sh.getAttribute('r:id') || sh.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id')]; });
       // 列印範圍＝實際資料列；資料範圍（dimension）涵蓋公式欄
-      const PRINT = { 單元: 'B', 表單: 'M', 檢查項目: 'N', 可連結表單: 'E' }, DIM = Object.assign({}, PRINT, { 可連結表單: 'O' }), sheetEls = [...wbDoc.getElementsByTagName('sheet')];
+      const PRINT = { 單元: 'B', 表單: 'M', 檢查項目: 'O', 可連結表單: 'E' }, DIM = Object.assign({}, PRINT, { 可連結表單: 'O' }), sheetEls = [...wbDoc.getElementsByTagName('sheet')];
       let dn = wbDoc.getElementsByTagName('definedNames')[0];
       if (!dn) { dn = wbDoc.createElementNS(NS, 'definedNames'); const sheetsEl = wbDoc.getElementsByTagName('sheets')[0]; sheetsEl.parentNode.insertBefore(dn, sheetsEl.nextSibling); }
       [...dn.getElementsByTagName('definedName')].filter(x => x.getAttribute('name') === '_xlnm.Print_Area').forEach(x => dn.removeChild(x));
@@ -706,7 +706,7 @@ createApp({
       const data = {
         單元: t.unitNo ? [[t.unitNo, '']] : [],
         表單: [[t.code, t.name, t.kind === 'spot' ? '抽查紀錄表' : '自主檢查表', t.unitNo || '', t.source || '', pair, '', isDef ? '' : stNames.join('、')]],
-        檢查項目: t.items.map(i => [t.code, '', i.no, Q.stageName(t, i.stage), i.name, i.std || '', TYPE_TEXT[i.type] || '選項', i.hold ? 'Y' : 'N', i.photo ? 'Y' : 'N', i.ref || '', i.linked || '', '']),
+        檢查項目: t.items.map(i => [t.code, '', i.no, Q.stageName(t, i.stage), i.name, i.std || '', TYPE_TEXT[i.type] || '選項', i.hold ? 'Y' : 'N', i.photo ? 'Y' : 'N', i.ref || '', i.linked || '', '', i.type === 'text' ? (i.defText || '') : '']),
         可連結表單: linkableRows(t.subworkId)
       };
       if (buildXlsx(data, `${t.code}_${t.name}${t.unitNo ? '_' + t.unitNo : ''}.xlsx`, `表單匯出檔：${t.kind === 'self' ? '表' : ''}${t.code} ${t.name}${t.unitNo ? '（單元 ' + t.unitNo + '）' : ''}`,
@@ -736,7 +736,7 @@ createApp({
       const t = edit.value, base = m.mode === 'replace' ? [] : Q.stagesOf(t);
       // 階段：沿用同名階段的 key，其餘依檔案的階段設定新增
       const stages = m.mode === 'replace' ? fm.stageNames.map(n => { const o = Q.stagesOf(t).find(s => s.name === n); return o ? Q.clone(o) : { key: SR[n] || Q.uid('ST'), name: n }; }) : buildStages(fm.stageNames, base);
-      const items = v.items.map(i => { const prev = t.items.find(x => x.name === i.name); return Object.assign(Q.I(0, stageKey(stages, i.stage), i.name, i.std, { type: i.type, hold: !!i.hold, photo: !!i.photo || i.type === 'photo', ref: i.ref, linked: i.type === 'linked' ? i.linked : '' }), m.mode === 'replace' && prev && prev.key ? { key: prev.key } : {}); });
+      const items = v.items.map(i => { const prev = t.items.find(x => x.name === i.name); return Object.assign(Q.I(0, stageKey(stages, i.stage), i.name, i.std, { type: i.type, hold: !!i.hold, photo: !!i.photo || i.type === 'photo', ref: i.ref, linked: i.type === 'linked' ? i.linked : '', defText: i.type === 'text' ? (i.defText || '') : '' }), m.mode === 'replace' && prev && prev.key ? { key: prev.key } : {}); });
       t.stages = stages; t.items = m.mode === 'replace' ? items : t.items.concat(items);
       toast(`已匯入 ${items.length} 項（${m.mode === 'replace' ? '取代原有項目' : '加在現有項目後面'}），請按「${editUsed.value > 0 ? '另存為 v' + (t.version + 1) : '儲存'}」生效`); itemImp.value = null;
     }

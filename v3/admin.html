@@ -288,7 +288,7 @@
               <td style="min-width:170px"><input type="text" v-model="x.it.name"></td><td style="min-width:200px"><textarea rows="2" v-model="x.it.std"></textarea></td>
               <td style="min-width:110px"><select v-model="x.it.type" @change="onType(x.it)"><option v-for="(l,k) in TYPES" :value="k">{{ l }}</option></select>
                 <select v-if="x.it.type==='linked'" v-model="x.it.linked" class="mt"><option value="" disabled>選擇連結表單…</option><option v-for="o in linkOpts" :key="o.code" :value="o.code">表{{ o.code }} {{ o.name }}</option></select><div class="small" style="color:var(--ng)" v-if="x.it.type==='linked' && !linkOpts.length">此分項工程尚無其他自主檢查表可連結</div></td>
-              <td class="small muted" style="min-width:120px"><template v-if="x.it.type==='text'">現場填寫敘述</template><template v-else>—</template></td>
+              <td class="small muted" style="min-width:180px"><template v-if="x.it.type==='text'"><textarea rows="2" v-model="x.it.defText" placeholder="預設文字（現場可修改，可留白）"></textarea></template><template v-else>—</template></td>
               <td><input type="checkbox" v-model="x.it.hold"></td><td><input type="checkbox" v-model="x.it.photo"></td>
               <td style="min-width:120px"><select v-model="x.it.ref" :title="'可引用 ' + editProj + ' 的參考文件'"><option value="">—</option><option v-for="dc in refDocs" :key="dc.id" :value="dc.code">{{ dc.code }}</option><option v-if="x.it.ref && !refDocs.some(dc=>dc.code===x.it.ref)" :value="x.it.ref">{{ x.it.ref }}（不屬於 {{ editProj }}）</option></select></td>
               <td><button class="btn sm danger" @click="delItem(x.idx)">刪</button></td></tr>
@@ -438,7 +438,7 @@
 <div class="modal-bg" v-if="previewOn && edit" @click.self="previewOn=false"><div class="modal wide"><h3>預覽：{{ edit.name }} v{{ edit.version }}</h3><div class="tbl-scroll"><table class="table"><thead><tr><th>序</th><th>{{ edit.kind==='spot' ? '抽查項目' : '檢查項目' }}</th><th>{{ edit.kind==='spot' ? '設計圖說、規範之抽查標準（定性定量）' : '設計圖說、規範之檢查標準(定量定性)' }}</th><th>{{ edit.kind==='spot' ? '實際抽查情形（載明抽查數值及單位）' : '實際檢查情形(敘述檢查值)' }}</th><th>判定</th></tr></thead>
   <tbody><template v-for="st in editStages"><tr class="stage-row"><td colspan="5">{{ st.name }}</td></tr>
     <tr v-for="x in st.items"><td>{{ x.idx+1 }}</td><td><span class="star" v-if="x.it.hold">★</span>{{ x.it.name }}</td><td class="pre">{{ x.it.std }}</td>
-      <td><span v-if="x.it.type==='text'">________</span><span v-if="x.it.type==='linked'">連結表{{ x.it.linked }}</span><span v-if="x.it.photo" class="chip warn">必拍照</span></td><td>○　╳　╱</td></tr></template></tbody></table></div>
+      <td><span v-if="x.it.type==='text'" class="pre">{{ x.it.defText || '________' }}</span><span v-if="x.it.type==='linked'">連結表{{ x.it.linked }}</span><span v-if="x.it.photo" class="chip warn">必拍照</span></td><td>○　╳　╱</td></tr></template></tbody></table></div>
   <div class="foot"><button class="btn primary" @click="previewOn=false">關閉</button></div></div></div>
 
 <!-- 自主檢查紀錄明細 -->

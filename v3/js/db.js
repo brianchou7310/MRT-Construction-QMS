@@ -484,7 +484,7 @@
     // 廠商自檢對照：有單元＝同分項工程＋同單元；沒有單元＝同分項工程（有配對自檢表時優先同表）
     if (!sc && (unit || !request)) { const pair = tpl.pairedSelf ? await get('templates', tpl.pairedSelf) : null; const l = (await all('selfChecks')).filter(x => x.subworkId === tpl.subworkId && (x.unit || '') === (unit || '')).sort((a, b) => (pair ? (b.templateCode === pair.code) - (a.templateCode === pair.code) : 0) || b.createdAt - a.createdAt); sc = l[0] || null; }
     const focus = request && request.itemNo ? (tpl.items.find(i => request.itemKey && i.srcKey === request.itemKey) || tpl.items.find(i => !request.itemKey && i.srcNo === request.itemNo) || {}).no || null : null;
-    const answers = {}; tpl.items.forEach(i => { answers[i.no] = { judge: null, values: {}, photos: [], note: '' }; });
+    const answers = {}; tpl.items.forEach(i => { answers[i.no] = { judge: null, values: {}, photos: [], note: '', text: i.type === 'text' ? (i.defText || '') : '' }; });
     const sp = {
       id: `SP-${tender.code}-${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(n, 3)}`, kind: request ? 'hold' : 'random', requestId: request ? request.id : '', scId: sc ? sc.id : '', itemNo: request ? request.itemNo : 0, focusNo: focus,
       templateId: tpl.id, templateVer: tpl.version, templateName: tpl.name, subworkId: tpl.subworkId, tenderId: tender.id, tenderCode: tender.code, unit: unit || (request && request.unit) || '', location: location || (request && request.location) || (sc && sc.location) || (unit ? `單元 ${unit}` : (sw ? sw.name : '')),
