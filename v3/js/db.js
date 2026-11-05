@@ -90,24 +90,45 @@
   /* ---------- 示範資料 ---------- */
   const I = (no, stage, name, std, o = {}) => Object.assign({ no, stage, name, std, type: 'option', hold: false, photo: false, linked: '', ref: 'CF671-PL-0032' }, o);
 
+  // 表單內容依「施工自主檢查表」紙本：實際檢查情形（敘述檢查值）= 預設文字 defText，現場填入數值
+  const T = (no, stage, name, std, defText, o = {}) => I(no, stage, name, std, Object.assign({ type: 'text', defText }, o));
+  function items54() {
+    return [
+      T(1, 'pre', '測量放樣', '依施工圖導牆偏差≦4mm/m', '實測值:'),
+      T(2, 'pre', '地下管線位置確認', '現場管線試挖調查確認', '現場   有  /  無   管線', { hold: true }),
+      T(3, 'during', '導溝牆鋼筋', '垂直筋:D16@15cm\n水平筋:D16@20cm', '垂直筋:D16@      cm\n水平筋:D16@      cm', { hold: true }),
+      T(4, 'during', '導溝寬度', 'DW≦實測值≦DW+5cm\n(DW=100cm)', '實測值:           cm'),
+      T(5, 'during', '導溝深度', 'H≧200cm', '實測值:           cm'),
+      T(6, 'during', '導溝牆寬度', '≧25cm', '實測值:           cm'),
+      T(7, 'during', '垂直精度', '垂直度≦4mm/m', '實測值:           mm/m'),
+      T(8, 'during', '保護層', '≧10cm', '實測值:           cm'),
+      T(9, 'during', '導溝鋪面預留筋', '預留筋D16@20cm', '預留筋D    @      cm', { hold: true }),
+      T(10, 'during', '高程檢測', 'EL：       m', 'EL：       m'),
+      T(11, 'during', '混凝土澆置', '混凝土強度:210kgf/cm2，內外導溝依高程分段澆置\n□坍度:17±4cm\n□溫度:≦32℃\n□氯離子≦0.15kg/m3\n□濕篩是否正常', '混凝土強度:     kgf/cm2\n□坍度:      cm\n□溫度:      ℃\n□氯離子:    kg/m3\n□濕篩  是  /  否 正常', { hold: true }),
+      T(12, 'post', '場地清理', '無雜物', '  有  /  無   雜物'),
+      T(13, 'post', '導溝內牆面平整度', '無隆起、凹陷', '  有  /  無   隆起、凹陷'),
+      T(14, 'post', '回撐', '木支撐@2m(水平)上下排交錯', '木支撐間距：         m', { hold: true }),
+      T(15, 'post', '開口安衛措施', '護欄、鐵板或核可材料覆蓋', '  有  /  無   覆蓋', { hold: true, photo: true })
+    ];
+  }
   function items55() {
     return [
       I(1, 'pre', '導溝施作', '詳導溝施工自主檢查表', { type: 'linked', linked: '5-4' }),
-      I(2, 'pre', '單元位置', '放樣於導溝面上，詳施工圖', { photo: true }),
+      T(2, 'pre', '單元位置', '放樣於導溝面上，詳施工圖', '單元長度             m\n導溝高程EL=         m', { photo: true }),
       I(3, 'pre', '鋼筋籠製作', '詳鋼筋籠施工自主檢查表', { type: 'linked', linked: '5-6' }),
-      I(4, 'pre', '穩定液液面高度控制', '不低於內導溝面下（GL-0.5m ± 5cm）'),
-      I(5, 'during', '開挖寬度及深度', '1. 寬度 100 ± 5cm\n2. 不得超過設計深度 50cm'),
-      I(6, 'during', '端鈑處理（公單元、母單元）', '先施作單元端部鋼刷清除汙泥與雜物', { photo: true }),
-      I(7, 'during', '溝底沉泥清除及深度確認', '實際深度 ≥ 設計深度\nS1 溝底 EL=98.5／S2 EL=96.0／S3 EL=101.0'),
-      I(8, 'during', '垂直度（超音波檢測）', '≦ 1/300', { hold: true, photo: true }),
+      T(4, 'pre', '穩定液液面高度控制', '不低於內導溝面下\n(GL-0.5m ± 5cm)', '穩定液面高程：        m'),
+      T(5, 'during', '開挖寬度及深度', '1.寬度100±5cm\n2.不得超過設計深度50cm', '1.寬度:               cm\n2.開挖深度:            m'),
+      T(6, 'during', '端鈑處理（公單元、公母單元）', '先施作單元端部鋼刷清除汙泥與雜物', '汙泥與雜物  已 / 未 清除', { photo: true }),
+      T(7, 'during', '溝底沉泥清除及深度確認', '實際深度 ≥ 設計深度\n□S1：溝底EL=98.5\n□S2：溝底EL=96.0\n□S3：溝底EL=101.0', '□S1:溝底EL=\n□S2:溝底EL=\n□S3:溝底EL='),
+      T(8, 'during', '垂直度（超音波檢測）', '≦1/300', '實測值：', { hold: true, photo: true }),
       I(9, 'during', '穩定液檢測（澆置混凝土前）', '詳連續壁穩定液自主檢查紀錄表', { type: 'linked', linked: '5-7', hold: true }),
-      I(10, 'during', '鋼筋籠吊放高程及位置確認', '壁體垂直方向偏差 25mm\n其他方向 75mm\n鋼筋籠頂高程 EL 122.9m', { type: 'text', hold: true, photo: true }),
-      I(11, 'during', '特密管安裝', '1. 出口離槽底面 1.5m 以內\n2. 特密管長度符合開挖深度\n4. 特密管間距 ≦ 300cm', { hold: true }),
-      I(12, 'during', '混凝土試體取樣', "1. fc' ≧ 250 kgf/cm²\n2. 溫度 ≦ 32°C\n3. 坍度 19 ± 4.0cm", { type: 'text', hold: true }),
-      I(13, 'during', '端鈑外回填碎石（母單元、公母單元）', '碎石回填 2m'),
+      T(10, 'during', '鋼筋籠吊放高程及位置確認', '壁體垂直方向偏差:25mm\n其他方向:75mm\n鋼筋籠頂高程EL:122.9m', '垂直方向偏差:          mm\n其他方向:              mm\n鋼筋籠頂高程EL:        m', { hold: true, photo: true }),
+      T(11, 'during', '特密管安裝', '1.出口端低於混凝土面1.5m\n2.特密管長度符合開挖深度\n3.壓送橡皮管\n4.特密管間距要求≦300cm', '1.出口端低於混凝土面     m\n2.特密管長度:\n3. 有  /  無  壓送橡皮管\n4.特密管間距            cm', { hold: true }),
+      T(12, 'during', '混凝土試體取樣', "1. fc’≧250kgf/cm2\n2.溫度≦32℃\n3.坍度19±4.0cm\n4.氯離子含量<0.15kg/m3\n5.濕篩是否正常\n6.各特密管應平均搗灌", "1. fc’               kgf/cm2\n2.溫度                  ℃\n3.坍度                 cm\n4.氯離子含量         kg/m3\n5.濕篩正常：   是  /  否\n6.  有  /  未  平均搗灌", { hold: true }),
+      T(13, 'during', '端鈑外回填碎石（母單元、公母單元）', '碎石回填2m', '碎石回填：            m'),
       I(14, 'during', '混凝土澆置紀錄', '詳連續壁混凝土灌漿紀錄表', { type: 'linked', linked: '5-9' }),
-      I(15, 'post', '場地清理', '是否清理完成'),
-      I(16, 'post', '開口安衛措施', '護欄、鐵板或核可材料覆蓋', { hold: true, photo: true })
+      T(15, 'post', '場地清理', '是否清理完成', '  已  /  未  完成清理'),
+      T(16, 'post', '開口安衛措施', '護欄、鐵板或核可材料覆蓋', '  有  /  無   覆蓋', { hold: true, photo: true })
     ];
   }
   function mini(id, subworkId, kind, code, name, n, extra) {
@@ -155,7 +176,7 @@
     const spotItems = items55().map(i => { i.srcNo = i.no; i.hold = [4, 8, 9, 10, 11, 12, 16].includes(i.no); return i; });
     const tSpot = { id: 'TP-SP-1', tenderId: 'T671', subworkId: 'S671-5', kind: 'spot', code: 'SP-5', name: '連續壁施工品質抽查記錄表', version: 1, status: 'published', source: 'CF671-PL-0032 連續壁工計畫書 p.5-20~5-21', pairedSelf: 'TP-5-5', fillMode: 'online', items: spotItems, used: 1 };
     out.templates.push(t55, tSpot);
-    out.templates.push(mini('TP-5-4', 'S671-5', 'self', '5-4', '導溝施工自主檢查表', 5), mini('TP-5-6', 'S671-5', 'self', '5-6', '鋼筋籠自主檢查表', 6), pdfTpl('TP-5-7', 'S671-5', 'self', '5-7', '穩定液自主檢查紀錄表', '穩定液自主檢查紀錄表_空白範本.pdf'), mini('TP-5-8', 'S671-5', 'self', '5-8', '連續壁超音波檢測紀錄表', 4), mini('TP-5-9', 'S671-5', 'self', '5-9', '連續壁混凝土灌漿紀錄表', 4));
+    out.templates.push(Object.assign(mini('TP-5-4', 'S671-5', 'self', '5-4', '導溝施工自主檢查表', 1), { items: items54(), source: 'CF671-PL-0032 Y01站連續壁工計畫書 第5章 品質管理' }), mini('TP-5-6', 'S671-5', 'self', '5-6', '鋼筋籠自主檢查表', 6), pdfTpl('TP-5-7', 'S671-5', 'self', '5-7', '穩定液自主檢查紀錄表', '穩定液自主檢查紀錄表_空白範本.pdf'), mini('TP-5-8', 'S671-5', 'self', '5-8', '連續壁超音波檢測紀錄表', 4), mini('TP-5-9', 'S671-5', 'self', '5-9', '連續壁混凝土灌漿紀錄表', 4));
     out.templates.push(mini('TP-SP-2', 'S671-5', 'spot', 'SP-6', '連續壁鋼筋籠施工品質抽查記錄表', 5), pdfTpl('TP-SP-3', 'S671-5', 'spot', 'SP-7', '連續壁穩定液施工品質抽查記錄表', '連續壁穩定液施工品質抽查記錄表_空白範本.pdf'), mini('TP-SP-0', 'S671-5', 'spot', 'SP-4', '導溝施工品質抽查記錄表', 5));
     [[1, '鋼板樁'], [2, '開挖支撐'], [6, '鑽掘混凝土基樁'], [8, '模板組立'], [9, '鋼筋'], [10, '預拌混凝土']].forEach(([n, nm]) => out.templates.push(mini('TP-S' + n, 'S671-' + n, 'self', '1-' + n, nm + '自主檢查表', 4)));
     out.templates.find(t => t.id === 'TP-S2').used = 2;
@@ -339,7 +360,7 @@
       if (sc) { sp.scId = sc.id; await put('spotChecks', sp); }
     }
   }
-  async function postSeed() { await migrateNoNumber(); await migrateKeys(); await migrateReqSub(); await migrateScLinks(); await seedLinked(); await migrateUnits(); await migrateUnitsWall(); await migrateUnitRule(); }
+  async function postSeed() { await migrateNoNumber(); await migrateKeys(); await migrateReqSub(); await migrateScLinks(); await seedLinked(); await migrateUnits(); await migrateUnitsWall(); await migrateUnitRule(); await migrateDocForms(); }
   // 分項工程有設定單元時，表單不可掛在分項工程層：舊資料的分項層表單移到該分項工程的第一個單元
   // 移除「數值」判定類型：既有範本的數值項目改為選項，並清除數值欄位
   async function migrateNoNumber() {
@@ -348,6 +369,21 @@
       (t.items || []).forEach(i => { if (i.type === 'number') { i.type = 'option'; ch = true; } if ('fields' in i) { delete i.fields; ch = true; } });
       if (ch) await put('templates', t);
     }
+  }
+  // 表5-4、表5-5（含抽查表）改為紙本表單內容：實際檢查情形用預設文字；同項次沿用原永久代碼
+  async function migrateDocForms() {
+    if (await get('meta', 'docForms1')) return;
+    for (const t of await all('templates')) {
+      if (t.subworkId !== 'S671-5' || t.fillMode === 'pdf') continue;
+      let items = null;
+      if (t.kind === 'self' && t.code === '5-4') items = items54();
+      else if (t.kind === 'self' && t.code === '5-5') items = items55();
+      else if (t.kind === 'spot' && t.code === 'SP-5') items = items55().map(i => { i.srcNo = i.no; i.hold = [4, 8, 9, 10, 11, 12, 16].includes(i.no); return i; });
+      if (!items) continue;
+      items.forEach(i => { const o = (t.items || []).find(x => x.no === i.no); if (o && o.key) i.key = o.key; if (o && o.srcKey) i.srcKey = o.srcKey; });
+      t.items = items; await put('templates', ensureKeys(t));
+    }
+    await put('meta', { id: 'docForms1', at: Date.now() });
   }
   async function migrateUnitRule() {
     for (const sw of await all('subworks')) {
