@@ -235,7 +235,7 @@ createApp({
       const sc = await Q.get('selfChecks', id);
       if (sc.fillMode === 'pdf') return openPdf('self', sc);
       cur.value = reactive(Q.clone(sc)); stageTab.value = Q.stagesOf(tplOf(sc.templateId))[0].key; saveMsg.value = '';
-      const t0 = tplOf(sc.templateId); if (t0) t0.items.forEach(i => { if (!cur.value.answers[i.no]) cur.value.answers[i.no] = { judge: null, values: {}, photos: [], note: '' }; });
+      const t0 = tplOf(sc.templateId); if (t0) t0.items.forEach(i => { const a = cur.value.answers[i.no] || (cur.value.answers[i.no] = { judge: null, values: {}, photos: [], note: '' }); if (i.type === 'text' && a.text === undefined) a.text = i.defText || ''; });   // 實際檢查情形：帶入範本的預設文字
       const t = tplOf(sc.templateId); if (t) { const first = t.items.find(i => !(sc.answers[i.no] || {}).judge) || t.items[0]; itemNo.value = first.no; stageTab.value = first.stage; }
       syncLinked(); view.value = 'form'; window.scrollTo(0, 0);
     }
@@ -361,7 +361,9 @@ createApp({
       await Q.migrateSpots(); const rec = await Q.get('spotChecks', id);
       if (rec.fillMode === 'pdf') return openPdf('spot', rec);
       sp.value = reactive(Q.clone(rec)); spSaveMsg.value = '';
-      const t = tplOf(rec.templateId); const first = t && (t.items.find(i => i.no === rec.focusNo) || t.items[0]);
+      const t = tplOf(rec.templateId);
+      if (t) t.items.forEach(i => { const a = sp.value.answers[i.no] || (sp.value.answers[i.no] = { judge: null, values: {}, photos: [], note: '' }); if (i.type === 'text' && a.text === undefined) a.text = i.defText || ''; });   // 實際抽查情形：帶入範本的預設文字
+      const first = t && (t.items.find(i => i.no === rec.focusNo) || t.items[0]);
       if (first) { spItemNo.value = first.no; spStage.value = first.stage; } view.value = 'spot'; window.scrollTo(0, 0);
     }
     function spGoto(it) { spItemNo.value = it.no; spStage.value = it.stage; }
