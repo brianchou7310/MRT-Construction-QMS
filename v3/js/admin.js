@@ -108,6 +108,7 @@ createApp({
     /* ---------- 紀錄清單 ---------- */
     const showSC = ref(null), showSP = ref(null);
     const itemsOf = sc => { const t = tplOf(sc.templateId); return t ? t.items.map(i => ({ it: i, a: (sc.answers || {})[i.no] || {} })) : []; };
+    const reqText = r => { const sc = d.selfChecks.find(s => s.id === r.scId); return sc && sc.answers[r.itemNo] ? sc.answers[r.itemNo].text || '' : ''; };
     const judgeText = j => j ? Q.JUDGE[j] : '—';
     const spotCount = (sp, j) => Object.values(sp.answers || {}).filter(a => a.judge === j).length;
     const defCls = x => x.status === 'closed' ? 'ok' : x.due < now.value ? 'ng' : x.status === 'review' ? 'warn' : 'blue';
@@ -822,13 +823,14 @@ createApp({
         items.forEach((it, n) => {
           const a = ans[it.no] || {};
           (a.photos || []).filter(isImg).forEach((u, k) => photos.push({ u, cap: `${it.name}${(a.photos || []).length > 1 ? `（${k + 1}）` : ''}` }));
-          let info = '';
+          let info = a.text ? E(a.text).replace(/\n/g, '<br>') : '';
           if (self && it.type === 'linked' && it.linked) info += `${info ? '<br>' : ''}表${E(it.linked)}：${(r.linked || {})[it.linked] ? '已完成' : '未完成'}`;
           let note = a.note ? E(a.note) : '';
           if ((a.photos || []).length) note += `${note ? '<br>' : ''}<span class="mut">照片 ${(a.photos || []).length} 張（附後）</span>`;
           if (self && it.hold) { const hs = ((r.hold || {})[it.no] || {}).state; if (hs) note += `${note ? '<br>' : ''}<span class="mut">停留點：${E(Q.HOLD_TEXT[hs] || hs)}</span>`; }
           if (!self && r.focusNo === it.no) note += `${note ? '<br>' : ''}<span class="star">本次會驗項目</span>`;
           const sa = !self ? selfAns(it) : null;
+          if (sa && sa.text) note += `${note ? '<br>' : ''}<span class="mut">廠商實際檢查情形：${E(sa.text)}</span>`;
           if (sa && sa.judge) note += `${note ? '<br>' : ''}<span class="mut">廠商自檢：${JS[sa.judge]}</span>`;
           const stgCell = n === 0 ? `<td class="stg" rowspan="${items.length}">${vt(stg.name)}</td>` : '';
           h += `<tr data-brk>${stgCell}<td>${it.hold ? `<span class="star">${mark}</span>` : ''}${E(it.name)}</td><td>${E(it.std || '').replace(/\n/g, '<br>')}</td><td>${info}</td><td class="j${a.judge === 'ng' ? ' ng' : ''}">${a.judge ? JS[a.judge] : ''}</td><td>${note}</td></tr>`;
@@ -955,7 +957,7 @@ createApp({
     return {
       Q, d, now, loaded, page, menuOpen, toastMsg, toastNg, toast, go, tenderById, swById, tenderFilter, supervisors, reqCls, rel, openReqs, overdueReqs, openDefects, overdueDefects, weekHolds, spotRate, kpiSelf, todayAgenda, tplOf, usedCount,
       progTender, progFilter, progRows, progCount, holdTab, holdTabs, holdCount, holdList, holdByDate, selReqId, selReq, calView, sched, lockedAfter, hoursBefore, doSchedule, doReject, doStart, doCancel,
-      showSC, showSP, itemsOf, judgeText, spotCount, defCls, defText, defTab, defList, defAct, defShow, defReview,
+      showSC, showSP, itemsOf, reqText, judgeText, spotCount, defCls, defText, defTab, defList, defAct, defShow, defReview,
       selTenderId, selTender, treeGroups, tenderRefs, delTender, tDragId, tDragOver, tDragStart, tDragEnd, tDrop, grpOpen, grpIsOpen, treeOpen, swPick, treeAll, dept, deptName, setDept, allTenders, pick, pickData, pickSel, pickGroupAll, doPick, pickTender, pickSw, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, swForm, saveSw, moveSw, delSw, newTender, swImp, openSwImp, downloadSwSample, onSwFile, swImpOk, swImpBad, doSwImp,
       tplSw, tplUnit, tplUnits, unitForm, unitTplN, openUnitForm, addUnit, delUnit, swGroups, selTplId, tplTab, edit, previewOn, tplList, tplHistory, pickTpl, editUsed, editStages, isPdf, newTplForm, onNewPdf, onEditPdf, createTpl, pdfUrl, downloadFile, wfCls, readPdf, TYPES, holdN, addItem, delItem, moveItem, onType, saveEdit, delTpl, syncFromSelf, bulk, openBulk, onBulkFile, bulkOk, bulkView, doBulk, downloadBulkSample, exportSubwork, stageForm, stageItemN, openStageForm, stageAdd, stageMove, stageDel, stagePreset, applyStages, STAGE_PRESETS, newTpl, exportXlsx, dragId, dragOver, onDragStart, onDragEnd, onDrop, itemImp, openItemImp, onItemFile, itemImpForm, itemImpView, itemImpErrs, doItemImp,
       linkOpts, adminUser, swText, projOf, projOpts, projText, tendersOfProj, qf, qfOpts, qfList, qfSet, qfClear, ex, exOpts, exList, exRows, exSet, exClear, downloadRec, downloadBatch, recCode,

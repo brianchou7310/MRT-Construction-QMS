@@ -101,9 +101,9 @@
       I(7, 'during', '溝底沉泥清除及深度確認', '實際深度 ≥ 設計深度\nS1 溝底 EL=98.5／S2 EL=96.0／S3 EL=101.0'),
       I(8, 'during', '垂直度（超音波檢測）', '≦ 1/300', { hold: true, photo: true }),
       I(9, 'during', '穩定液檢測（澆置混凝土前）', '詳連續壁穩定液自主檢查紀錄表', { type: 'linked', linked: '5-7', hold: true }),
-      I(10, 'during', '鋼筋籠吊放高程及位置確認', '壁體垂直方向偏差 25mm\n其他方向 75mm\n鋼筋籠頂高程 EL 122.9m', { hold: true, photo: true }),
+      I(10, 'during', '鋼筋籠吊放高程及位置確認', '壁體垂直方向偏差 25mm\n其他方向 75mm\n鋼筋籠頂高程 EL 122.9m', { type: 'text', hold: true, photo: true }),
       I(11, 'during', '特密管安裝', '1. 出口離槽底面 1.5m 以內\n2. 特密管長度符合開挖深度\n4. 特密管間距 ≦ 300cm', { hold: true }),
-      I(12, 'during', '混凝土試體取樣', "1. fc' ≧ 250 kgf/cm²\n2. 溫度 ≦ 32°C\n3. 坍度 19 ± 4.0cm", { hold: true }),
+      I(12, 'during', '混凝土試體取樣', "1. fc' ≧ 250 kgf/cm²\n2. 溫度 ≦ 32°C\n3. 坍度 19 ± 4.0cm", { type: 'text', hold: true }),
       I(13, 'during', '端鈑外回填碎石（母單元、公母單元）', '碎石回填 2m'),
       I(14, 'during', '混凝土澆置紀錄', '詳連續壁混凝土灌漿紀錄表', { type: 'linked', linked: '5-9' }),
       I(15, 'post', '場地清理', '是否清理完成'),
@@ -176,7 +176,7 @@
     const J = (no, judge, values, photos) => { ans[no] = { judge, values: values || {}, photos: photos || [], note: '' }; };
     J(1, 'ok'); J(2, 'ok', {}, ['*']); J(3, 'ok'); J(4, 'ok');
     J(5, 'ok'); J(6, 'ok', {}, ['*']); J(7, 'ok');
-    J(8, 'ok', {}, ['*']); J(9, 'ok'); J(10, 'ok', {}, ['*', '*', '*']);
+    J(8, 'ok', {}, ['*']); J(9, 'ok'); J(10, 'ok', {}, ['*', '*', '*']); ans[10].text = '垂直方向偏差 18mm、其他方向 40mm；鋼筋籠頂高程 EL 122.91m';
     const sc = {
       id: 'SC-CF671-261005-002', tenderId: 'T671', tenderCode: 'CF671', templateId: 'TP-5-5', templateVer: 1, templateCode: '5-5', templateName: '連續壁施工自主檢查表',
       subworkId: 'S671-5', subworkName: 'Y01站連續壁施工', unit: 'P12', location: 'Y01站 單元 P12（公單元）', date: now, contractor: '大陸工程股份有限公司',
