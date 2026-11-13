@@ -858,8 +858,8 @@ createApp({
           const sa = !self ? selfAns(it) : null;
           if (sa && sa.text) note += `${note ? '<br>' : ''}<span class="mut">廠商實際檢查情形：${E(sa.text)}</span>`;
           if (sa && sa.judge) note += `${note ? '<br>' : ''}<span class="mut">廠商自檢：${JS[sa.judge]}</span>`;
-          // 抽查表：有實際抽查（判定 ○ 或 ╳）的項目，備註欄放抽查人員簽名
-          if (!self && (a.judge === 'ok' || a.judge === 'ng')) { const g = sig.insp || {}; if (isImg(g.img) || g.name) note += `${note ? '<br>' : ''}${isImg(g.img) ? `<img src="${g.img}" style="height:30px;max-width:100%;display:block">` : ''}<span class="mut">${E(g.name || '')}</span>`; }
+          // 抽查表：有實際抽查（判定 ○ 或 ╳）的項目，備註欄放抽查人員與施工廠商隨同人員簽名
+          if (!self && (a.judge === 'ok' || a.judge === 'ng')) [['insp', '抽查人員'], ['att', '廠商隨同']].forEach(([k, l]) => { const g = sig[k] || {}; if (isImg(g.img) || g.name) note += `${note ? '<br>' : ''}${isImg(g.img) ? `<img src="${g.img}" style="height:30px;max-width:100%;display:block">` : ''}<span class="mut">${l}：${E(g.name || '')}</span>`; });
           const stgCell = n === 0 ? `<td class="stg" rowspan="${items.length}">${vt(stg.name)}</td>` : '';
           h += `<tr data-brk>${stgCell}<td>${it.hold ? `<span class="star">${mark}</span>` : ''}${E(it.name)}</td><td>${E(it.std || '').replace(/\n/g, '<br>')}</td><td>${info}</td><td class="j${a.judge === 'ng' ? ' ng' : ''}">${a.judge ? JS[a.judge] : ''}</td><td>${note}</td></tr>`;
         });
