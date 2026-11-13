@@ -18,7 +18,7 @@ body { -webkit-tap-highlight-color: transparent; }
 .pills button { flex: none; border: 1px solid #9fd4e6; background: #fff; border-radius: 999px; padding: 8px 16px; font-size: 15px; cursor: pointer; }
 .pills button.on { background: var(--primary); color: #fff; border-color: var(--primary); font-weight: 600; }
 .tcard { background: #fff; border: 1px solid #edf0f3; box-shadow: var(--shadow); border-radius: 12px; padding: 12px 14px; margin: 10px 14px; display: flex; flex-direction: column; gap: 8px; cursor: pointer; }
-.tcard.sel { border: 2px solid var(--primary); } .tcard.locked { background: #f7f8fa; }
+.tcard.sel { border: 2px solid var(--primary); }
 .tcard .t { font-size: 16px; font-weight: 600; } .tm { font-size: 20px; font-weight: 700; min-width: 64px; }
 .btn.block { width: 100%; padding: 11px; font-size: 16px; }
 .empty { text-align: center; color: var(--gray); padding: 40px 20px; } .empty.big { padding: 120px 20px; }
