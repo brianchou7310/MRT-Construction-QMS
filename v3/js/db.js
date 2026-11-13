@@ -111,6 +111,8 @@
       T(15, 'post', '開口安衛措施', '護欄、鐵板或核可材料覆蓋', '  有  /  無   覆蓋', { hold: true, photo: true })
     ];
   }
+  // 連續壁抽查表的預設計價欄位（可在表單範本自行修改或刪除）
+  const defCalc = () => [{ key: 'thickness', label: '單元厚度', unit: 'm' }, { key: 'length', label: '單元長度', unit: 'm' }, { key: 'depth', label: '計價深度', unit: 'm' }, { key: 'area', label: '計價面積', unit: 'm²' }];
   function items55() {
     return [
       I(1, 'pre', '導溝施作', '詳導溝施工自主檢查表', { type: 'linked', linked: '5-4' }),
@@ -174,7 +176,7 @@
     // 範本
     const t55 = { id: 'TP-5-5', tenderId: 'T671', subworkId: 'S671-5', kind: 'self', code: '5-5', name: '連續壁施工自主檢查表', version: 1, status: 'published', source: 'CF671-PL-0032 Y01站連續壁工計畫書 第5章 品質管理（p.5-10~5-11）', fillMode: 'online', items: items55(), used: 0 };
     const spotItems = items55().map(i => { i.srcNo = i.no; i.hold = [4, 8, 9, 10, 11, 12, 16].includes(i.no); return i; });
-    const tSpot = { id: 'TP-SP-1', tenderId: 'T671', subworkId: 'S671-5', kind: 'spot', code: 'SP-5', name: '連續壁施工品質抽查記錄表', version: 1, status: 'published', source: 'CF671-PL-0032 連續壁工計畫書 p.5-20~5-21', pairedSelf: 'TP-5-5', fillMode: 'online', items: spotItems, used: 0 };
+    const tSpot = { id: 'TP-SP-1', tenderId: 'T671', subworkId: 'S671-5', kind: 'spot', code: 'SP-5', name: '連續壁施工品質抽查記錄表', version: 1, status: 'published', source: 'CF671-PL-0032 連續壁工計畫書 p.5-20~5-21', pairedSelf: 'TP-5-5', fillMode: 'online', items: spotItems, used: 0, calcFields: defCalc() };
     out.templates.push(t55, tSpot);
     out.templates.push(Object.assign(mini('TP-5-4', 'S671-5', 'self', '5-4', '導溝施工自主檢查表', 1), { items: items54(), source: 'CF671-PL-0032 Y01站連續壁工計畫書 第5章 品質管理' }), mini('TP-5-6', 'S671-5', 'self', '5-6', '鋼筋籠自主檢查表', 6), pdfTpl('TP-5-7', 'S671-5', 'self', '5-7', '穩定液自主檢查紀錄表', '穩定液自主檢查紀錄表_空白範本.pdf'), mini('TP-5-8', 'S671-5', 'self', '5-8', '連續壁超音波檢測紀錄表', 4), mini('TP-5-9', 'S671-5', 'self', '5-9', '連續壁混凝土灌漿紀錄表', 4));
     out.templates.push(mini('TP-SP-2', 'S671-5', 'spot', 'SP-6', '連續壁鋼筋籠施工品質抽查記錄表', 5), pdfTpl('TP-SP-3', 'S671-5', 'spot', 'SP-7', '連續壁穩定液施工品質抽查記錄表', '連續壁穩定液施工品質抽查記錄表_空白範本.pdf'), mini('TP-SP-0', 'S671-5', 'spot', 'SP-4', '導溝施工品質抽查記錄表', 5));
@@ -294,7 +296,7 @@
       if (sc) { sp.scId = sc.id; await put('spotChecks', sp); }
     }
   }
-  async function postSeed() { await clearRecords(); await migrateNoNumber(); await migrateKeys(); await migrateReqSub(); await migrateScLinks(); await seedLinked(); await migrateUnits(); await migrateUnitsWall(); await migrateUnitRule(); await migrateDocForms(); }
+  async function postSeed() { await clearRecords(); await migrateNoNumber(); await migrateKeys(); await migrateReqSub(); await migrateScLinks(); await seedLinked(); await migrateUnits(); await migrateUnitsWall(); await migrateUnitRule(); await migrateDocForms(); await migrateCalcFields(); }
   // 分項工程有設定單元時，表單不可掛在分項工程層：舊資料的分項層表單移到該分項工程的第一個單元
   // 移除「數值」判定類型：既有範本的數值項目改為選項，並清除數值欄位
   // 一次性清除：自主檢查、停留點會驗、抽查紀錄、缺失追蹤的資料全部移除（只保留標案、分項工程、表單範本、參考文件、帳號等基本資料），編號重新起算
@@ -303,6 +305,12 @@
     for (const st of ['selfChecks', 'requests', 'spotChecks', 'defects']) await tx(st, 'readwrite', o => o.clear());
     const c = (await get('meta', 'counter')) || { id: 'counter' }; Object.assign(c, { req: 0, sc: 0, defect: 0, spot: 0 }); await put('meta', c);
     await put('meta', { id: 'clearRecs1', at: Date.now() });
+  }
+  // 計價欄位改為範本自訂：原本固定的連續壁計價欄位帶入 SP-5，其餘抽查表不帶
+  async function migrateCalcFields() {
+    if (await get('meta', 'calcFields1')) return;
+    for (const t of await all('templates')) if (t.kind === 'spot' && t.code === 'SP-5' && !t.calcFields) { t.calcFields = defCalc(); await put('templates', t); }
+    await put('meta', { id: 'calcFields1', at: Date.now() });
   }
   async function migrateNoNumber() {
     for (const t of await all('templates')) {
@@ -466,7 +474,7 @@
       id: `SP-${tender.code}-${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(n, 3)}`, kind: request ? 'hold' : 'random', requestId: request ? request.id : '', scId: sc ? sc.id : '', itemNo: request ? request.itemNo : 0, focusNo: focus,
       templateId: tpl.id, templateVer: tpl.version, templateName: tpl.name, subworkId: tpl.subworkId, tenderId: tender.id, tenderCode: tender.code, unit: unit || (request && request.unit) || '', location: location || (request && request.location) || (sc && sc.location) || (unit ? `單元 ${unit}` : (sw ? sw.name : '')),
       title: focus ? tpl.items.find(i => i.no === focus).name : (request ? request.title : tpl.name), subworkName: sw ? sw.name : '', answers,
-      calc: { thickness: '1.0', length: '', depth: '' }, status: 'draft', signatures: {}, date: Date.now(), createdAt: Date.now(),
+      calc: {}, status: 'draft', signatures: {}, date: Date.now(), createdAt: Date.now(),
       fillMode: tpl.fillMode || 'online', pdfFile: null,
       wfStatus: '未開始', lockedBy: null, lastUpdatedBy: null, version: 0, logs: []
     };

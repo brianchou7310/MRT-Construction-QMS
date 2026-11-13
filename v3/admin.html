@@ -6,8 +6,8 @@
 <link rel="icon" href="images/logo.png">
 <title>捷運施工查驗系統 - 後台管理 v3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/common.css?v=20261113g">
-<link rel="stylesheet" href="css/admin.css?v=20261113g">
+<link rel="stylesheet" href="css/common.css?v=20261113h">
+<link rel="stylesheet" href="css/admin.css?v=20261113h">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -300,7 +300,12 @@
         <table class="table"><tbody><tr v-for="r in [['工程名稱','由標案自動帶入'],['施工廠商','由標案自動帶入'],['分項工程名稱','由分項工程自動帶入'],['檢查位置','現場填寫'],['檢查日期','自動填入當日'],edit.kind==='spot'?['抽查時機','檢驗停留點（必填★）／隨機抽查（任選）']:['檢查結果圖例','○ 合格　╳ 缺失　╱ 無此項']]"><td>{{ r[0] }}</td><td class="right"><span class="chip blue">{{ r[1] }}</span></td></tr></tbody></table>
         <h4 class="mt mb">簽認欄</h4>
         <table class="table"><tbody><tr v-for="r in (edit.kind==='self'?['現場工程師（檢查人員）','工地授權代表或其授權主管']:['監造工務所（抽查人員）','施工廠商隨同人員'])"><td>{{ r }}</td><td class="right"><span class="chip">手寫簽名</span></td></tr></tbody></table>
-        <template v-if="edit.kind==='spot'"><h4 class="mt mb">計價欄位（本表專用）</h4><table class="table"><thead><tr><th>欄位</th><th>單位</th><th>來源</th></tr></thead><tbody><tr><td>單元厚度</td><td>m</td><td>帶入施工圖設定值，可修改</td></tr><tr><td>單元長度</td><td>m</td><td>帶入表5-5 第 2 項</td></tr><tr><td>計價深度</td><td>m</td><td>現場填寫</td></tr><tr><td>計價面積</td><td>m²</td><td><span class="chip blue">自動計算</span> 單元長度 × 計價深度</td></tr></tbody></table></template>
+        <template v-if="edit.kind==='spot'"><h4 class="mt mb">計價欄位（本表專用）</h4>
+          <div class="muted small mb">自行定義現場要填的計價欄位名稱與單位；不定義則現場不出現計價資料，PDF 也不顯示。</div>
+          <table class="table" v-if="(edit.calcFields||[]).length"><thead><tr><th>欄位名稱</th><th style="width:160px">單位</th><th style="width:70px"></th></tr></thead><tbody>
+            <tr v-for="(c,i) in edit.calcFields" :key="c.key"><td><input type="text" v-model="c.label" placeholder="例：單元長度"></td><td><input type="text" v-model="c.unit" placeholder="例：m"></td><td><button class="btn sm danger" @click="edit.calcFields.splice(i,1)">刪</button></td></tr></tbody></table>
+          <div class="empty" v-else>未定義計價欄位</div>
+          <button class="btn mt" @click="addCalc">＋ 新增計價欄位</button></template>
         <h4 class="mt mb">表尾備註（列印時顯示）</h4>
         <ol class="small muted" style="margin:0;padding-left:20px"><li>★ 為檢驗停留點。</li><li>檢查結果合格者註明「○」，不合格者註明「╳」，如無需檢查之項目則打「╱」。</li><li>嚴重缺失、缺失複查未能及時完成改善者，應填具「缺點改進工作指示通知／回報單」進行追蹤改善。</li></ol>
       </template>
@@ -457,22 +462,22 @@
   <div class="mt" v-if="showSP.fillMode==='pdf'"><h4 class="mb">辦理軌跡（{{ showSP.wfStatus }}・V{{ showSP.version||0 }}）</h4><ul class="timeline" v-if="(showSP.logs||[]).length"><li v-for="(l,i) in showSP.logs.slice().reverse()" :key="i" :class="l.action.includes('結案')?'ok':''">{{ Q.fmtFull(l.at) }}｜<b>{{ l.user }}</b> <span class="chip">{{ l.action }}</span><div class="small muted">{{ l.detail }}</div><a class="small" v-if="l.file" @click="downloadFile(l.file)">⬇ {{ l.file.name }}</a> <img v-if="l.sig" :src="l.sig" style="height:30px;vertical-align:middle;border:1px solid var(--line);border-radius:4px"></li></ul><div class="muted small" v-else>尚無辦理紀錄</div></div>
   <div class="tbl-scroll" v-if="showSP.fillMode!=='pdf'"><table class="table"><thead><tr><th>序</th><th>抽查項目</th><th>實際抽查情形</th><th>判定</th><th>照片</th></tr></thead><tbody>
     <tr v-for="x in itemsOf(showSP)" :style="showSP.focusNo===x.it.no?'font-weight:600':''"><td>{{ x.it.no }}</td><td><span class="star" v-if="x.it.hold">★</span>{{ x.it.name }} <span class="chip warn" v-if="showSP.focusNo===x.it.no">本次會驗</span></td><td class="pre small">{{ x.a.text }}</td><td><span class="chip" :class="x.a.judge==='ok'?'ok':x.a.judge==='ng'?'ng':''">{{ judgeText(x.a.judge) }}</span></td><td>{{ (x.a.photos||[]).length || '' }}</td></tr></tbody></table></div>
-  <div class="mt small muted">計價：厚 {{ showSP.calc.thickness||'—' }} m × 長 {{ showSP.calc.length||'—' }} m × 深 {{ showSP.calc.depth||'—' }} m<template v-if="showSP.status==='signed'">｜內容雜湊 {{ (showSP.hash||'').slice(0,16) }}…</template></div>
+  <div class="mt small muted"><template v-if="calcOf(showSP).length">計價：<span v-for="(c,i) in calcOf(showSP)" :key="c.key">{{ i ? '、' : '' }}{{ c.label }} {{ (showSP.calc||{})[c.key] || '—' }} {{ c.unit }}</span></template><template v-if="showSP.status==='signed'">｜內容雜湊 {{ (showSP.hash||'').slice(0,16) }}…</template></div>
   <div class="foot"><button class="btn" @click="downloadRec('spot', showSP)">⬇ 下載 PDF</button><button class="btn primary" @click="showSP=null">關閉</button></div></div></div>
 
 <div class="toast" :class="{ng: toastNg}" v-if="toastMsg">{{ toastMsg }}</div>
 </div>
 <script src="lib/vue.global.prod.js"></script>
 <script src="lib/xlsx.full.min.js"></script>
-<script src="templates/export-template.js?v=20261113g"></script>
-<script src="js/drawer.js?v=20261113g"></script>
-<script src="js/sample-pdfs.js?v=20261113g"></script>
+<script src="templates/export-template.js?v=20261113h"></script>
+<script src="js/drawer.js?v=20261113h"></script>
+<script src="js/sample-pdfs.js?v=20261113h"></script>
 <script src="lib/html2canvas.min.js"></script>
 <script src="lib/jspdf.umd.min.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/formpdf.js?v=20261113g"></script>
-<script src="js/projbase.js?v=20261113g"></script>
-<script src="js/db.js?v=20261113g"></script>
-<script src="js/admin.js?v=20261113g"></script>
+<script src="js/formpdf.js?v=20261113h"></script>
+<script src="js/projbase.js?v=20261113h"></script>
+<script src="js/db.js?v=20261113h"></script>
+<script src="js/admin.js?v=20261113h"></script>
 </body>
 </html>

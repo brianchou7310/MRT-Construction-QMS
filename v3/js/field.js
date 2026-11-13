@@ -333,7 +333,7 @@ createApp({
     const spSelfAns = it => { const sc = spSc.value; if (!sc) return null; const st = tplOf(sc.templateId), si = st && it.srcKey && st.items.find(x => x.key === it.srcKey); const no = si ? si.no : it.srcKey ? 0 : it.srcNo; return (no && sc.answers[no]) || null; };   // 未對應的抽查項目不帶廠商自檢
     const spSelfJudge = it => (spSelfAns(it) || {}).judge || null;
     const spSelfText = it => (spSelfAns(it) || {}).text || '';
-    const spArea = computed(() => { const l = Number(sp.value && sp.value.calc.length), dp = Number(sp.value && sp.value.calc.depth); return l && dp ? (l * dp).toFixed(2) : ''; });
+    const spCalc = computed(() => ((spTpl.value || {}).calcFields || []).filter(c => (c.label || '').trim()));
     const spLocked = computed(() => spReq.value ? lockedAfter(spReq.value) : []);
     const spAll = computed(() => d.spotChecks.slice().sort((a, b) => b.createdAt - a.createdAt));
     const spOpts = computed(() => { const o = filterOpts(spAll.value, fsp); fixF(fsp, o); return o; });
@@ -345,7 +345,7 @@ createApp({
     async function openSpot(id) {
       await Q.migrateSpots(); const rec = await Q.get('spotChecks', id);
       if (rec.fillMode === 'pdf') return openPdf('spot', rec);
-      sp.value = reactive(Q.clone(rec)); spSaveMsg.value = '';
+      sp.value = reactive(Q.clone(rec)); spSaveMsg.value = ''; if (!sp.value.calc) sp.value.calc = {};
       const t = tplOf(rec.templateId);
       if (t) t.items.forEach(i => { const a = sp.value.answers[i.no] || (sp.value.answers[i.no] = { judge: null, values: {}, photos: [], note: '' }); if (i.type === 'text' && a.text === undefined) a.text = i.defText || ''; });   // 實際抽查情形：帶入範本的預設文字
       const first = t && (t.items.find(i => i.no === rec.focusNo) || t.items[0]);
@@ -531,7 +531,7 @@ createApp({
       cur, curTpl, stageTab, itemNo, saveMsg, docShow, linkShow, applyForm, readonly, stageList, curItem, shownItems, judged, total, stageStat, stageDone, ans, ensure, lockOf, hstate, hreq, itemEditable, itemIcon,
       flush, queueSave, openSc, gotoItem, setStage, step, setJudge, addPhoto, addDemoPhoto, delPhoto, linkName, preLinked, linkedRec, linkedDone, linkedTpl, linkStatus, openLinked, createLinked, returnTo, canApply, openApply, applyShort, applyHours, submitApply, holdText, wasRejected,
       summary, holdItems, holdPending, attachCodes, canSubmit, goSign, finishStage, stageTabs, firstStage, stageNext, spStageTabs, spNextStage, leaveForm,
-      sp, spStage, spItemNo, spSaveMsg, spNew, spTpl, spReq, spSc, spEditable, spStageList, spCurItem, spShown, spA, spJudged, spTotal, spSummary, spStageStat, spSelfJudge, spSelfText, spArea, spLocked, spList, spProgress, spSave, spFlush, openSpot, spGoto, spSetStage, spJudge, spPhoto, spDemoPhoto, spDelPhoto, spGoSign, leaveSpot, openSpotNew, createSpot,
+      sp, spStage, spItemNo, spSaveMsg, spNew, spTpl, spReq, spSc, spEditable, spStageList, spCurItem, spShown, spA, spJudged, spTotal, spSummary, spStageStat, spSelfJudge, spSelfText, spCalc, spLocked, spList, spProgress, spSave, spFlush, openSpot, spGoto, spSetStage, spJudge, spPhoto, spDemoPhoto, spDelPhoto, spGoSign, leaveSpot, openSpotNew, createSpot,
       signCtx, signHash, signAgree, canvasEl, drawn, signers, signIdx, curSigner, signSummary, sDown, sMove, sUp, clearSign, applySaved, saveSig, confirmSign, cancelSign,
       defCls, defText, defAct, defForm, defPhoto, submitFix, submitReview, resetDemo, clearSigs, navItems, nav, navActive, printForm
     };

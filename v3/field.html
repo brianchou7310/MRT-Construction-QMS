@@ -6,8 +6,8 @@
 <link rel="icon" href="images/logo.png">
 <title>捷運施工查驗系統 - 現場作業 v3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/common.css?v=20261113g">
-<link rel="stylesheet" href="css/field.css?v=20261113g">
+<link rel="stylesheet" href="css/common.css?v=20261113h">
+<link rel="stylesheet" href="css/field.css?v=20261113h">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -244,11 +244,8 @@
             <div class="alert warn mt" v-if="sp.focusNo && !spA(sp.focusNo).judge">本次會驗項目「★{{ sp.title }}」尚未判定</div>
             <div class="alert gray mt" v-if="spLocked.length">本停留點合格放行後，解鎖：{{ spLocked.map(x=>'★'+x).join('、') }}</div>
             <div class="alert ng mt" v-if="spSummary.ng">有缺失項目，簽認後系統將自動建立缺失追蹤。</div></div>
-          <div class="card"><h4>單元計價資料（{{ sp.unit }}）</h4>
-            <div class="field"><label>單元厚度</label><input type="number" step="any" v-model="sp.calc.thickness" @input="spSave" :disabled="!spEditable"><span class="unit">m</span></div>
-            <div class="field"><label>單元長度</label><input type="number" step="any" v-model="sp.calc.length" @input="spSave" :disabled="!spEditable"><span class="unit">m</span></div>
-            <div class="field"><label>計價深度</label><input type="number" step="any" v-model="sp.calc.depth" @input="spSave" :disabled="!spEditable"><span class="unit">m</span></div>
-            <div class="kvr"><span>計價面積（長 × 深）</span><b>{{ spArea || '自動計算' }} <span v-if="spArea">m²</span></b></div></div>
+          <div class="card" v-if="spCalc.length"><h4>計價資料{{ sp.unit ? '（' + sp.unit + '）' : '' }}</h4>
+            <div class="field" v-for="c in spCalc" :key="c.key"><label>{{ c.label }}</label><input type="text" inputmode="decimal" v-model="sp.calc[c.key]" @input="spSave" :disabled="!spEditable"><span class="unit">{{ c.unit }}</span></div></div>
           <div class="card"><h4>自動附件</h4><div class="row wrap"><span class="chip blue" v-if="spSc">廠商自主檢查表 {{ spSc.id }}</span><span class="chip" v-else>無對應自主檢查表</span><span class="chip blue">現場照片 {{ spSummary.photos }} 張</span></div></div>
           <div class="card"><h4>簽認</h4><div class="kvr"><span>監造工務所（抽查人員）</span><span class="chip" :class="sp.signatures.insp?'ok':''">{{ sp.signatures.insp ? '已簽' : '待簽' }}</span></div><div class="kvr"><span>施工廠商隨同人員</span><span class="chip" :class="sp.signatures.att?'ok':''">{{ sp.signatures.att ? '已簽' : '待簽' }}</span></div></div>
         </div>
@@ -428,9 +425,9 @@
 <div class="toast" :class="{ng: toastNg}" v-if="toastMsg">{{ toastMsg }}</div>
 </div>
 <script src="lib/vue.global.prod.js"></script>
-<script src="js/drawer.js?v=20261113g"></script>
-<script src="js/sample-pdfs.js?v=20261113g"></script>
-<script src="js/db.js?v=20261113g"></script>
-<script src="js/field.js?v=20261113g"></script>
+<script src="js/drawer.js?v=20261113h"></script>
+<script src="js/sample-pdfs.js?v=20261113h"></script>
+<script src="js/db.js?v=20261113h"></script>
+<script src="js/field.js?v=20261113h"></script>
 </body>
 </html>
