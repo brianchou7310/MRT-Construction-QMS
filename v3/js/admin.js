@@ -587,8 +587,19 @@ createApp({
       { const st = Q.clone(Q.stagesOf(edit.value)); Q.stagesOf(self).forEach(s => { const hit = st.find(x => x.key === s.key); if (hit) hit.name = s.name; else st.push(Q.clone(s)); }); edit.value.stages = st; }
       edit.value.pairedSelf = self.id;
       let added = 0;
-      self.items.forEach(si => { const hit = edit.value.items.find(x => (si.key && x.srcKey === si.key) || (!x.srcKey && x.srcNo === si.no)); if (hit) { hit.srcKey = si.key; hit.srcNo = si.no; return; } const c = Q.clone(si); c.srcNo = si.no; c.srcKey = si.key; c.key = Q.uid('K'); c.hold = false; edit.value.items.push(c); added++; });
-      toast(added ? `已同步 ${added} 項` : '已與自主檢查表同步，無新增項目');
+      // 名稱比對時忽略空白、☆★與全半形括號差異
+      const norm = n => String(n || '').replace(/[\s☆★]/g, '').replace(/（/g, '(').replace(/）/g, ')');
+      let linked = 0;
+      const keys = new Set(self.items.map(i => i.key)), mapped = x => !!x.srcKey && keys.has(x.srcKey);
+      self.items.forEach(si => {
+        // 1. 已用永久代碼對應
+        if (edit.value.items.some(x => si.key && x.srcKey === si.key)) return;
+        // 2. 已有同名稱的抽查項目（尚未對應到這張自主檢查表）：直接建立對應，不重複新增
+        const same = edit.value.items.find(x => !mapped(x) && norm(x.name) === norm(si.name)); if (same) { same.srcKey = si.key; same.srcNo = si.no; linked++; return; }
+        // 3. 舊資料：只記了項次
+        const old = edit.value.items.find(x => !x.srcKey && x.srcNo === si.no); if (old) { old.srcKey = si.key; return; }
+        const c = Q.clone(si); c.srcNo = si.no; c.srcKey = si.key; c.key = Q.uid('K'); c.hold = false; edit.value.items.push(c); added++; });
+      toast(added || linked ? `已同步：新增 ${added} 項${linked ? `、同名稱項目建立對應 ${linked} 項` : ''}` : '已與自主檢查表同步，無新增項目');
     }
     // 新增範本：先選「線上表單」或「空白範本 PDF」
     const newTplForm = ref(null);
