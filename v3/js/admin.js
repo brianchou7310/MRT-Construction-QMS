@@ -852,8 +852,8 @@ createApp({
           (a.photos || []).filter(isImg).forEach((u, k) => photos.push({ u, cap: `${it.name}${(a.photos || []).length > 1 ? `（${k + 1}）` : ''}` }));
           let info = a.text ? E(a.text).replace(/\n/g, '<br>') : '';
           if (self && it.type === 'linked' && it.linked) info += `${info ? '<br>' : ''}表${E(it.linked)}：${(r.linked || {})[it.linked] ? '已完成' : '未完成'}`;
-          // 備註欄只放該項檢查人員／抽查人員的簽名
-          const note = a.sig && isImg(a.sig.img) ? `<img src="${a.sig.img}" style="height:32px;max-width:100%;display:block;margin:0 auto">` : '';
+          // 備註欄只放該項檢查人員／抽查人員的簽名與簽名日期時間
+          const note = a.sig && isImg(a.sig.img) ? `<img src="${a.sig.img}" style="height:32px;max-width:100%;display:block;margin:0 auto">${a.sig.at ? `<div style="text-align:center;font-size:9px;white-space:nowrap">${E(Q.fmtFull(a.sig.at))}</div>` : ''}` : '';
           const stgCell = n === 0 ? `<td class="stg" rowspan="${items.length}">${vt(stg.name)}</td>` : '';
           h += `<tr data-brk>${stgCell}<td>${it.hold ? `<span class="star">${mark}</span>` : ''}${E(it.name)}</td><td>${E(it.std || '').replace(/\n/g, '<br>')}</td><td>${info}</td><td class="j${a.judge === 'ng' ? ' ng' : ''}">${a.judge ? JS[a.judge] : ''}</td><td>${note}</td></tr>`;
         });
