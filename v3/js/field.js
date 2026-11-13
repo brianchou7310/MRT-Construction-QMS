@@ -334,7 +334,7 @@ createApp({
     const spTotal = computed(() => spTpl.value ? spTpl.value.items.length : 0);
     const spSummary = computed(() => { const a = sp.value ? Object.values(sp.value.answers) : []; return { ok: a.filter(x => x.judge === 'ok').length, ng: a.filter(x => x.judge === 'ng').length, na: a.filter(x => x.judge === 'na').length, none: a.filter(x => !x.judge).length, photos: a.reduce((n, x) => n + (x.photos || []).length, 0) }; });
     const spStageStat = st => { const l = spTpl.value ? Q.stageItems(spTpl.value, st) : []; return `${l.filter(i => spA(i.no).judge).length}/${l.length}`; };
-    const spSelfAns = it => { const sc = spSc.value; if (!sc) return null; const st = tplOf(sc.templateId), si = st && it.srcKey && st.items.find(x => x.key === it.srcKey); return sc.answers[si ? si.no : (it.srcNo || it.no)] || null; };
+    const spSelfAns = it => { const sc = spSc.value; if (!sc) return null; const st = tplOf(sc.templateId), si = st && it.srcKey && st.items.find(x => x.key === it.srcKey); const no = si ? si.no : it.srcKey ? 0 : it.srcNo; return (no && sc.answers[no]) || null; };   // 未對應的抽查項目不帶廠商自檢
     const spSelfJudge = it => (spSelfAns(it) || {}).judge || null;
     const spSelfText = it => (spSelfAns(it) || {}).text || '';
     const spArea = computed(() => { const l = Number(sp.value && sp.value.calc.length), dp = Number(sp.value && sp.value.calc.depth); return l && dp ? (l * dp).toFixed(2) : ''; });
