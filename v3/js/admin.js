@@ -575,6 +575,11 @@ createApp({
     });
     // 抽查項目對應的自主檢查表項目（以永久代碼 srcKey 比對，舊資料用 srcNo）
     const srcOf = it => { const p = edit.value && d.templates.find(t => t.id === edit.value.pairedSelf); if (!p) return null; const self = latestSelf(p.code) || p; return self.items.find(si => (it.srcKey && si.key === it.srcKey) || (!it.srcKey && it.srcNo && si.no === it.srcNo)) || null; };
+    // 手動指定對應：配對自主檢查表（最新發布版）的檢查項目清單
+    const pairSelf = computed(() => { const p = edit.value && edit.value.kind === 'spot' && d.templates.find(t => t.id === edit.value.pairedSelf); return p ? (latestSelf(p.code) || p) : null; });
+    const pairItems = computed(() => pairSelf.value ? pairSelf.value.items.map(i => ({ key: i.key, no: i.no, name: i.name, hold: !!i.hold, stage: Q.stageName(pairSelf.value, i.stage) })) : []);
+    function setSrc(it, key) { const si = pairSelf.value && pairSelf.value.items.find(i => i.key === key); if (si) { it.srcKey = si.key; it.srcNo = si.no; } else { delete it.srcKey; delete it.srcNo; } }
+    const srcDup = it => { const si = srcOf(it); return si ? edit.value.items.filter(x => x !== it && srcOf(x) === si).length : 0; };
     function syncFromSelf() {
       const paired = d.templates.find(t => t.id === edit.value.pairedSelf); if (!paired) return toast('此抽查表未對應自主檢查表', true);
       // 永遠對應自主檢查表的「最新發布版本」，以項目永久代碼（key）比對，不受項次重排影響
@@ -822,7 +827,7 @@ createApp({
       }
       // 抽查：帶入同單元廠商自檢的判定，放在備註欄供對照
       const sc = !self && r.scId ? d.selfChecks.find(x => x.id === r.scId) : null, st = sc && tplOf(sc.templateId);
-      const selfAns = it => { if (!sc) return null; const si = st && it.srcKey && st.items.find(x => x.key === it.srcKey); return sc.answers[si ? si.no : (it.srcNo || it.no)] || null; };
+      const selfAns = it => { if (!sc) return null; const si = st && it.srcKey && st.items.find(x => x.key === it.srcKey); const no = si ? si.no : it.srcKey ? 0 : it.srcNo; return (no && sc.answers[no]) || null; };
       const cols = [5, 18, 26, 25, 8, 18];
       h += `<table class="it"><colgroup>${cols.map(w => `<col style="width:${w}%">`).join('')}</colgroup>`;
       h += self ? `<tr data-brk><th colspan="2">檢查項目</th><th>設計圖說、規範之檢查標準<br>(定量定性)</th><th>實際檢查情形<br>(敘述檢查值)</th><th>檢查<br>結果</th><th>備註<br>(檢查人員)</th></tr>`
@@ -967,7 +972,7 @@ createApp({
     return {
       Q, d, now, loaded, page, menuOpen, toastMsg, toastNg, toast, go, tenderById, swById, tenderFilter, supervisors, reqCls, rel, openReqs, overdueReqs, openDefects, overdueDefects, weekHolds, spotRate, kpiSelf, todayAgenda, tplOf, usedCount,
       progTender, progFilter, progRows, progCount, holdTab, holdTabs, holdCount, holdList, holdByDate, selReqId, selReq, calView, sched, lockedAfter, hoursBefore, doSchedule, doReject, doStart, doCancel,
-      pairOpts, pairCode, srcOf, showSC, showSP, itemsOf, reqText, judgeText, spotCount, defCls, defText, defTab, defList, defAct, defShow, defReview,
+      pairOpts, pairCode, srcOf, pairItems, setSrc, srcDup, showSC, showSP, itemsOf, reqText, judgeText, spotCount, defCls, defText, defTab, defList, defAct, defShow, defReview,
       selTenderId, selTender, treeGroups, tenderRefs, delTender, tDragId, tDragOver, tDragStart, tDragEnd, tDrop, grpOpen, grpIsOpen, treeOpen, swPick, treeAll, dept, deptName, setDept, allTenders, pick, pickData, pickSel, pickGroupAll, doPick, pickTender, pickSw, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, swForm, saveSw, moveSw, delSw, newTender, swImp, openSwImp, downloadSwSample, onSwFile, swImpOk, swImpBad, doSwImp,
       tplSw, tplUnit, tplUnits, unitForm, unitTplN, openUnitForm, addUnit, delUnit, swGroups, selTplId, tplTab, edit, previewOn, tplList, tplHistory, pickTpl, editUsed, editStages, isPdf, newTplForm, onNewPdf, onEditPdf, createTpl, pdfUrl, downloadFile, wfCls, readPdf, TYPES, holdN, addItem, delItem, moveItem, onType, saveEdit, delTpl, syncFromSelf, bulk, openBulk, onBulkFile, bulkOk, bulkView, doBulk, downloadBulkSample, exportSubwork, stageForm, stageItemN, openStageForm, stageAdd, stageMove, stageDel, stagePreset, applyStages, STAGE_PRESETS, newTpl, exportXlsx, dragId, dragOver, onDragStart, onDragEnd, onDrop, itemImp, openItemImp, onItemFile, itemImpForm, itemImpView, itemImpErrs, doItemImp,
       linkOpts, adminUser, swText, projOf, projOpts, projText, tendersOfProj, qf, qfOpts, qfList, qfSet, qfClear, ex, exOpts, exList, exRows, exSet, exClear, downloadRec, downloadBatch, recCode,
