@@ -6,8 +6,8 @@
 <link rel="icon" href="images/logo.png">
 <title>捷運施工查驗系統 - 現場作業 v3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/common.css?v=20261105b">
-<link rel="stylesheet" href="css/field.css?v=20261105b">
+<link rel="stylesheet" href="css/common.css?v=20261113a">
+<link rel="stylesheet" href="css/field.css?v=20261113a">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -28,7 +28,6 @@
     <header class="hdr">
       <div class="grow"><div class="small sub">{{ todayLabel }}・{{ me.org || me.title }}・{{ me.name }}</div><h1>{{ view==='todo' ? '今日待辦' : '停留點會驗' }}</h1></div>
       <select v-model="tenderSel" class="sel-tender"><option value="all">{{ allTenderLabel }}</option><option v-for="t in d.tenders" :value="t.id">{{ t.code }}</option></select>
-      <button class="btn" @click="qrForm={code:''}">▦ 掃描單元 QR Code</button>
     </header>
 
     <template v-if="view==='todo'">
@@ -115,7 +114,7 @@
 
 <!-- ============ 自主檢查清單 ============ -->
 <div class="plain" v-if="view==='checks'">
-  <header class="hdr"><div class="grow"><div class="small sub">{{ me.title }}・{{ me.org }}</div><h1>自主檢查</h1></div><button class="btn primary" v-if="!isSup" @click="openNew()">＋ 新增自主檢查</button><button class="btn" @click="qrForm={code:''}">▦ 掃描 QR</button></header>
+  <header class="hdr"><div class="grow"><div class="small sub">{{ me.title }}・{{ me.org }}</div><h1>自主檢查</h1></div><button class="btn primary" v-if="!isSup" @click="openNew()">＋ 新增自主檢查</button></header>
   <div class="filters"><select :value="fc.proj" @change="setF(fc,'proj',$event.target.value)"><option value="">全部區段標／單一標</option><option v-for="o in scOpts.projs" :key="o.v" :value="o.v">{{ o.l }}</option></select><select :value="fc.tender" @change="setF(fc,'tender',$event.target.value)"><option value="">全部標號</option><option v-for="o in scOpts.tenders" :key="o.v" :value="o.v">{{ o.l }}</option></select><select :value="fc.sw" @change="setF(fc,'sw',$event.target.value)"><option value="">全部工項</option><option v-for="o in scOpts.sws" :key="o.v" :value="o.v">{{ o.l }}</option></select><select v-if="scOpts.units.length" :value="fc.unit" @change="setF(fc,'unit',$event.target.value)"><option value="">全部單元</option><option v-for="o in scOpts.units" :key="o.v" :value="o.v">{{ o.l }}</option></select><select :value="fc.tpl" @change="setF(fc,'tpl',$event.target.value)"><option value="">全部表單</option><option v-for="o in scOpts.tpls" :key="o.v" :value="o.v">{{ o.l }}</option></select><span class="small muted nowrap">共 {{ scList.length }} 筆<template v-if="scList.length!==scAll.length"> ／ {{ scAll.length }}</template></span><a class="small" v-if="fc.proj||fc.tender||fc.sw||fc.unit||fc.tpl" @click="clearF(fc)">清除</a></div>
   <div class="alert gray" v-if="!scList.length" style="margin:12px 14px 0">沒有符合篩選條件的紀錄。</div>
   <div class="grid-cards">
@@ -153,7 +152,6 @@
         <!-- 開工前確認 -->
         <div class="card pre-box" v-if="stageTab===firstStage">
           <h4>開工前確認</h4>
-          <div class="kvr" v-if="cur.unit"><span>掃描單元 QR Code 確認位置</span><span class="chip ok" v-if="cur.qrConfirmed">{{ cur.unit }} 已確認</span><button class="btn sm" v-else-if="!readonly" @click="confirmQr">掃描確認</button><span class="chip" v-else>未確認</span></div>
           <div class="kvr"><span>施工圖核准文號</span><input type="text" v-model="cur.drawingNo" @input="queueSave" placeholder="〔文號待填〕" :disabled="readonly" style="max-width:180px"></div>
           <div class="kvr" v-for="c in preLinked" :key="c"><span>表{{ c }} {{ linkName(c) }}</span><span class="chip ok" v-if="cur.linked[c]">○ 完成</span><span class="chip" v-else>未完成</span></div>
           <div class="small muted">前置表單未完成時，相關項目無法判定 ○。</div>
@@ -393,12 +391,6 @@
   <div class="alert warn mt" v-if="!spNew.templateId">此標號尚無可用的表單，請先到後台「表單範本」建立。</div>
   <label class="f mt">抽查位置（選填）</label><input type="text" v-model="spNew.location">
   <div class="mt small muted">系統會自動帶入同分項工程（有單元則同單元）最近一份廠商自主檢查表作為「廠商自檢」對照；未抽查的項目簽認時自動填 ╱。</div><div class="foot"><button class="btn" @click="spNew=null">取消</button><button class="btn primary" @click="createSpot">建立並開始</button></div></div></div>
-<div class="modal-bg" v-if="qrForm" @click.self="qrForm=null"><div class="modal"><h3>掃描單元 QR Code</h3><div class="alert info mb">示範環境以輸入單元編號代替鏡頭掃描（例：P12 會開啟進行中的自主檢查表）。</div>
-  <input type="text" v-model="qrForm.code" placeholder="單元編號，例 P12" @keyup.enter="scanQr" @input="qrForm.matches=null">
-  <template v-if="qrForm.matches"><div class="small muted mt mb">單元 {{ qrForm.code }} 共有 {{ qrForm.matches.length }} 張表，請選擇：</div>
-    <div class="kvr" v-for="s in qrForm.matches" :key="s.id" style="cursor:pointer" @click="pickQr(s)"><span>表{{ s.templateCode }} {{ s.templateName }}<br><span class="small muted">{{ s.id }}</span></span><span class="chip" :class="s.status==='signed'?'ok':'warn'">{{ s.fillMode==='pdf' ? s.wfStatus : s.status==='signed' ? '已簽認' : '填寫中' }}</span></div>
-    <button class="btn block mt" @click="openNew(qrForm.code);qrForm=null">＋ 新增此單元的其他表單</button></template>
-  <div class="foot"><button class="btn" @click="qrForm=null">取消</button><button class="btn primary" @click="scanQr">確認</button></div></div></div>
 <!-- 缺失：回報改善／複查 -->
 <div class="modal-bg" v-if="defForm" @click.self="defForm=null"><div class="modal"><h3>{{ isSup ? '缺失複查' : '回報改善完成' }}｜{{ defForm.x.id }}</h3>
   <div class="alert info mb"><b>{{ defForm.x.title }}</b><br>{{ defForm.x.location }}｜來源：{{ defForm.x.source }}｜期限 {{ Q.fmtD(defForm.x.due) }}</div>
@@ -440,9 +432,9 @@
 <div class="toast" :class="{ng: toastNg}" v-if="toastMsg">{{ toastMsg }}</div>
 </div>
 <script src="lib/vue.global.prod.js"></script>
-<script src="js/drawer.js?v=20261105b"></script>
-<script src="js/sample-pdfs.js?v=20261105b"></script>
-<script src="js/db.js?v=20261105b"></script>
-<script src="js/field.js?v=20261105b"></script>
+<script src="js/drawer.js?v=20261113a"></script>
+<script src="js/sample-pdfs.js?v=20261113a"></script>
+<script src="js/db.js?v=20261113a"></script>
+<script src="js/field.js?v=20261113a"></script>
 </body>
 </html>

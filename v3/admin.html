@@ -6,8 +6,8 @@
 <link rel="icon" href="images/logo.png">
 <title>捷運施工查驗系統 - 後台管理 v3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/common.css?v=20261105b">
-<link rel="stylesheet" href="css/admin.css?v=20261105b">
+<link rel="stylesheet" href="css/common.css?v=20261113a">
+<link rel="stylesheet" href="css/admin.css?v=20261113a">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -297,7 +297,7 @@
       </template>
       <template v-if="tplTab==='head' && edit.fillMode!=='pdf'">
         <h4 class="mb">表頭欄位</h4>
-        <table class="table"><tbody><tr v-for="r in [['工程名稱','由標案自動帶入'],['施工廠商','由標案自動帶入'],['分項工程名稱','由分項工程自動帶入'],['檢查位置','現場填寫・掃描單元 QR Code'],['檢查日期','自動填入當日'],edit.kind==='spot'?['抽查時機','檢驗停留點（必填★）／隨機抽查（任選）']:['檢查結果圖例','○ 合格　╳ 缺失　╱ 無此項']]"><td>{{ r[0] }}</td><td class="right"><span class="chip blue">{{ r[1] }}</span></td></tr></tbody></table>
+        <table class="table"><tbody><tr v-for="r in [['工程名稱','由標案自動帶入'],['施工廠商','由標案自動帶入'],['分項工程名稱','由分項工程自動帶入'],['檢查位置','現場填寫'],['檢查日期','自動填入當日'],edit.kind==='spot'?['抽查時機','檢驗停留點（必填★）／隨機抽查（任選）']:['檢查結果圖例','○ 合格　╳ 缺失　╱ 無此項']]"><td>{{ r[0] }}</td><td class="right"><span class="chip blue">{{ r[1] }}</span></td></tr></tbody></table>
         <h4 class="mt mb">簽認欄</h4>
         <table class="table"><tbody><tr v-for="r in (edit.kind==='self'?['現場工程師（檢查人員）','工地授權代表或其授權主管']:['監造工務所（抽查人員）','施工廠商隨同人員'])"><td>{{ r }}</td><td class="right"><span class="chip">手寫簽名</span></td></tr></tbody></table>
         <template v-if="edit.kind==='spot'"><h4 class="mt mb">計價欄位（本表專用）</h4><table class="table"><thead><tr><th>欄位</th><th>單位</th><th>來源</th></tr></thead><tbody><tr><td>單元厚度</td><td>m</td><td>帶入施工圖設定值，可修改</td></tr><tr><td>單元長度</td><td>m</td><td>帶入表5-5 第 2 項</td></tr><tr><td>計價深度</td><td>m</td><td>現場填寫</td></tr><tr><td>計價面積</td><td>m²</td><td><span class="chip blue">自動計算</span> 單元長度 × 計價深度</td></tr></tbody></table></template>
@@ -464,15 +464,15 @@
 </div>
 <script src="lib/vue.global.prod.js"></script>
 <script src="lib/xlsx.full.min.js"></script>
-<script src="templates/export-template.js?v=20261105b"></script>
-<script src="js/drawer.js?v=20261105b"></script>
-<script src="js/sample-pdfs.js?v=20261105b"></script>
+<script src="templates/export-template.js?v=20261113a"></script>
+<script src="js/drawer.js?v=20261113a"></script>
+<script src="js/sample-pdfs.js?v=20261113a"></script>
 <script src="lib/html2canvas.min.js"></script>
 <script src="lib/jspdf.umd.min.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/formpdf.js?v=20261105b"></script>
-<script src="js/projbase.js?v=20261105b"></script>
-<script src="js/db.js?v=20261105b"></script>
-<script src="js/admin.js?v=20261105b"></script>
+<script src="js/formpdf.js?v=20261113a"></script>
+<script src="js/projbase.js?v=20261113a"></script>
+<script src="js/db.js?v=20261113a"></script>
+<script src="js/admin.js?v=20261113a"></script>
 </body>
 </html>
