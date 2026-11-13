@@ -157,7 +157,7 @@ createApp({
     const scOpts = computed(() => { const o = filterOpts(scAll.value, fc); fixF(fc, o); return o; });
     const scList = computed(() => scAll.value.filter(x => passF(fc, x, 'all')));
     const scProgress = sc => { if (sc.fillMode === 'pdf') return { n: sc.pdfFile ? 1 : 0, total: 1 }; const t = tplOf(sc.templateId); return { n: Object.values(sc.answers).filter(a => a.judge).length, total: t ? t.items.length : 0 }; };
-    const newForm = ref(null), qrForm = ref(null);
+    const newForm = ref(null);
     // 新增表單的三層選擇：標號 → 工項(分項工程) → 表單
     const byOrder = (a, b) => (a.order == null ? 1e9 : a.order) - (b.order == null ? 1e9 : b.order);
     // 標號 → 工項 → 單元（工項有設定單元才出現）→ 表單；表單只列「該單元」的範本，未指定單元則列分項工程層的範本
@@ -179,7 +179,7 @@ createApp({
     }
     function newFormInit(kind, unit) {
       const ts = tenderOpts().filter(x => swOpts(x.id, kind).length), t = ts.find(x => x.id === tenderSel.value) || ts[0] || tenderOpts()[0] || {}; const f = { tenderId: t.id || '', subworkId: '', templateId: '', unit: unit || '', location: '', dupWarn: '', forceDup: false }; cascade(f, kind, 'tender');
-      // 由 QR 帶入的單元：找出設定了該單元的工項並預先選好
+      // 指定單元時：找出設定了該單元的工項並預先選好
       if (unit) { const hit = d.subworks.find(s => (s.unitList || []).includes(unit) && unitOpts(s.id, kind).includes(unit)); if (hit) { f.tenderId = hit.tenderId; f.subworkId = hit.id; f.unit = unit; cascade(f, kind, 'unit'); } else toast(`後台尚未設定單元 ${unit} 的表單，請手動選擇`, true); }
       return f;
     }
@@ -195,16 +195,6 @@ createApp({
       if (same.length && !f.forceDup) { f.dupWarn = `${w} 已有 ${same.length} 張已簽認的表${tpl.code}（${same.map(s => s.id).join('、')}）。若為重新檢查，請按「仍要建立」。`; return; }
       const sc = await Q.newSelfCheck({ templateId: f.templateId, unit, location: f.location.trim() }); newForm.value = null; await load(); openSc(sc.id);
     }
-    // 掃描單元 QR：該單元有多張表時列出讓使用者選，不再只開第一張
-    function scanQr() {
-      const raw = (qrForm.value.code || '').trim(); if (!raw) return toast('請輸入單元編號', true);
-      const code = (d.subworks.flatMap(s => s.unitList || []).find(u => u.toUpperCase() === raw.toUpperCase())) || raw.toUpperCase();
-      const list = d.selfChecks.filter(s => s.unit && s.unit.toUpperCase() === code.toUpperCase() && inTender(s)).sort((a, b) => (a.status === 'signed') - (b.status === 'signed') || b.updatedAt - a.updatedAt);
-      if (!list.length) { qrForm.value = null; openNew(code); return; }
-      if (list.length === 1) { qrForm.value = null; openSc(list[0].id); toast('已掃描單元 ' + code); return; }
-      qrForm.value = { code, matches: list };
-    }
-    function pickQr(sc) { qrForm.value = null; openSc(sc.id); }
 
     /* ---------- 自主檢查表單 ---------- */
     const cur = ref(null), stageTab = ref('pre'), itemNo = ref(1), saveMsg = ref(''), docShow = ref(null), linkShow = ref(null), applyForm = ref(null);
@@ -290,7 +280,6 @@ createApp({
       const c = cur.value; returnTo.value = c.id; linkShow.value = null; await flush();
       const sc = await Q.newSelfCheck({ templateId: t.id, unit: c.unit, location: c.location }); await load(); openSc(sc.id); toast(`已建立表${code}（${where(c.unit, c.subworkName)}），完成後回主表即自動帶入`);
     }
-    function confirmQr() { cur.value.qrConfirmed = true; queueSave(); toast(`已掃描確認單元 ${cur.value.unit} 位置`); }
 
     /* 申請停留點會驗 */
     function canApply(it) { const a = ans(it.no); return it.hold && a.judge === 'ok' && (!it.photo || a.photos.length) && ['none', 'failed'].includes(hstate(it)) && !readonly.value && !lockOf(it); }
@@ -542,9 +531,9 @@ createApp({
     return {
       Q, d, loaded, now, view, todoTab, tenderSel, dept, deptName, projOf, projOpts, docProj, docList, fc, fsp, scOpts, spOpts, setF, clearF, NO_UNIT, scAll, spAll, allTenderLabel, role, isSup, me, wide, toastMsg, toastNg, toast, tplOf, rel, hh, todayLabel, reqCls,
       todoReqs, lockedCards, rejectedCards, defTodos, draftSpots, pdfTodos, openPdfTodo, openDefects, todoCount, holdFilter, holdsList, selReqId, selReq, sched, selectReq, reqText, reqPhotos, lockedAfter, doSchedule, doReject, doStart, doCancel,
-      pf, pfPreview, pfUrl, pfTpl, pfRec, pfSelf, pfSt, wfCls, pfCanLock, pfIsLocker, pfCanClose, pfCanVendor, pfCanUnfreeze, pfHint, pfDownloadBlank, pfDownloadCur, pfLock, pfCancel, wfUp, wfCert, wfVen, wfUnf, openWfUp, onWfUpFile, submitWfUp, openWfVen, onWfVenFile, submitWfVen, openWfCert, submitWfCert, openWfUnf, submitWfUnf, dlLog, leavePdf, isDirector, scList, scProgress, newForm, qrForm, tenderOpts, swOpts, tplOpts, unitOpts, ut, cascade, openNew, createSc, scanQr, pickQr,
+      pf, pfPreview, pfUrl, pfTpl, pfRec, pfSelf, pfSt, wfCls, pfCanLock, pfIsLocker, pfCanClose, pfCanVendor, pfCanUnfreeze, pfHint, pfDownloadBlank, pfDownloadCur, pfLock, pfCancel, wfUp, wfCert, wfVen, wfUnf, openWfUp, onWfUpFile, submitWfUp, openWfVen, onWfVenFile, submitWfVen, openWfCert, submitWfCert, openWfUnf, submitWfUnf, dlLog, leavePdf, isDirector, scList, scProgress, newForm, tenderOpts, swOpts, tplOpts, unitOpts, ut, cascade, openNew, createSc,
       cur, curTpl, stageTab, itemNo, saveMsg, docShow, linkShow, applyForm, readonly, stageList, curItem, shownItems, judged, total, stageStat, stageDone, ans, ensure, lockOf, hstate, hreq, itemEditable, itemIcon,
-      flush, queueSave, openSc, gotoItem, setStage, step, setJudge, addPhoto, addDemoPhoto, delPhoto, linkName, preLinked, linkedRec, linkedDone, linkedTpl, linkStatus, openLinked, createLinked, returnTo, confirmQr, canApply, openApply, applyShort, applyHours, submitApply, holdText, wasRejected,
+      flush, queueSave, openSc, gotoItem, setStage, step, setJudge, addPhoto, addDemoPhoto, delPhoto, linkName, preLinked, linkedRec, linkedDone, linkedTpl, linkStatus, openLinked, createLinked, returnTo, canApply, openApply, applyShort, applyHours, submitApply, holdText, wasRejected,
       summary, holdItems, holdPending, attachCodes, canSubmit, goSign, finishStage, stageTabs, firstStage, stageNext, spStageTabs, spNextStage, leaveForm,
       sp, spStage, spItemNo, spSaveMsg, spNew, spTpl, spReq, spSc, spEditable, spStageList, spCurItem, spShown, spA, spJudged, spTotal, spSummary, spStageStat, spSelfJudge, spSelfText, spArea, spLocked, spList, spProgress, spSave, spFlush, openSpot, spGoto, spSetStage, spJudge, spPhoto, spDemoPhoto, spDelPhoto, spGoSign, leaveSpot, openSpotNew, createSpot,
       signCtx, signHash, signAgree, canvasEl, drawn, signers, signIdx, curSigner, signSummary, sDown, sMove, sUp, clearSign, applySaved, saveSig, confirmSign, cancelSign,

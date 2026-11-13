@@ -201,7 +201,7 @@
     const sc = {
       id: 'SC-CF671-261005-002', tenderId: 'T671', tenderCode: 'CF671', templateId: 'TP-5-5', templateVer: 1, templateCode: '5-5', templateName: '連續壁施工自主檢查表',
       subworkId: 'S671-5', subworkName: 'Y01站連續壁施工', unit: 'P12', location: 'Y01站 單元 P12（公單元）', date: now, contractor: '大陸工程股份有限公司',
-      status: 'draft', answers: ans, linked: { '5-4': true, '5-6': true, '5-7': true }, qrConfirmed: true, drawingNo: '',
+      status: 'draft', answers: ans, linked: { '5-4': true, '5-6': true, '5-7': true }, drawingNo: '',
       hold: { 8: { state: 'passed', requestId: 'HP-CF671-1002-001' }, 9: { state: 'passed', requestId: 'HP-CF671-1002-002' }, 10: { state: 'applied', requestId: 'HP-CF671-1004-003' } },
       recovery: '', signatures: {}, createdAt: now - 10 * H, updatedAt: now - H
     };
@@ -209,7 +209,7 @@
     // 已簽認完成的 P11
     const ans2 = {}, hold2 = {};
     items55().forEach(it => { ans2[it.no] = { judge: 'ok', values: {}, photos: it.photo ? ['*'] : [], note: '' }; if (it.hold) hold2[it.no] = { state: 'passed', requestId: '' }; });
-    out.selfChecks.push({ id: 'SC-CF671-260930-001', tenderId: 'T671', tenderCode: 'CF671', templateId: 'TP-5-5', templateVer: 1, templateCode: '5-5', templateName: '連續壁施工自主檢查表', subworkId: 'S671-5', subworkName: 'Y01站連續壁施工', unit: 'P11', location: 'Y01站 單元 P11（母單元）', date: now - 5 * D, contractor: '大陸工程股份有限公司', status: 'signed', answers: ans2, linked: { '5-4': true, '5-6': true, '5-7': true }, qrConfirmed: true, drawingNo: 'CF671-DW-0101', hold: hold2, recovery: '', signatures: { site: { img: '', at: now - 5 * D, name: '示範品管' }, rep: { img: '', at: now - 5 * D, name: '示範工地主任' } }, hash: 'cc161bb0demo', createdAt: now - 5 * D, updatedAt: now - 5 * D });
+    out.selfChecks.push({ id: 'SC-CF671-260930-001', tenderId: 'T671', tenderCode: 'CF671', templateId: 'TP-5-5', templateVer: 1, templateCode: '5-5', templateName: '連續壁施工自主檢查表', subworkId: 'S671-5', subworkName: 'Y01站連續壁施工', unit: 'P11', location: 'Y01站 單元 P11（母單元）', date: now - 5 * D, contractor: '大陸工程股份有限公司', status: 'signed', answers: ans2, linked: { '5-4': true, '5-6': true, '5-7': true }, drawingNo: 'CF671-DW-0101', hold: hold2, recovery: '', signatures: { site: { img: '', at: now - 5 * D, name: '示範品管' }, rep: { img: '', at: now - 5 * D, name: '示範工地主任' } }, hash: 'cc161bb0demo', createdAt: now - 5 * D, updatedAt: now - 5 * D });
 
     // 停留點申請
     const A = now - 9 * H;
@@ -326,7 +326,7 @@
         const tpl = (await all('templates')).find(t => t.code === code && t.kind === 'self' && t.status === 'published'); if (!tpl) continue;
         if ((await all('selfChecks')).some(s => s.unit === unit && s.templateCode === code)) continue;
         const at = now - ago, ans = {}; tpl.items.forEach(i => { ans[i.no] = { judge: 'ok', values: {}, photos: [], note: '' }; });
-        const rec = { id: `SC-CF671-LNK-${unit}-${code}`, tenderId: 'T671', tenderCode: 'CF671', templateId: tpl.id, templateVer: tpl.version, templateCode: code, templateName: tpl.name, subworkId: tpl.subworkId, subworkName: 'Y01站連續壁施工', unit, location: loc, date: at, contractor: '大陸工程股份有限公司', status: 'signed', answers: ans, linked: {}, qrConfirmed: true, drawingNo: '', hold: {}, recovery: '', signatures: { site: { img: '', at, name: '示範品管' }, rep: { img: '', at, name: '示範工地主任' } }, hash: 'linkseed', createdAt: at, updatedAt: at, fillMode: tpl.fillMode || 'online', pdfFile: null, wfStatus: '未開始', lockedBy: null, lastUpdatedBy: null, version: 0, logs: [] };
+        const rec = { id: `SC-CF671-LNK-${unit}-${code}`, tenderId: 'T671', tenderCode: 'CF671', templateId: tpl.id, templateVer: tpl.version, templateCode: code, templateName: tpl.name, subworkId: tpl.subworkId, subworkName: 'Y01站連續壁施工', unit, location: loc, date: at, contractor: '大陸工程股份有限公司', status: 'signed', answers: ans, linked: {}, drawingNo: '', hold: {}, recovery: '', signatures: { site: { img: '', at, name: '示範品管' }, rep: { img: '', at, name: '示範工地主任' } }, hash: 'linkseed', createdAt: at, updatedAt: at, fillMode: tpl.fillMode || 'online', pdfFile: null, wfStatus: '未開始', lockedBy: null, lastUpdatedBy: null, version: 0, logs: [] };
         if (tpl.fillMode === 'pdf' && tpl.pdf) {
           const f = { name: `${tpl.name}_${unit}_已填寫.pdf`, size: tpl.pdf.size, data: tpl.pdf.data, at };
           Object.assign(rec, { answers: {}, pdfFile: f, wfStatus: '已結案', version: 2, lastUpdatedBy: '示範品管', logs: [{ at: at - 3600e3, user: '示範品管', action: '下載鎖定', detail: '下載空白範本並鎖定控制權，開始填寫表單。' }, { at: at - 1800e3, user: '示範品管', action: '上傳並簽名', detail: '已完成 PDF 上傳並現地手寫簽名，待辦理憑證加簽結案。', file: { name: f.name, size: f.size, data: f.data } }, { at, user: '示範品管', action: '憑證加簽結案', detail: '經實體自然人憑證數位簽章認證，表單正式結案。', file: { name: f.name, size: f.size, data: f.data } }] });
@@ -471,7 +471,7 @@
       id: `SC-${tender.code}-${String(d.getFullYear()).slice(2)}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(n, 3)}`,
       tenderId: tender.id, tenderCode: tender.code, templateId: tpl.id, templateVer: tpl.version, templateCode: tpl.code, templateName: tpl.name,
       subworkId: sw.id, subworkName: sw.name, unit: unit || '', location: location || `${tender.site || tender.name} ${unit ? '單元 ' + unit : sw.name}`, date: Date.now(), contractor: tender.contractor,
-      status: 'draft', answers: {}, linked: {}, qrConfirmed: false, drawingNo: drawingNo || '', hold: {}, recovery: '', signatures: {}, createdAt: Date.now(), updatedAt: Date.now(),
+      status: 'draft', answers: {}, linked: {}, drawingNo: drawingNo || '', hold: {}, recovery: '', signatures: {}, createdAt: Date.now(), updatedAt: Date.now(),
       fillMode: tpl.fillMode || 'online', pdfFile: null,
       wfStatus: '未開始', lockedBy: null, lastUpdatedBy: null, version: 0, logs: []
     };
