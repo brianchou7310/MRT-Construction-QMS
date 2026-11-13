@@ -563,6 +563,7 @@ createApp({
       if (edit.value.fillMode === 'pdf' && !edit.value.pdf) return toast('請上傳空白範本 PDF', true);
       if (edit.value.fillMode === 'pdf' && pdfBlockedHolds(edit.value).length) return toast('含 ☆停留點的自主檢查表不可設為 PDF', true);
       const t = finalizeItems(Q.clone(edit.value)); const asNew = editUsed.value > 0;
+      if (t.calcFields) t.calcFields = t.calcFields.filter(c => (c.label || '').trim()).map(c => ({ key: c.key, label: c.label.trim(), unit: (c.unit || '').trim() }));
       const saved = await Q.saveTemplate(t, asNew); await load(); pickTpl(d.templates.find(x => x.id === saved.id));
       toast(asNew ? `已另存為 v${saved.version}，舊版紀錄保留原內容` : '範本已儲存');
     }
@@ -580,6 +581,9 @@ createApp({
     const pairItems = computed(() => pairSelf.value ? pairSelf.value.items.map(i => ({ key: i.key, no: i.no, name: i.name, hold: !!i.hold, stage: Q.stageName(pairSelf.value, i.stage) })) : []);
     function setSrc(it, key) { const si = pairSelf.value && pairSelf.value.items.find(i => i.key === key); if (si) { it.srcKey = si.key; it.srcNo = si.no; } else { delete it.srcKey; delete it.srcNo; } }
     const srcDup = it => { const si = srcOf(it); return si ? edit.value.items.filter(x => x !== it && srcOf(x) === si).length : 0; };
+    // 抽查表計價欄位：使用者自訂（名稱、單位），存在範本的 calcFields
+    function addCalc() { (edit.value.calcFields = edit.value.calcFields || []).push({ key: Q.uid('C'), label: '', unit: '' }); }
+    const calcOf = r => ((tplOf(r.templateId) || {}).calcFields || []).filter(c => (c.label || '').trim());
     function syncFromSelf() {
       const paired = d.templates.find(t => t.id === edit.value.pairedSelf); if (!paired) return toast('此抽查表未對應自主檢查表', true);
       // 永遠對應自主檢查表的「最新發布版本」，以項目永久代碼（key）比對，不受項次重排影響
@@ -864,10 +868,10 @@ createApp({
           h += `<tr data-brk>${stgCell}<td>${it.hold ? `<span class="star">${mark}</span>` : ''}${E(it.name)}</td><td>${E(it.std || '').replace(/\n/g, '<br>')}</td><td>${info}</td><td class="j${a.judge === 'ng' ? ' ng' : ''}">${a.judge ? JS[a.judge] : ''}</td><td>${note}</td></tr>`;
         });
       });
-      if (!self && r.calc) {
-        const c = r.calc, v = x => `<u>　${E(x || '　　')}　</u>`, area = Number(c.length) && Number(c.depth) ? (Number(c.length) * Number(c.depth)).toFixed(2) : '';
-        h += `<tr data-brk><td colspan="6" class="calc">單元厚度：${v(c.thickness)} m　　單元長度：${v(c.length)} m<br>計價深度：${v(c.depth)} m　　計價面積：${v(area)} m²</td></tr>`;
-      }
+      // 計價欄位：範本有定義才顯示
+      const cfs = self ? [] : calcOf(r);
+      if (cfs.length) { const c = r.calc || {}, v = x => `<u>　${E(x || '　　')}　</u>`;
+        h += `<tr data-brk><td colspan="6" class="calc">${cfs.map((f, i) => `${E(f.label)}：${v(c[f.key])} ${E(f.unit || '')}${i % 2 && i < cfs.length - 1 ? '<br>' : '　　'}`).join('')}</td></tr>`; }
       // 缺失複查結果：依本紀錄產生的缺失追蹤狀態帶入
       const dfs = d.defects.filter(x => x.refId === r.id), closed = dfs.filter(x => x.status === 'closed');
       const doneAll = dfs.length ? closed.length === dfs.length : (self && r.recovery === 'done'), openAny = dfs.length ? closed.length < dfs.length : (self && r.recovery === 'open');
@@ -985,7 +989,7 @@ createApp({
     return {
       Q, d, now, loaded, page, menuOpen, toastMsg, toastNg, toast, go, tenderById, swById, tenderFilter, supervisors, reqCls, rel, openReqs, overdueReqs, openDefects, overdueDefects, weekHolds, spotRate, kpiSelf, todayAgenda, tplOf, usedCount,
       progTender, progFilter, progRows, progCount, holdTab, holdTabs, holdCount, holdList, holdByDate, selReqId, selReq, calView, sched, lockedAfter, hoursBefore, doSchedule, doReject, doStart, doCancel,
-      pairOpts, pairCode, srcOf, pairItems, setSrc, srcDup, showSC, showSP, itemsOf, reqText, judgeText, spotCount, defCls, defText, defTab, defList, defAct, defShow, defReview,
+      addCalc, calcOf, pairOpts, pairCode, srcOf, pairItems, setSrc, srcDup, showSC, showSP, itemsOf, reqText, judgeText, spotCount, defCls, defText, defTab, defList, defAct, defShow, defReview,
       selTenderId, selTender, treeGroups, tenderRefs, delTender, tDragId, tDragOver, tDragStart, tDragEnd, tDrop, grpOpen, grpIsOpen, treeOpen, swPick, treeAll, dept, deptName, setDept, allTenders, pick, pickData, pickSel, pickGroupAll, doPick, pickTender, pickSw, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, swForm, saveSw, moveSw, delSw, newTender, swImp, openSwImp, downloadSwSample, onSwFile, swImpOk, swImpBad, doSwImp,
       tplSw, tplUnit, tplUnits, unitForm, unitTplN, openUnitForm, addUnit, delUnit, swGroups, selTplId, tplTab, edit, previewOn, tplList, tplHistory, pickTpl, editUsed, editStages, isPdf, newTplForm, onNewPdf, onEditPdf, createTpl, pdfUrl, downloadFile, wfCls, readPdf, TYPES, holdN, addItem, delItem, moveItem, onType, saveEdit, delTpl, syncFromSelf, bulk, openBulk, onBulkFile, bulkOk, bulkView, doBulk, downloadBulkSample, exportSubwork, stageForm, stageItemN, openStageForm, stageAdd, stageMove, stageDel, stagePreset, applyStages, STAGE_PRESETS, newTpl, exportXlsx, dragId, dragOver, onDragStart, onDragEnd, onDrop, itemImp, openItemImp, onItemFile, itemImpForm, itemImpView, itemImpErrs, doItemImp,
       linkOpts, adminUser, swText, projOf, projOpts, projText, tendersOfProj, qf, qfOpts, qfList, qfSet, qfClear, ex, exOpts, exList, exRows, exSet, exClear, downloadRec, downloadBatch, recCode,
