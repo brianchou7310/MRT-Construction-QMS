@@ -82,10 +82,6 @@ createApp({
     /* ---------- 待辦 ---------- */
     const reqCls = r => ({ pending: 'warn', scheduled: 'blue', inspecting: 'blue', passed: 'ok', failed: 'ng', rejected: 'ng' }[r.status]);
     const todoReqs = computed(() => d.requests.filter(r => ['pending', 'scheduled', 'inspecting'].includes(r.status) && inTender(r)).sort((a, b) => a.scheduledAt - b.scheduledAt));
-    const lockedCards = computed(() => d.selfChecks.filter(sc => sc.status === 'draft' && inTender(sc)).flatMap(sc => {
-      const tpl = tplOf(sc.templateId); if (!tpl) return [];
-      return tpl.items.filter(i => i.hold && ['none', 'failed'].includes(Q.holdState(sc, i.no))).map(i => ({ sc, i, reason: Q.lockReason(sc, tpl, i) })).filter(x => x.reason && x.reason.startsWith('待'));
-    }));
     const draftSpots = computed(() => isSup.value ? d.spotChecks.filter(s => s.status === 'draft' && s.fillMode !== 'pdf' && inTender(s)) : []);
     const openDefects = computed(() => d.defects.filter(x => x.status !== 'closed' && inTender(x)));
     // PDF 表單簽辦待辦：依目前身分，只列出「輪到我」的表單
@@ -110,7 +106,7 @@ createApp({
     // 廠商：被退回、尚未重新申請的停留點
     const rejectedCards = computed(() => isSup.value ? [] : d.requests.filter(r => r.status === 'rejected' && r.scId && inTender(r)).map(r => ({ r, sc: d.selfChecks.find(s => s.id === r.scId) })).filter(x => x.sc && x.sc.status === 'draft' && ((x.sc.hold || {})[x.r.itemNo] || {}).requestId === x.r.id && Q.holdState(x.sc, x.r.itemNo) === 'none'));
     const defTodos = computed(() => openDefects.value.filter(x => isSup.value ? x.status === 'review' : x.status === 'open'));
-    const todoCount = computed(() => todoReqs.value.length + lockedCards.value.length + rejectedCards.value.length + draftSpots.value.length + pdfTodos.value.length + defTodos.value.length);
+    const todoCount = computed(() => todoReqs.value.length + rejectedCards.value.length + draftSpots.value.length + pdfTodos.value.length + defTodos.value.length);
     const openPdfTodo = x => x.kind === 'self' ? openSc(x.rec.id) : openSpot(x.rec.id);
     const holdFilter = ref('all');
     const holdsList = computed(() => d.requests.filter(r => holdFilter.value === 'all' || r.status === holdFilter.value).sort((a, b) => b.appliedAt - a.appliedAt));
@@ -530,7 +526,7 @@ createApp({
 
     return {
       Q, d, loaded, now, view, todoTab, tenderSel, dept, deptName, projOf, projOpts, docProj, docList, fc, fsp, scOpts, spOpts, setF, clearF, NO_UNIT, scAll, spAll, allTenderLabel, role, isSup, me, wide, toastMsg, toastNg, toast, tplOf, rel, hh, todayLabel, reqCls,
-      todoReqs, lockedCards, rejectedCards, defTodos, draftSpots, pdfTodos, openPdfTodo, openDefects, todoCount, holdFilter, holdsList, selReqId, selReq, sched, selectReq, reqText, reqPhotos, lockedAfter, doSchedule, doReject, doStart, doCancel,
+      todoReqs, rejectedCards, defTodos, draftSpots, pdfTodos, openPdfTodo, openDefects, todoCount, holdFilter, holdsList, selReqId, selReq, sched, selectReq, reqText, reqPhotos, lockedAfter, doSchedule, doReject, doStart, doCancel,
       pf, pfPreview, pfUrl, pfTpl, pfRec, pfSelf, pfSt, wfCls, pfCanLock, pfIsLocker, pfCanClose, pfCanVendor, pfCanUnfreeze, pfHint, pfDownloadBlank, pfDownloadCur, pfLock, pfCancel, wfUp, wfCert, wfVen, wfUnf, openWfUp, onWfUpFile, submitWfUp, openWfVen, onWfVenFile, submitWfVen, openWfCert, submitWfCert, openWfUnf, submitWfUnf, dlLog, leavePdf, isDirector, scList, scProgress, newForm, tenderOpts, swOpts, tplOpts, unitOpts, ut, cascade, openNew, createSc,
       cur, curTpl, stageTab, itemNo, saveMsg, docShow, linkShow, applyForm, readonly, stageList, curItem, shownItems, judged, total, stageStat, stageDone, ans, ensure, lockOf, hstate, hreq, itemEditable, itemIcon,
       flush, queueSave, openSc, gotoItem, setStage, step, setJudge, addPhoto, addDemoPhoto, delPhoto, linkName, preLinked, linkedRec, linkedDone, linkedTpl, linkStatus, openLinked, createLinked, returnTo, canApply, openApply, applyShort, applyHours, submitApply, holdText, wasRejected,

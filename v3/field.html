@@ -6,8 +6,8 @@
 <link rel="icon" href="images/logo.png">
 <title>捷運施工查驗系統 - 現場作業 v3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/common.css?v=20261113d">
-<link rel="stylesheet" href="css/field.css?v=20261113d">
+<link rel="stylesheet" href="css/common.css?v=20261113e">
+<link rel="stylesheet" href="css/field.css?v=20261113e">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -32,7 +32,7 @@
 
     <template v-if="view==='todo'">
       <div class="pills">
-        <button :class="{on: todoTab==='hold'}" @click="todoTab='hold'">會驗 {{ todoReqs.length + lockedCards.length + rejectedCards.length }}</button>
+        <button :class="{on: todoTab==='hold'}" @click="todoTab='hold'">會驗 {{ todoReqs.length + rejectedCards.length }}</button>
         <button :class="{on: todoTab==='spot'}" @click="todoTab='spot'" v-if="isSup">抽查 {{ draftSpots.length }}</button>
         <button :class="{on: todoTab==='pdf'}" @click="todoTab='pdf'">表單簽辦 {{ pdfTodos.length }}</button>
         <button :class="{on: todoTab==='defect'}" @click="todoTab='defect'">{{ isSup ? '缺失複查' : '缺失改善' }} {{ defTodos.length }}</button>
@@ -45,15 +45,11 @@
           <button class="btn primary block" v-else-if="isSup && r.status==='inspecting'" @click.stop="openSpot(r.spotId)">繼續抽查</button>
           <button class="btn primary block" v-else @click.stop="selectReq(r)">查看申請</button>
         </div>
-        <div class="tcard locked" v-for="x in lockedCards" :key="x.sc.id+x.i.no">
-          <div class="row"><div class="tm">—<div class="small">待前項放行</div></div><div class="grow"><div class="star t">★{{ x.i.name }}</div><div class="muted small">{{ x.sc.subworkName }}{{ ut(x.sc.unit,'｜') }}</div></div><span class="chip">鎖定</span></div>
-          <div class="muted small">{{ x.reason }}</div>
-          <button class="btn block" @click.stop="openSc(x.sc.id)">開啟自主檢查表</button></div>
         <div class="tcard" v-for="x in rejectedCards" :key="'rj'+x.r.id">
           <div class="row"><div class="tm">—<div class="small" style="color:var(--ng)">已退回</div></div><div class="grow"><div class="star t">★{{ x.r.title }}</div><div class="muted small">{{ x.sc.subworkName }}{{ ut(x.sc.unit,'｜') }}｜{{ x.r.id }}</div></div><span class="chip ng">已退回</span></div>
           <div class="small" style="color:var(--ng)">退回原因：{{ x.r.rejectReason || '—' }}</div>
           <button class="btn block" @click.stop="openSc(x.sc.id)">修正後重新申請</button></div>
-        <div class="empty" v-if="!todoReqs.length && !lockedCards.length && !rejectedCards.length">目前沒有會驗待辦</div>
+        <div class="empty" v-if="!todoReqs.length && !rejectedCards.length">目前沒有會驗待辦</div>
       </template>
       <template v-if="todoTab==='spot'">
         <div class="tcard" v-for="s in draftSpots" :key="s.id"><div class="row"><div class="grow"><div class="star t">★{{ s.title }}</div><div class="muted small">{{ s.location }}｜{{ s.id }}</div></div><span class="chip warn">填寫中</span></div><button class="btn primary block" @click="openSpot(s.id)">繼續抽查紀錄</button></div>
@@ -432,9 +428,9 @@
 <div class="toast" :class="{ng: toastNg}" v-if="toastMsg">{{ toastMsg }}</div>
 </div>
 <script src="lib/vue.global.prod.js"></script>
-<script src="js/drawer.js?v=20261113d"></script>
-<script src="js/sample-pdfs.js?v=20261113d"></script>
-<script src="js/db.js?v=20261113d"></script>
-<script src="js/field.js?v=20261113d"></script>
+<script src="js/drawer.js?v=20261113e"></script>
+<script src="js/sample-pdfs.js?v=20261113e"></script>
+<script src="js/db.js?v=20261113e"></script>
+<script src="js/field.js?v=20261113e"></script>
 </body>
 </html>
