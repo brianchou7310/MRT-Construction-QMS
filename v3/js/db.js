@@ -172,14 +172,13 @@
     [['隧道（地下）工程', 4], ['車站工程', 23]].forEach((s, i) => out.subworks.push({ id: 'S624-' + (i + 1), tenderId: 'T624', no: ['一', '二'][i], name: s[0], qty: 1, unit: '式', status: '施工中', order: i }));
 
     // 範本
-    const t55 = { id: 'TP-5-5', tenderId: 'T671', subworkId: 'S671-5', kind: 'self', code: '5-5', name: '連續壁施工自主檢查表', version: 1, status: 'published', source: 'CF671-PL-0032 Y01站連續壁工計畫書 第5章 品質管理（p.5-10~5-11）', fillMode: 'online', items: items55(), used: 2 };
+    const t55 = { id: 'TP-5-5', tenderId: 'T671', subworkId: 'S671-5', kind: 'self', code: '5-5', name: '連續壁施工自主檢查表', version: 1, status: 'published', source: 'CF671-PL-0032 Y01站連續壁工計畫書 第5章 品質管理（p.5-10~5-11）', fillMode: 'online', items: items55(), used: 0 };
     const spotItems = items55().map(i => { i.srcNo = i.no; i.hold = [4, 8, 9, 10, 11, 12, 16].includes(i.no); return i; });
-    const tSpot = { id: 'TP-SP-1', tenderId: 'T671', subworkId: 'S671-5', kind: 'spot', code: 'SP-5', name: '連續壁施工品質抽查記錄表', version: 1, status: 'published', source: 'CF671-PL-0032 連續壁工計畫書 p.5-20~5-21', pairedSelf: 'TP-5-5', fillMode: 'online', items: spotItems, used: 1 };
+    const tSpot = { id: 'TP-SP-1', tenderId: 'T671', subworkId: 'S671-5', kind: 'spot', code: 'SP-5', name: '連續壁施工品質抽查記錄表', version: 1, status: 'published', source: 'CF671-PL-0032 連續壁工計畫書 p.5-20~5-21', pairedSelf: 'TP-5-5', fillMode: 'online', items: spotItems, used: 0 };
     out.templates.push(t55, tSpot);
     out.templates.push(Object.assign(mini('TP-5-4', 'S671-5', 'self', '5-4', '導溝施工自主檢查表', 1), { items: items54(), source: 'CF671-PL-0032 Y01站連續壁工計畫書 第5章 品質管理' }), mini('TP-5-6', 'S671-5', 'self', '5-6', '鋼筋籠自主檢查表', 6), pdfTpl('TP-5-7', 'S671-5', 'self', '5-7', '穩定液自主檢查紀錄表', '穩定液自主檢查紀錄表_空白範本.pdf'), mini('TP-5-8', 'S671-5', 'self', '5-8', '連續壁超音波檢測紀錄表', 4), mini('TP-5-9', 'S671-5', 'self', '5-9', '連續壁混凝土灌漿紀錄表', 4));
     out.templates.push(mini('TP-SP-2', 'S671-5', 'spot', 'SP-6', '連續壁鋼筋籠施工品質抽查記錄表', 5), pdfTpl('TP-SP-3', 'S671-5', 'spot', 'SP-7', '連續壁穩定液施工品質抽查記錄表', '連續壁穩定液施工品質抽查記錄表_空白範本.pdf'), mini('TP-SP-0', 'S671-5', 'spot', 'SP-4', '導溝施工品質抽查記錄表', 5));
     [[1, '鋼板樁'], [2, '開挖支撐'], [6, '鑽掘混凝土基樁'], [8, '模板組立'], [9, '鋼筋'], [10, '預拌混凝土']].forEach(([n, nm]) => out.templates.push(mini('TP-S' + n, 'S671-' + n, 'self', '1-' + n, nm + '自主檢查表', 4)));
-    out.templates.find(t => t.id === 'TP-S2').used = 2;
 
     // 參考文件
     [['CF671-PL-0032', 'Y01 站連續壁工計畫書', '第5章 品質管理（p.5-10~5-21）'], ['CF671-DW-0101', '連續壁施工圖', 'Y01 站 單元配置'], ['CF671-SP-0005', '施工規範 03310 混凝土', '坍度、溫度及試體規定'], ['CF671-SP-0007', '施工規範 02450 連續壁', '垂直度及穩定液管理']].forEach(d => out.docs.push({ id: d[0], code: d[0], name: d[1], note: d[2], projKey: 'CF670A' }));
@@ -190,61 +189,9 @@
       { id: 'U4', name: '示範工務所同仁', role: '捷運局工務所同仁', org: '捷運局工務所', email: 'sv@supervisor.example.com' },
       { id: 'U5', name: '示範工務所主任', role: '捷運局工務所主任', org: '捷運局工務所', email: 'chief@supervisor.example.com' }
     );
-    out.meta.push(clone(DEFAULT_PARAMS), { id: 'counter', req: 3, sc: 2, defect: 5, spot: 1 });
+    out.meta.push(clone(DEFAULT_PARAMS), { id: 'counter', req: 0, sc: 0, defect: 0, spot: 0 });
 
-    // 進行中的自主檢查（P12）
-    const ans = {};
-    const J = (no, judge, values, photos) => { ans[no] = { judge, values: values || {}, photos: photos || [], note: '' }; };
-    J(1, 'ok'); J(2, 'ok', {}, ['*']); J(3, 'ok'); J(4, 'ok');
-    J(5, 'ok'); J(6, 'ok', {}, ['*']); J(7, 'ok');
-    J(8, 'ok', {}, ['*']); J(9, 'ok'); J(10, 'ok', {}, ['*', '*', '*']); ans[10].text = '垂直方向偏差 18mm、其他方向 40mm；鋼筋籠頂高程 EL 122.91m';
-    const sc = {
-      id: 'SC-CF671-261005-002', tenderId: 'T671', tenderCode: 'CF671', templateId: 'TP-5-5', templateVer: 1, templateCode: '5-5', templateName: '連續壁施工自主檢查表',
-      subworkId: 'S671-5', subworkName: 'Y01站連續壁施工', unit: 'P12', location: 'Y01站 單元 P12（公單元）', date: now, contractor: '大陸工程股份有限公司',
-      status: 'draft', answers: ans, linked: { '5-4': true, '5-6': true, '5-7': true }, drawingNo: '',
-      hold: { 8: { state: 'passed', requestId: 'HP-CF671-1002-001' }, 9: { state: 'passed', requestId: 'HP-CF671-1002-002' }, 10: { state: 'applied', requestId: 'HP-CF671-1004-003' } },
-      recovery: '', signatures: {}, createdAt: now - 10 * H, updatedAt: now - H
-    };
-    out.selfChecks.push(sc);
-    // 已簽認完成的 P11
-    const ans2 = {}, hold2 = {};
-    items55().forEach(it => { ans2[it.no] = { judge: 'ok', values: {}, photos: it.photo ? ['*'] : [], note: '' }; if (it.hold) hold2[it.no] = { state: 'passed', requestId: '' }; });
-    out.selfChecks.push({ id: 'SC-CF671-260930-001', tenderId: 'T671', tenderCode: 'CF671', templateId: 'TP-5-5', templateVer: 1, templateCode: '5-5', templateName: '連續壁施工自主檢查表', subworkId: 'S671-5', subworkName: 'Y01站連續壁施工', unit: 'P11', location: 'Y01站 單元 P11（母單元）', date: now - 5 * D, contractor: '大陸工程股份有限公司', status: 'signed', answers: ans2, linked: { '5-4': true, '5-6': true, '5-7': true }, drawingNo: 'CF671-DW-0101', hold: hold2, recovery: '', signatures: { site: { img: '', at: now - 5 * D, name: '示範品管' }, rep: { img: '', at: now - 5 * D, name: '示範工地主任' } }, hash: 'cc161bb0demo', createdAt: now - 5 * D, updatedAt: now - 5 * D });
-
-    // 停留點申請
-    const A = now - 9 * H;
-    out.requests.push({
-      id: 'HP-CF671-1004-003', tenderId: 'T671', tenderCode: 'CF671', subworkId: 'S671-5', scId: sc.id, itemNo: 10, title: '鋼筋籠吊放高程及位置確認', subworkName: '連續壁工程', checkName: '表5-5 連續壁施工自主檢查表', location: 'Y01站 單元 P12（公單元）', unit: 'P12',
-      appliedAt: A, replyDue: A + 8 * H, scheduledAt: A + 18 * H, applicant: '大陸工程 品管人員', status: 'pending', shortNotice: true, shortReason: '配合混凝土車預約時段，需於明早吊放完成。', inspector: '', photoCount: 3,
-      std: '壁體垂直方向偏差 25mm\n其他方向 75mm\n鋼筋籠頂高程 EL 122.9m',
-      notices: [{ at: A, text: '廠商送出會驗申請（附照片 3 張）', level: 'info' }, { at: A, text: 'Email 已寄送監造人員（2 位）', level: 'info' }]
-    });
-    const mkReq = (id, title, loc, applied, sched, status, sw) => ({ id, tenderId: 'T671', tenderCode: 'CF671', subworkId: 'S671-5', scId: '', itemNo: 0, title, subworkName: sw || '連續壁工程', checkName: '', location: loc, unit: '', appliedAt: applied, replyDue: applied + 8 * H, scheduledAt: sched, applicant: '大陸工程 品管人員', status, shortNotice: false, shortReason: '', inspector: status === 'pending' ? '' : '示範工務所同仁', photoCount: 2, std: '依施工圖及規範', values: {}, notices: [{ at: applied, text: '廠商送出會驗申請', level: 'info' }, { at: applied, text: 'Email 已寄送監造人員（2 位）', level: 'info' }] });
-    out.requests.push(
-      mkReq('HP-CF671-1005-001', '混凝土澆注', 'Y01站 導溝 G05~G08', now - 3 * H, atDay(1, 8, 30), 'pending', '導溝工程'),
-      mkReq('HP-CF671-1005-002', '護耳置放位置、間隔', '鋼筋籠加工場 P14', now - H, atDay(1, 14, 0), 'pending', '鋼筋籠工程'),
-      mkReq('HP-CF671-1003-001', '鋼筋籠加工場放樣', '鋼筋籠加工場 P13', now - 30 * H, atDay(0, 15, 0), 'scheduled', '鋼筋籠工程'),
-      mkReq('HP-CF671-1003-002', '圍檁抽查（穩定液）', 'Y01站 單元 P13', now - 28 * H, atDay(0, 13, 30), 'scheduled', '連續壁工程'),
-      mkReq('HP-CF671-1002-001', '垂直度（超音波檢測）', 'Y01站 單元 P12', now - 3 * D, now - 2 * D, 'passed'),
-      mkReq('HP-CF671-1002-002', '穩定液檢測（澆置混凝土前）', 'Y01站 單元 P12', now - 3 * D, now - 2 * D, 'passed'),
-      mkReq('HP-CF671-0929-001', '垂直度（超音波檢測）', 'Y01站 單元 P10', now - 8 * D, now - 7 * D, 'failed')
-    );
-    // 抽查（已完成）
-    const mkSpot = (id, reqId, focus, judge, loc, unit, when) => {
-      const tp = out.templates.find(t => t.id === 'TP-SP-1'), ans = {};
-      tp.items.forEach(i => { ans[i.no] = { judge: i.no === focus ? judge : 'na', values: {}, photos: [], note: '' }; });
-      return { id, kind: 'hold', requestId: reqId, scId: '', itemNo: focus, focusNo: focus, templateId: tp.id, templateVer: 1, templateName: tp.name, subworkId: 'S671-5', tenderId: 'T671', tenderCode: 'CF671', unit, location: loc, title: tp.items.find(i => i.no === focus).name, answers: ans, calc: { thickness: '1.0', length: '6.0', depth: '32' }, status: 'signed', signatures: {}, hash: 'seeddemo', date: when, createdAt: when };
-    };
-    out.spotChecks.push(mkSpot('SP-CF671-1002-001', 'HP-CF671-1002-001', 8, 'ok', 'Y01站 單元 P12', 'P12', now - 2 * D), mkSpot('SP-CF671-0930-001', 'HP-CF671-0929-001', 8, 'ng', 'Y01站 單元 P10', 'P10', now - 7 * D));
-    // 缺失
-    const dd = (n, t, loc, code, due, st, sw) => ({ id: 'DF-' + pad(n, 4), tenderId: code === 'CF671' ? 'T671' : 'T624', tenderCode: code, title: t, location: loc, source: '抽查', refId: '', itemNo: 0, subworkId: sw || 'S671-5', createdAt: due - 7 * D, due, status: st, note: '' });
-    out.defects.push(
-      dd(1, '鋼筋籠點焊有裂脆', 'CF671｜連續壁工程-鋼筋籠 P10', 'CF671', now - 2 * D, 'open'),
-      dd(2, '排水管坡度不足', 'CF624H｜隧道排水系統-南下線', 'CF624H', now - D, 'open', 'S624-1'),
-      dd(3, '開口安衛覆蓋不完整', 'CF671｜連續壁工程 P09', 'CF671', now + 3 * D, 'review'),
-      dd(4, '穩定液比重超標', 'CF671｜連續壁工程 P08', 'CF671', now + 4 * D, 'open'),
-      dd(5, '導溝高程偏差', 'CF671｜導溝工程 G05', 'CF671', now + 5 * D, 'open', 'S671-4')
-    );
+    // 自主檢查、停留點會驗、抽查紀錄、缺失追蹤不放示範資料，由使用者實際操作產生
     return out;
   }
 
@@ -321,19 +268,6 @@
   async function seedLinked() {
     if (await get('meta', 'linkSeed')) return;
     const now = Date.now();
-    for (const [unit, loc, ago] of [['P11', 'Y01站 單元 P11（母單元）', 6 * D], ['P12', 'Y01站 單元 P12（公單元）', 11 * H]]) {
-      for (const code of ['5-4', '5-6', '5-7']) {
-        const tpl = (await all('templates')).find(t => t.code === code && t.kind === 'self' && t.status === 'published'); if (!tpl) continue;
-        if ((await all('selfChecks')).some(s => s.unit === unit && s.templateCode === code)) continue;
-        const at = now - ago, ans = {}; tpl.items.forEach(i => { ans[i.no] = { judge: 'ok', values: {}, photos: [], note: '' }; });
-        const rec = { id: `SC-CF671-LNK-${unit}-${code}`, tenderId: 'T671', tenderCode: 'CF671', templateId: tpl.id, templateVer: tpl.version, templateCode: code, templateName: tpl.name, subworkId: tpl.subworkId, subworkName: 'Y01站連續壁施工', unit, location: loc, date: at, contractor: '大陸工程股份有限公司', status: 'signed', answers: ans, linked: {}, drawingNo: '', hold: {}, recovery: '', signatures: { site: { img: '', at, name: '示範品管' }, rep: { img: '', at, name: '示範工地主任' } }, hash: 'linkseed', createdAt: at, updatedAt: at, fillMode: tpl.fillMode || 'online', pdfFile: null, wfStatus: '未開始', lockedBy: null, lastUpdatedBy: null, version: 0, logs: [] };
-        if (tpl.fillMode === 'pdf' && tpl.pdf) {
-          const f = { name: `${tpl.name}_${unit}_已填寫.pdf`, size: tpl.pdf.size, data: tpl.pdf.data, at };
-          Object.assign(rec, { answers: {}, pdfFile: f, wfStatus: '已結案', version: 2, lastUpdatedBy: '示範品管', logs: [{ at: at - 3600e3, user: '示範品管', action: '下載鎖定', detail: '下載空白範本並鎖定控制權，開始填寫表單。' }, { at: at - 1800e3, user: '示範品管', action: '上傳並簽名', detail: '已完成 PDF 上傳並現地手寫簽名，待辦理憑證加簽結案。', file: { name: f.name, size: f.size, data: f.data } }, { at, user: '示範品管', action: '憑證加簽結案', detail: '經實體自然人憑證數位簽章認證，表單正式結案。', file: { name: f.name, size: f.size, data: f.data } }] });
-        }
-        await put('selfChecks', rec);
-      }
-    }
     await put('meta', { id: 'linkSeed', at: now });
   }
   function mailNotice(users) { return users.length ? { at: Date.now(), text: `Email 已寄送捷運局工務所人員（${users.length} 位：${users.map(u => u.name).join('、')}）`, level: 'info' } : { at: Date.now(), text: '尚未設定捷運局工務所人員帳號，Email 未寄出', level: 'warn' }; }
@@ -360,9 +294,16 @@
       if (sc) { sp.scId = sc.id; await put('spotChecks', sp); }
     }
   }
-  async function postSeed() { await migrateNoNumber(); await migrateKeys(); await migrateReqSub(); await migrateScLinks(); await seedLinked(); await migrateUnits(); await migrateUnitsWall(); await migrateUnitRule(); await migrateDocForms(); }
+  async function postSeed() { await clearRecords(); await migrateNoNumber(); await migrateKeys(); await migrateReqSub(); await migrateScLinks(); await seedLinked(); await migrateUnits(); await migrateUnitsWall(); await migrateUnitRule(); await migrateDocForms(); }
   // 分項工程有設定單元時，表單不可掛在分項工程層：舊資料的分項層表單移到該分項工程的第一個單元
   // 移除「數值」判定類型：既有範本的數值項目改為選項，並清除數值欄位
+  // 一次性清除：自主檢查、停留點會驗、抽查紀錄、缺失追蹤的資料全部移除（只保留標案、分項工程、表單範本、參考文件、帳號等基本資料），編號重新起算
+  async function clearRecords() {
+    if (await get('meta', 'clearRecs1')) return;
+    for (const st of ['selfChecks', 'requests', 'spotChecks', 'defects']) await tx(st, 'readwrite', o => o.clear());
+    const c = (await get('meta', 'counter')) || { id: 'counter' }; Object.assign(c, { req: 0, sc: 0, defect: 0, spot: 0 }); await put('meta', c);
+    await put('meta', { id: 'clearRecs1', at: Date.now() });
+  }
   async function migrateNoNumber() {
     for (const t of await all('templates')) {
       let ch = false;
