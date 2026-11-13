@@ -6,8 +6,8 @@
 <link rel="icon" href="images/logo.png">
 <title>捷運施工查驗系統 - 現場作業 v3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/common.css?v=20261113h">
-<link rel="stylesheet" href="css/field.css?v=20261113h">
+<link rel="stylesheet" href="css/common.css?v=20261113i">
+<link rel="stylesheet" href="css/field.css?v=20261113i">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -185,6 +185,8 @@
               <button :class="['ok',{on: ans(it.no).judge==='ok'}]" @click="setJudge(it,'ok')">○ 合格</button>
               <button :class="['ng',{on: ans(it.no).judge==='ng'}]" @click="setJudge(it,'ng')">╳ 缺失</button>
               <button :class="['na',{on: ans(it.no).judge==='na'}]" @click="setJudge(it,'na')">╱ 無此項</button></div>
+            <div class="isig" v-if="['ok','ng'].includes(ans(it.no).judge)"><template v-if="ans(it.no).sig"><img :src="ans(it.no).sig.img" alt="簽名"><span class="small muted grow">檢查人員 {{ ans(it.no).sig.name }}・{{ Q.fmtDT(ans(it.no).sig.at) }}</span><a v-if="itemEditable(it)" @click="openItemSign('self', it)">重簽</a></template>
+              <template v-else><span class="grow" style="color:var(--ng)">檢查人員尚未簽名</span><button class="btn sm primary" v-if="itemEditable(it)" @click="openItemSign('self', it)">簽名</button></template></div>
             <div class="holdbox" v-if="it.hold"><div class="row"><b>☆ 檢驗停留點</b><span class="grow"></span><span class="chip" :class="hstate(it)==='passed'?'ok':hstate(it)==='failed'?'ng':hstate(it)==='none'?'warn':'blue'">{{ holdText(it) }}</span></div>
               <div class="small" style="color:var(--ng)" v-if="wasRejected(it)">上次申請 {{ wasRejected(it).id }} 已於 {{ Q.fmtDT(wasRejected(it).rejectedAt || wasRejected(it).notices[wasRejected(it).notices.length-1].at) }} 被退回。原因：{{ wasRejected(it).rejectReason || '—' }}。請修正後重新申請。</div>
               <div class="small" v-if="hstate(it)==='none'">判定 ○{{ it.photo ? ' 並拍照' : '' }}後，可申請監造會驗；合格放行前，第 {{ it.no+1 }} 項起鎖定。</div>
@@ -262,6 +264,8 @@
             <button class="cam" :disabled="!spEditable" @click="spPhoto(it)">📷<small>拍照</small></button><button class="cam demo" :disabled="!spEditable" @click="spDemoPhoto(it)">🖼<small>示範照片</small></button>
             <span class="small muted" v-if="it.photo && !spA(it.no).photos.length">此項必拍照片（自動壓浮水印）</span><span class="small muted" v-else>點照片可刪除</span></div>
           <div class="judge"><button :class="['ok',{on: spA(it.no).judge==='ok'}]" @click="spJudge(it,'ok')">○ {{ it.hold ? '合格放行' : '合格' }}</button><button :class="['ng',{on: spA(it.no).judge==='ng'}]" @click="spJudge(it,'ng')">╳ 有缺失</button><button :class="['na',{on: spA(it.no).judge==='na'}]" @click="spJudge(it,'na')">╱ 無此項</button></div>
+          <div class="isig" v-if="['ok','ng'].includes(spA(it.no).judge)"><template v-if="spA(it.no).sig"><img :src="spA(it.no).sig.img" alt="簽名"><span class="small muted grow">抽查人員 {{ spA(it.no).sig.name }}・{{ Q.fmtDT(spA(it.no).sig.at) }}</span><a v-if="spEditable" @click="openItemSign('spot', it)">重簽</a></template>
+            <template v-else><span class="grow" style="color:var(--ng)">抽查人員尚未簽名</span><button class="btn sm primary" v-if="spEditable" @click="openItemSign('spot', it)">簽名</button></template></div>
         </div>
         <div class="card" v-if="!wide && spStage!=='sum'"><div class="small muted">{{ spStageStat(spStage) }} 項已抽查</div><button class="btn block mt" @click="spNextStage">下一階段 ›</button></div>
       </div>
@@ -384,6 +388,12 @@
   <div class="alert warn mt" v-if="!spNew.templateId">此標號尚無可用的表單，請先到後台「表單範本」建立。</div>
   <label class="f mt">抽查位置（選填）</label><input type="text" v-model="spNew.location">
   <div class="mt small muted">系統會自動帶入同分項工程（有單元則同單元）最近一份廠商自主檢查表作為「廠商自檢」對照；未抽查的項目簽認時自動填 ╱。</div><div class="foot"><button class="btn" @click="spNew=null">取消</button><button class="btn primary" @click="createSpot">建立並開始</button></div></div></div>
+<!-- 逐項簽名 -->
+<div class="modal-bg" v-if="itemSign" @click.self="itemSign=null"><div class="modal"><h3>{{ itemSign.kind==='self' ? '檢查人員簽名' : '抽查人員簽名' }}</h3>
+  <div class="alert info mb">{{ itemSign.no }}. {{ itemSign.name }}・簽名人 <b>{{ me.name }}</b></div>
+  <div class="sigwrap" style="height:200px"><canvas ref="canvasEl" @pointerdown="sDown" @pointermove="sMove" @pointerup="sUp" @pointerleave="sUp" @pointercancel="sUp"></canvas><div class="sigph" v-if="!drawn">用手指或觸控筆在此簽名</div></div>
+  <div class="row mt" v-if="itemSign.saved"><img :src="itemSign.saved" alt="上次簽名" style="height:44px;border:1px solid var(--line);border-radius:6px;background:#fff"><span class="small muted grow">上次的簽名</span><button class="btn" @click="confirmItemSign(true)">沿用上次簽名</button></div>
+  <div class="foot"><button class="btn" @click="itemSign=null">稍後再簽</button><button class="btn" @click="clearSign">清除</button><button class="btn primary" @click="confirmItemSign(false)">確認簽名</button></div></div></div>
 <!-- 缺失：回報改善／複查 -->
 <div class="modal-bg" v-if="defForm" @click.self="defForm=null"><div class="modal"><h3>{{ isSup ? '缺失複查' : '回報改善完成' }}｜{{ defForm.x.id }}</h3>
   <div class="alert info mb"><b>{{ defForm.x.title }}</b><br>{{ defForm.x.location }}｜來源：{{ defForm.x.source }}｜期限 {{ Q.fmtD(defForm.x.due) }}</div>
@@ -425,9 +435,9 @@
 <div class="toast" :class="{ng: toastNg}" v-if="toastMsg">{{ toastMsg }}</div>
 </div>
 <script src="lib/vue.global.prod.js"></script>
-<script src="js/drawer.js?v=20261113h"></script>
-<script src="js/sample-pdfs.js?v=20261113h"></script>
-<script src="js/db.js?v=20261113h"></script>
-<script src="js/field.js?v=20261113h"></script>
+<script src="js/drawer.js?v=20261113i"></script>
+<script src="js/sample-pdfs.js?v=20261113i"></script>
+<script src="js/db.js?v=20261113i"></script>
+<script src="js/field.js?v=20261113i"></script>
 </body>
 </html>

@@ -840,9 +840,6 @@ createApp({
         h += `<div class="blk" data-brk>此表單以「空白範本 PDF」填寫，辦理狀態：${E(r.wfStatus || '—')}。${r.pdfFile ? '' : '尚未上傳簽名後的 PDF。'}</div>`;
         return h;
       }
-      // 抽查：帶入同單元廠商自檢的判定，放在備註欄供對照
-      const sc = !self && r.scId ? d.selfChecks.find(x => x.id === r.scId) : null, st = sc && tplOf(sc.templateId);
-      const selfAns = it => { if (!sc) return null; const si = st && it.srcKey && st.items.find(x => x.key === it.srcKey); const no = si ? si.no : it.srcKey ? 0 : it.srcNo; return (no && sc.answers[no]) || null; };
       const cols = [5, 18, 26, 25, 8, 18];
       h += `<table class="it"><colgroup>${cols.map(w => `<col style="width:${w}%">`).join('')}</colgroup>`;
       h += self ? `<tr data-brk><th colspan="2">檢查項目</th><th>設計圖說、規範之檢查標準<br>(定量定性)</th><th>實際檢查情形<br>(敘述檢查值)</th><th>檢查<br>結果</th><th>備註<br>(檢查人員)</th></tr>`
@@ -855,15 +852,8 @@ createApp({
           (a.photos || []).filter(isImg).forEach((u, k) => photos.push({ u, cap: `${it.name}${(a.photos || []).length > 1 ? `（${k + 1}）` : ''}` }));
           let info = a.text ? E(a.text).replace(/\n/g, '<br>') : '';
           if (self && it.type === 'linked' && it.linked) info += `${info ? '<br>' : ''}表${E(it.linked)}：${(r.linked || {})[it.linked] ? '已完成' : '未完成'}`;
-          let note = a.note ? E(a.note) : '';
-          if ((a.photos || []).length) note += `${note ? '<br>' : ''}<span class="mut">照片 ${(a.photos || []).length} 張（附後）</span>`;
-          if (self && it.hold) { const hs = ((r.hold || {})[it.no] || {}).state; if (hs) note += `${note ? '<br>' : ''}<span class="mut">停留點：${E(Q.HOLD_TEXT[hs] || hs)}</span>`; }
-          if (!self && r.focusNo === it.no) note += `${note ? '<br>' : ''}<span class="star">本次會驗項目</span>`;
-          const sa = !self ? selfAns(it) : null;
-          if (sa && sa.text) note += `${note ? '<br>' : ''}<span class="mut">廠商實際檢查情形：${E(sa.text)}</span>`;
-          if (sa && sa.judge) note += `${note ? '<br>' : ''}<span class="mut">廠商自檢：${JS[sa.judge]}</span>`;
-          // 抽查表：有實際抽查（判定 ○ 或 ╳）的項目，備註欄放抽查人員與施工廠商隨同人員簽名
-          if (!self && (a.judge === 'ok' || a.judge === 'ng')) [['insp', '抽查人員'], ['att', '廠商隨同']].forEach(([k, l]) => { const g = sig[k] || {}; if (isImg(g.img) || g.name) note += `${note ? '<br>' : ''}${isImg(g.img) ? `<img src="${g.img}" style="height:30px;max-width:100%;display:block">` : ''}<span class="mut">${l}：${E(g.name || '')}</span>`; });
+          // 備註欄只放該項檢查人員／抽查人員的簽名
+          const note = a.sig && isImg(a.sig.img) ? `<img src="${a.sig.img}" style="height:32px;max-width:100%;display:block;margin:0 auto">` : '';
           const stgCell = n === 0 ? `<td class="stg" rowspan="${items.length}">${vt(stg.name)}</td>` : '';
           h += `<tr data-brk>${stgCell}<td>${it.hold ? `<span class="star">${mark}</span>` : ''}${E(it.name)}</td><td>${E(it.std || '').replace(/\n/g, '<br>')}</td><td>${info}</td><td class="j${a.judge === 'ng' ? ' ng' : ''}">${a.judge ? JS[a.judge] : ''}</td><td>${note}</td></tr>`;
         });

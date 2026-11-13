@@ -130,3 +130,4 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
 .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 14px 0; }
 .filters select { width: auto; min-width: 120px; max-width: 260px; flex: 0 1 auto; }
 @media (max-width: 600px) { .filters select { flex: 1 1 45%; max-width: none; min-width: 0; } }
+.isig { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 6px 10px; border: 1px dashed var(--line); border-radius: 8px; background: #fbfcfd; } .isig img { height: 40px; max-width: 160px; background: #fff; border-radius: 4px; }

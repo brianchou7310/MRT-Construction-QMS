@@ -233,12 +233,13 @@ createApp({
       const lk = lockOf(it); if (lk) return toast('項目已鎖定：' + lk, true);
       if (!['none', 'failed'].includes(hstate(it))) return toast('已申請會驗，判定不可更改', true);
       const a = ensure(it.no);
-      if (a.judge === j) { a.judge = null; queueSave(); return; }
+      if (a.judge === j) { a.judge = null; delete a.sig; queueSave(); return; }
       if (j === 'ok') {
         if (it.type === 'linked' && !cur.value.linked[it.linked]) return toast(`請先完成並確認表${it.linked}，才能判定 ○`, true);
         if (it.photo && !a.photos.length) return toast('此項必須拍照後才能判定 ○', true);
       }
-      const prev = a.judge; a.judge = j; queueSave();
+      const prev = a.judge; a.judge = j; delete a.sig; queueSave();
+      if (j !== 'na') openItemSign('self', it);   // 每一項檢查完，檢查人員即簽名
       if (it.hold && j === 'ng' && !a.defectId) {
         // 停留點判缺失：立即建立缺失追蹤；改善後重新判定 ○ 再申請會驗，會驗合格時缺失自動結案
         const c = cur.value;
@@ -252,7 +253,7 @@ createApp({
     }
     function addPhoto(it) { if (!itemEditable(it)) return toast('此項目目前不可編輯', true); pickPhoto(`${cur.value.tenderCode}・${where(cur.value.unit, cur.value.subworkName)}・${it.name}`, url => { ensure(it.no).photos.push(url); queueSave(); }); }
     function addDemoPhoto(it) { if (!itemEditable(it)) return toast('此項目目前不可編輯', true); demoPhoto(`${cur.value.tenderCode}・${where(cur.value.unit, cur.value.subworkName)}・${it.name}`, url => { ensure(it.no).photos.push(url); queueSave(); }); }
-    function delPhoto(it, i) { if (!itemEditable(it)) return; ensure(it.no).photos.splice(i, 1); const a = ensure(it.no); if (it.photo && !a.photos.length && a.judge === 'ok') a.judge = null; queueSave(); }
+    function delPhoto(it, i) { if (!itemEditable(it)) return; ensure(it.no).photos.splice(i, 1); const a = ensure(it.no); if (it.photo && !a.photos.length && a.judge === 'ok') { a.judge = null; delete a.sig; } queueSave(); }
     /* 關聯子表單：連到同一單元的真實紀錄，簽認／結案後才算完成 */
     const returnTo = ref(null);
     const linkedRec = code => !cur.value ? null : d.selfChecks.filter(s => s.tenderId === cur.value.tenderId && (s.unit || '') === (cur.value.unit || '') && (cur.value.unit || s.subworkId === cur.value.subworkId) && s.templateCode === code && s.id !== cur.value.id).sort((a, b) => (b.status === 'signed') - (a.status === 'signed') || b.updatedAt - a.updatedAt)[0] || null;
@@ -278,7 +279,7 @@ createApp({
     }
 
     /* 申請停留點會驗 */
-    function canApply(it) { const a = ans(it.no); return it.hold && a.judge === 'ok' && (!it.photo || a.photos.length) && ['none', 'failed'].includes(hstate(it)) && !readonly.value && !lockOf(it); }
+    function canApply(it) { const a = ans(it.no); return it.hold && a.judge === 'ok' && !!a.sig && (!it.photo || a.photos.length) && ['none', 'failed'].includes(hstate(it)) && !readonly.value && !lockOf(it); }
     function openApply(it) { applyForm.value = { itemNo: it.no, dt: Q.toLocalInput(Q.atDay(1, 9, 0)), reason: '', location: cur.value.location }; }
     const applyShort = computed(() => applyForm.value ? (Q.fromLocalInput(applyForm.value.dt) - now.value) < d.params.holdAdvanceHours * Q.H : false);
     const applyHours = computed(() => applyForm.value ? Math.max(0, Math.round((Q.fromLocalInput(applyForm.value.dt) - now.value) / Q.H)) : 0);
@@ -297,6 +298,7 @@ createApp({
     const canSubmit = computed(() => judged.value === total.value && total.value > 0 && !holdPending.value.length);
     async function goSign() {
       if (judged.value < total.value) return toast(`尚有 ${total.value - judged.value} 項未判定`, true);
+      { const miss = curTpl.value.items.filter(i => needSig(ans(i.no))); if (miss.length) { gotoItem(miss[0]); return toast(`尚有 ${miss.length} 項檢查人員未簽名：${miss.slice(0, 3).map(i => i.name).join('、')}${miss.length > 3 ? '…' : ''}`, true); } }
       if (holdPending.value.length) { stageTab.value = 'sum'; return toast(`尚有 ${holdPending.value.length} 個停留點未經監造放行：${holdPending.value.map(i => i.name).join('、')}`, true); }
       if (summary.value.ng && !cur.value.recovery) { stageTab.value = 'sum'; return toast('有缺失項目，請先選擇缺失複查結果', true); }
       if (cur.value.recovery === 'done') { const miss = curTpl.value.items.filter(i => ans(i.no).judge === 'ng' && !(ans(i.no).photos || []).length); if (miss.length) { gotoItem(miss[0]); return toast(`勾選「已完成改善」須檢附改善照片：${miss.map(i => i.name).join('、')}`, true); } }
@@ -357,18 +359,20 @@ createApp({
     function spSetStage(st) { spStage.value = st; const l = Q.stageItems(spTpl.value, st); const f = l.find(i => i.no === sp.value.focusNo) || l.find(i => !spA(i.no).judge) || l[0]; if (f) spItemNo.value = f.no; }
     function spJudge(it, j) {
       if (!spEditable.value) return toast(isSup.value ? '表單已簽認，不可修改' : '抽查紀錄由監造人員填寫（請於「我的」切換為監造）', true);
-      const a = sp.value.answers[it.no]; if (a.judge === j) { a.judge = null; spSave(); return; }
+      const a = sp.value.answers[it.no]; if (a.judge === j) { a.judge = null; delete a.sig; spSave(); return; }
       if (j === 'ok' && it.photo && !a.photos.length) return toast('此項必須拍照後才能判定 ○', true);
-      a.judge = j; spSave(); if (j === 'ng') toast('已判定缺失；簽認後系統將自動建立缺失追蹤');
+      a.judge = j; delete a.sig; spSave(); if (j === 'ng') toast('已判定缺失；簽認後系統將自動建立缺失追蹤');
+      if (j !== 'na') openItemSign('spot', it);   // 每一項抽查完，抽查人員即簽名
     }
     const spLabel = it => `${sp.value.tenderCode}・${where(sp.value.unit, sp.value.subworkName)}・${it.name}`;
     function spPhoto(it) { if (!spEditable.value) return toast('目前不可編輯', true); pickPhoto(spLabel(it), u => { sp.value.answers[it.no].photos.push(u); spSave(); }); }
     function spDemoPhoto(it) { if (!spEditable.value) return toast('目前不可編輯', true); demoPhoto(spLabel(it), u => { sp.value.answers[it.no].photos.push(u); spSave(); }); }
-    function spDelPhoto(it, i) { if (!spEditable.value) return; const a = sp.value.answers[it.no]; a.photos.splice(i, 1); if (it.photo && !a.photos.length && a.judge === 'ok') a.judge = null; spSave(); }
+    function spDelPhoto(it, i) { if (!spEditable.value) return; const a = sp.value.answers[it.no]; a.photos.splice(i, 1); if (it.photo && !a.photos.length && a.judge === 'ok') { a.judge = null; delete a.sig; } spSave(); }
     async function spGoSign() {
       if (!spEditable.value) return toast('抽查紀錄由監造人員填寫', true);
       const f = sp.value.focusNo; if (f && !sp.value.answers[f].judge) { spGoto(spTpl.value.items.find(i => i.no === f)); return toast('請先判定本次會驗項目：' + sp.value.title, true); }
       if (!f && !spJudged.value) return toast('請至少抽查並判定一個項目', true);
+      { const miss = spTpl.value.items.filter(i => needSig(sp.value.answers[i.no])); if (miss.length) { spGoto(miss[0]); return toast(`尚有 ${miss.length} 項抽查人員未簽名：${miss.slice(0, 3).map(i => i.name).join('、')}${miss.length > 3 ? '…' : ''}`, true); } }
       Q.autoNa(sp.value); await spFlush(); openSign('spot', sp.value.id);
     }
     async function leaveSpot() { await spFlush(); sp.value = null; view.value = 'spots'; await load(); }
@@ -497,6 +501,22 @@ createApp({
       else { await Q.finalizeSpot(c.id); const ng = Object.values(c.rec.answers).some(a => a.judge === 'ng'); toast(ng ? '抽查完成：有缺失，已建立缺失追蹤' : (c.rec.requestId ? '抽查完成：合格放行，後續項目已解鎖' : '抽查紀錄已簽認完成')); sp.value = null; view.value = 'spots'; }
       signCtx.value = null; await load();
     }
+    /* 逐項簽名：每一項檢查／抽查完（判定 ○ 或 ╳），檢查人員／抽查人員即簽名；判定變更須重簽 */
+    const itemSign = ref(null);
+    const needSig = a => !!a && (a.judge === 'ok' || a.judge === 'ng') && !a.sig;
+    async function openItemSign(kind, it) {
+      if (kind === 'self' ? readonly.value : !spEditable.value) return;
+      const m = await Q.get('meta', 'sig-item-' + me.value.name);
+      itemSign.value = { kind, no: it.no, name: it.name, saved: m ? m.img : '' }; drawn.value = false; await nextTick(); initCanvas();
+    }
+    async function confirmItemSign(useSaved) {
+      const f = itemSign.value; if (!f) return; if (!useSaved && !drawn.value) return toast('請先在框內簽名', true);
+      const img = useSaved ? f.saved : canvasEl.value.toDataURL('image/png');
+      const a = f.kind === 'self' ? ensure(f.no) : sp.value.answers[f.no];
+      a.sig = { img, name: me.value.name, at: Date.now() };
+      if (!useSaved) await Q.put('meta', { id: 'sig-item-' + me.value.name, img });
+      itemSign.value = null; if (f.kind === 'self') queueSave(); else spSave();
+    }
     function cancelSign() { const c = signCtx.value; signCtx.value = null; view.value = c.kind === 'self' ? 'form' : 'spot'; }
 
     /* ---------- 缺失、參考文件、我的 ---------- */
@@ -529,6 +549,7 @@ createApp({
       todoReqs, rejectedCards, defTodos, draftSpots, pdfTodos, openPdfTodo, openDefects, todoCount, holdFilter, holdsList, selReqId, selReq, sched, selectReq, reqText, reqPhotos, lockedAfter, doSchedule, doReject, doStart, doCancel,
       pf, pfPreview, pfUrl, pfTpl, pfRec, pfSelf, pfSt, wfCls, pfCanLock, pfIsLocker, pfCanClose, pfCanVendor, pfCanUnfreeze, pfHint, pfDownloadBlank, pfDownloadCur, pfLock, pfCancel, wfUp, wfCert, wfVen, wfUnf, openWfUp, onWfUpFile, submitWfUp, openWfVen, onWfVenFile, submitWfVen, openWfCert, submitWfCert, openWfUnf, submitWfUnf, dlLog, leavePdf, isDirector, scList, scProgress, newForm, tenderOpts, swOpts, tplOpts, unitOpts, ut, cascade, openNew, createSc,
       cur, curTpl, stageTab, itemNo, saveMsg, docShow, linkShow, applyForm, readonly, stageList, curItem, shownItems, judged, total, stageStat, stageDone, ans, ensure, lockOf, hstate, hreq, itemEditable, itemIcon,
+      itemSign, needSig, openItemSign, confirmItemSign,
       flush, queueSave, openSc, gotoItem, setStage, step, setJudge, addPhoto, addDemoPhoto, delPhoto, linkName, preLinked, linkedRec, linkedDone, linkedTpl, linkStatus, openLinked, createLinked, returnTo, canApply, openApply, applyShort, applyHours, submitApply, holdText, wasRejected,
       summary, holdItems, holdPending, attachCodes, canSubmit, goSign, finishStage, stageTabs, firstStage, stageNext, spStageTabs, spNextStage, leaveForm,
       sp, spStage, spItemNo, spSaveMsg, spNew, spTpl, spReq, spSc, spEditable, spStageList, spCurItem, spShown, spA, spJudged, spTotal, spSummary, spStageStat, spSelfJudge, spSelfText, spCalc, spLocked, spList, spProgress, spSave, spFlush, openSpot, spGoto, spSetStage, spJudge, spPhoto, spDemoPhoto, spDelPhoto, spGoSign, leaveSpot, openSpotNew, createSpot,
