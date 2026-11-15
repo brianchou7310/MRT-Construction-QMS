@@ -533,7 +533,14 @@ createApp({
     const navItems = computed(() => [['todo', '待辦', todoCount.value], ['checks', '自主檢查', 0], ['spots', '抽查紀錄', 0], ['holds', '停留點', 0], ['docs', '參考文件', 0], ['me', '我的', 0]]);
     function nav(v) { if (view.value === 'form') flush(); if (view.value === 'spot') spFlush(); view.value = v; if (v !== 'form') cur.value = null; sp.value = null; pf.value = null; selReqId.value = null; window.scrollTo(0, 0); }
     const navActive = computed(() => ({ pdf: pf.value && pf.value.kind === 'spot' ? 'spots' : 'checks', form: 'checks', spot: 'spots', sign: signCtx.value && signCtx.value.kind === 'self' ? 'checks' : 'spots' })[view.value] || view.value);
-    const printForm = () => window.print();
+    // 列印：與後台「下載 PDF」相同的紙本版面（共用 FormPDF.formHtml），產生 PDF 後下載
+    async function printForm() {
+      const kind = view.value === 'spot' ? 'spot' : 'self', rec = kind === 'self' ? cur.value : sp.value; if (!rec) return;
+      try { toast('產生 PDF 中…'); if (rec.status !== 'signed') { if (kind === 'self') await flush(); else await spFlush(); }
+        const ctx = { d, tplOf }, name = FormPDF.recFile(kind, rec, ctx);
+        FormPDF.save(await FormPDF.recPdf(kind, Q.clone(rec), ctx), name); toast('已下載 ' + name); }
+      catch (e) { console.error(e); toast('PDF 產生失敗：' + e.message, true); }
+    }
 
     watch(wide, () => { if (view.value === 'sign') nextTick(initCanvas); });
     onMounted(async () => {

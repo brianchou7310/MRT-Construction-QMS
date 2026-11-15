@@ -64,6 +64,96 @@
     } finally { host.remove(); }
   }
 
+  // 表單版面（後台 PDF 下載與現場列印共用）。ctx = { d, tplOf }：d 需含 tenders、subworks、defects
+  function formHtml(kind, r, ctx) {
+      const Q = window.QMS, d = ctx.d, tplOf = ctx.tplOf, FormPDF = { esc };
+      const isImg = u => typeof u === 'string' && /^data:image\//.test(u);
+      const JS = { ok: '○', ng: '╳', na: '╱' };
+      const calcOf = x => ((tplOf(x.templateId) || {}).calcFields || []).filter(c => (c.label || '').trim());
+      const E = FormPDF.esc, t = tplOf(r.templateId) || { items: [] }, tender = d.tenders.find(x => x.id === r.tenderId) || {}, sw = d.subworks.find(x => x.id === r.subworkId) || {};
+      const self = kind === 'self', ans = r.answers || {}, sig = r.signatures || {};
+      const box = on => on ? '☑' : '□', vt = txt => [...String(txt || '')].map(E).join('<br>');
+      const swName = (sw.name || r.subworkName || '') + (r.unit ? `　單元：${r.unit}` : '');
+      const dateTxt = Q.fmtD(r.date || r.createdAt);
+      const hdr = rows => `<table class="hd"><colgroup><col style="width:17%"><col style="width:43%"><col style="width:14%"><col style="width:26%"></colgroup>${rows.map(row => `<tr data-brk>${row}</tr>`).join('')}</table>`;
+      const L = txt => `<td class="k">${txt}</td>`, full = (k, v) => L(k) + `<td colspan="3">${v}</td>`;
+      let h;
+      if (self) {
+        h = `<div class="t1" data-brk>表${E(r.templateCode)}　${E(r.templateName)}</div><div class="t2" data-brk>${E(r.contractor || tender.contractor || '')}</div><div class="t3" data-brk>施工自主檢查表</div>`;
+        const used = new Set(t.items.filter(i => (ans[i.no] || {}).judge).map(i => i.stage));
+        h += hdr([
+          full('工程名稱', E(tender.parentName || tender.name)), full('分項工程名稱', E(swName)),
+          L('檢查位置') + `<td>${E(r.location || '')}</td>` + L('檢查日期') + `<td>${E(dateTxt)}</td>`,
+          full('施工流程', Q.stagesOf(t).map(st => `${box(used.has(st.key))}${E(st.name)}`).join('　　')),
+          full('檢查結果', '○檢查合格　　　╳有缺失需改正　　　╱無此檢查項目')
+        ]);
+      } else {
+        h = `<div class="t2" data-brk>${E(tender.supervisor || '臺北市政府捷運工程局')}</div><div class="t3 b" data-brk>${E(r.templateName)}</div>`;
+        h += hdr([
+          full('工程名稱', E(tender.parentName || tender.name)), full('施工廠商', E(r.contractor || tender.contractor)), full('分項工程名稱', E(swName)),
+          L('抽查位置') + `<td>${E(r.location || '')}</td>` + L('檢查日期') + `<td>${E(dateTxt)}</td>`,
+          full('抽查時機', `${box(r.kind === 'hold')}檢驗停留點${r.kind === 'hold' && r.title ? `（★${E(r.title)}）` : ''}　　　${box(r.kind !== 'hold')}隨機抽查`),
+          full('抽查結果符號說明', '○ 檢查合格　　　╳ 有缺失需改正　　　╱ 無此檢查項目')
+        ]);
+      }
+      if (r.fillMode === 'pdf') {
+        h += `<div class="blk" data-brk>此表單以「空白範本 PDF」填寫，辦理狀態：${E(r.wfStatus || '—')}。${r.pdfFile ? '' : '尚未上傳簽名後的 PDF。'}</div>`;
+        return h;
+      }
+      const cols = [5, 18, 26, 25, 8, 18];
+      h += `<table class="it"><colgroup>${cols.map(w => `<col style="width:${w}%">`).join('')}</colgroup>`;
+      h += self ? `<tr data-brk><th colspan="2">檢查項目</th><th>設計圖說、規範之檢查標準<br>(定量定性)</th><th>實際檢查情形<br>(敘述檢查值)</th><th>檢查<br>結果</th><th>備註<br>(檢查人員)</th></tr>`
+                : `<tr data-brk><th colspan="2">抽查項目</th><th>設計圖說、規範之<br>抽查標準（定性定量）</th><th>實際抽查情形<br>（敘述抽查情形）</th><th>抽查<br>結果</th><th>備註<br>(抽查人員)</th></tr>`;
+      const photos = [], mark = self ? '☆' : '★';
+      Q.stagesOf(t).forEach(stg => {
+        const items = t.items.filter(i => i.stage === stg.key); if (!items.length) return;
+        items.forEach((it, n) => {
+          const a = ans[it.no] || {};
+          (a.photos || []).filter(isImg).forEach((u, k) => photos.push({ u, cap: `${it.name}${(a.photos || []).length > 1 ? `（${k + 1}）` : ''}` }));
+          let info = a.text ? E(a.text).replace(/\n/g, '<br>') : '';
+          if (self && it.type === 'linked' && it.linked) info += `${info ? '<br>' : ''}表${E(it.linked)}：${(r.linked || {})[it.linked] ? '已完成' : '未完成'}`;
+          // 備註欄只放該項檢查人員／抽查人員的簽名與簽名日期時間
+          const note = a.sig && isImg(a.sig.img) ? `<img src="${a.sig.img}" style="height:32px;max-width:100%;display:block;margin:0 auto">${a.sig.at ? `<div style="text-align:center;font-size:9px;white-space:nowrap">${E(Q.fmtFull(a.sig.at))}</div>` : ''}` : '';
+          const stgCell = n === 0 ? `<td class="stg" rowspan="${items.length}">${vt(stg.name)}</td>` : '';
+          h += `<tr data-brk>${stgCell}<td>${it.hold ? `<span class="star">${mark}</span>` : ''}${E(it.name)}</td><td>${E(it.std || '').replace(/\n/g, '<br>')}</td><td>${info}</td><td class="j${a.judge === 'ng' ? ' ng' : ''}">${a.judge ? JS[a.judge] : ''}</td><td>${note}</td></tr>`;
+        });
+      });
+      // 計價欄位：範本有定義才顯示
+      const cfs = self ? [] : calcOf(r);
+      if (cfs.length) { const c = r.calc || {}, v = x => `<u>　${E(x || '　　')}　</u>`;
+        h += `<tr data-brk><td colspan="6" class="calc">${cfs.map((f, i) => `${E(f.label)}：${v(c[f.key])} ${E(f.unit || '')}${i % 2 && i < cfs.length - 1 ? '<br>' : '　　'}`).join('')}</td></tr>`; }
+      // 缺失複查結果：依本紀錄產生的缺失追蹤狀態帶入
+      const dfs = d.defects.filter(x => x.refId === r.id), closed = dfs.filter(x => x.status === 'closed');
+      const doneAll = dfs.length ? closed.length === dfs.length : (self && r.recovery === 'done'), openAny = dfs.length ? closed.length < dfs.length : (self && r.recovery === 'open');
+      const lastClose = closed.sort((x, y) => (y.closedAt || 0) - (x.closedAt || 0))[0], by = lastClose ? String(lastClose.note || '').replace(/\s*複查合格$/, '') : '';
+      const ids = dfs.filter(x => x.status !== 'closed').map(x => x.id).join('、');
+      h += `<tr data-brk><td colspan="6" class="rv"><div>缺失複查結果：</div>
+        <div>${box(doneAll)}已完成改善（${self ? '檢具' : '檢附'}改善前中後照片）</div>
+        <div>${box(openAny)}未完成改善，填具${self ? `「不合格管制總表」第 <u>　${E(ids || '　　')}　</u> 項` : '「缺點改進工作指示通知／回報單」'}進行追蹤改善</div>
+        <div>複查日期：${lastClose ? E(Q.fmtD(lastClose.closedAt)) : '　　年　　月　　日'}</div>
+        <div>複查人員職稱：${E(by)}　　　　${self ? '名簽' : '簽名'}：</div></td></tr>`;
+      const notes = self ? ['檢查標準及檢查情形應具體明確（例：磚砌完成後須不透光）或量化尺寸（例：磚縫 7mm~10mm）。', '檢查結果合格者註明「○」，不合格者註明「╳」，如無需檢查之項目則打「╱」。', '嚴重缺失、缺失複查未能改善，應填具「不合格品管制總表」進行追蹤改善，本表單可先行存檔。', '本表由工地現場工程師或領班實地檢查後覈實記載簽認。']
+        : ['★為檢驗停留點。', '抽查結果合格者註明「○」，不合格者註明「╳」，如無需檢查之項目則打「╱」。', '抽查標準及實際抽查情形應依設計圖說、規範及實際檢查情形，具體敘述檢查情形。', '嚴重缺失、缺失複查未能及時完成改善者，應填具「缺點改進工作指示通知／回報單」進行追蹤改善，本表單可先行存檔。', '本表由監造工務所現場人員實地抽查後覈實記載簽認。', '施工廠商施工自主檢查表將於檢查完成後，作為本抽查記錄表之附件存檔。'];
+      h += `<tr data-brk><td colspan="6" class="rv"><div>備註：</div>${notes.map((x, i) => `<div class="ni">${i + 1}. ${x}</div>`).join('')}</td></tr></table>`;
+      // 簽認（表格下方）
+      const who = self ? [['rep', '工地授權代表<br>或其授權主管'], ['site', '現場工程師<br>（檢查人員）']] : [['att', '施工廠商隨同人員'], ['insp', '監造工務所']];
+      h += `<table class="sg" data-brk><tr>${who.map(([k, l]) => { const g = sig[k] || {}; return `<td class="sl">${l}：</td><td class="sv">${isImg(g.img) ? `<img src="${g.img}">` : ''}<div>${E(g.name || '')}</div>${g.at ? `<div class="mut">${E(Q.fmtFull(g.at))}</div>` : ''}</td>`; }).join('')}</tr></table>`;
+      if (self) h += `<div class="mut" data-brk>註：檢查人員簽核並加註檢查日期及時間。</div>`;
+      h += `<div class="meta" data-brk>紀錄編號 ${E(r.id)}・表單版本 v${E(r.templateVer)}${self && r.drawingNo ? `・施工圖核准文號 ${E(r.drawingNo)}` : ''}・${r.status === 'signed' ? '已簽認' : '填寫中（草稿）'}${r.hash ? `・內容雜湊 ${E(r.hash)}` : ''}・${E(Q.fmtFull(Date.now()))} 由捷運施工查驗系統產生</div>`;
+      if (photos.length) {
+        h += `<div class="ttl" data-brk>附件：照片紀錄（${photos.length} 張）</div>`;
+        for (let i = 0; i < photos.length; i += 4) h += `<div data-brk>${photos.slice(i, i + 4).map(p => `<div class="ph"><img src="${p.u}"><div style="width:150px">${E(p.cap)}</div></div>`).join('')}</div>`;
+      }
+      return h;
+    }
+
+  // 單筆 PDF：空白範本 PDF 填寫且已上傳 → 直接用簽名後的 PDF；其餘依表單版面產生
+  const recFile = (kind, r, ctx) => safeName(`${kind === 'self' ? '自主檢查' : '抽查'}_${r.tenderCode || ''}_${(ctx.tplOf(r.templateId) || {}).code || r.templateCode || ''}${r.unit ? '_' + r.unit : ''}_${r.id}.pdf`);
+  async function recPdf(kind, r, ctx) {
+    if (r.fillMode === 'pdf' && r.pdfFile && r.pdfFile.data) return new Blob([dataUrlToBytes(r.pdfFile.data)], { type: 'application/pdf' });
+    return (await render(formHtml(kind, r, ctx))).blob;
+  }
+
   function save(blob, name) {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
@@ -71,5 +161,5 @@
   function dataUrlToBytes(u) { const b = atob(String(u).split(',')[1] || ''); const a = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i); return a; }
   const safeName = s => String(s).replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim();
 
-  window.FormPDF = { render, save, esc, dataUrlToBytes, safeName };
+  window.FormPDF = { render, save, esc, dataUrlToBytes, safeName, formHtml, recFile, recPdf };
 })();
