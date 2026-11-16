@@ -6,8 +6,8 @@
 <link rel="icon" href="images/logo.png">
 <title>捷運施工查驗系統 - 現場作業 v3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/common.css?v=20261115a">
-<link rel="stylesheet" href="css/field.css?v=20261115a">
+<link rel="stylesheet" href="css/common.css?v=20261116a">
+<link rel="stylesheet" href="css/field.css?v=20261116a">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -177,10 +177,10 @@
           <template v-else>
             <div class="linked" v-if="it.type==='linked'"><a @click="linkShow=it.linked">開啟 表{{ it.linked }} {{ linkName(it.linked) }}</a><span class="chip ok" v-if="cur.linked[it.linked]">已完成 ○</span><span class="chip" v-else>未完成</span></div>
             <div v-if="it.type==='text'"><label class="f">實際檢查情形（敘述檢查值）</label><textarea rows="3" v-model="ensure(it.no).text" @input="queueSave" :disabled="!itemEditable(it)" placeholder="例：垂直方向偏差 18mm、籠頂高程 EL 122.91m"></textarea></div>
-            <div class="photos" v-if="it.photo || ans(it.no).photos.length">
+            <div class="photos" v-if="it.photo || ans(it.no).photos.length || ans(it.no).judge==='ng'">
               <div class="photo th" v-for="(p,i) in ans(it.no).photos" :key="i" @click="delPhoto(it,i)"><img v-if="p && p!=='*'" :src="p"><span v-else>示範照片</span></div>
               <button class="cam" :disabled="!itemEditable(it)" @click="addPhoto(it)">📷<small>拍照</small></button><button class="cam demo" :disabled="!itemEditable(it)" @click="addDemoPhoto(it)">🖼<small>示範照片</small></button>
-              <span class="small muted" v-if="it.photo && !ans(it.no).photos.length">此項必拍照片</span><span class="small muted" v-else>點照片可刪除</span></div>
+              <span class="small muted" v-if="it.photo && !ans(it.no).photos.length">此項必拍照片</span><span class="small muted" v-else-if="ans(it.no).judge==='ng' && !ans(it.no).photos.length">缺失項目：選「已完成改善」須在此附改善照片</span><span class="small muted" v-else>點照片可刪除</span></div>
             <div class="judge">
               <button :class="['ok',{on: ans(it.no).judge==='ok'}]" @click="setJudge(it,'ok')">○ 合格</button>
               <button :class="['ng',{on: ans(it.no).judge==='ng'}]" @click="setJudge(it,'ng')">╳ 缺失</button>
@@ -435,12 +435,12 @@
 <div class="toast" :class="{ng: toastNg}" v-if="toastMsg">{{ toastMsg }}</div>
 </div>
 <script src="lib/vue.global.prod.js"></script>
-<script src="js/drawer.js?v=20261115a"></script>
-<script src="js/sample-pdfs.js?v=20261115a"></script>
+<script src="js/drawer.js?v=20261116a"></script>
+<script src="js/sample-pdfs.js?v=20261116a"></script>
 <script src="lib/html2canvas.min.js"></script>
 <script src="lib/jspdf.umd.min.js"></script>
-<script src="js/formpdf.js?v=20261115a"></script>
-<script src="js/db.js?v=20261115a"></script>
-<script src="js/field.js?v=20261115a"></script>
+<script src="js/formpdf.js?v=20261116a"></script>
+<script src="js/db.js?v=20261116a"></script>
+<script src="js/field.js?v=20261116a"></script>
 </body>
 </html>
