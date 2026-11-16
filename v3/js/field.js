@@ -505,6 +505,19 @@ createApp({
       signCtx.value = null; await load();
     }
     /* 逐項簽名：每一項檢查／抽查完（判定 ○ 或 ╳），檢查人員／抽查人員即簽名；判定變更須重簽 */
+    // 模擬 AI 判定：填完實際檢查／抽查情形後，以檢查標準比對內容，給出建議判定
+    const aiBusy = reactive({});
+    const aiLabel = j => AIJudge.LABEL[j] || j, aiCls = j => j === 'ok' ? 'ok' : j === 'ng' ? 'ng' : 'warn';
+    async function runAi(kind, it) {
+      const rec = kind === 'self' ? cur.value : sp.value; if (!rec) return; const a = rec.answers[it.no], k = kind + it.no;
+      if (!a || !(a.text || '').trim() || a.text === (it.defText || '') && !a.ai) return;
+      if (kind === 'self' ? !itemEditable(it) : !spEditable.value) return;
+      const text = a.text; aiBusy[k] = text;
+      const r = await AIJudge.judge(it.std, text, it.name);
+      if (aiBusy[k] !== text) return; delete aiBusy[k];
+      a.ai = { judge: r.judge, reasons: r.reasons, text, at: Date.now() }; if (kind === 'self') queueSave(); else spSave();
+    }
+    function applyAi(kind, it) { const rec = kind === 'self' ? cur.value : sp.value, a = rec.answers[it.no]; if (!a || !a.ai || a.judge === a.ai.judge) return; kind === 'self' ? setJudge(it, a.ai.judge) : spJudge(it, a.ai.judge); }
     const itemSign = ref(null);
     const needSig = a => !!a && (a.judge === 'ok' || a.judge === 'ng') && !a.sig;
     async function openItemSign(kind, it) {
@@ -559,7 +572,7 @@ createApp({
       todoReqs, rejectedCards, defTodos, draftSpots, pdfTodos, openPdfTodo, openDefects, todoCount, holdFilter, holdsList, selReqId, selReq, sched, selectReq, reqText, reqPhotos, lockedAfter, doSchedule, doReject, doStart, doCancel,
       pf, pfPreview, pfUrl, pfTpl, pfRec, pfSelf, pfSt, wfCls, pfCanLock, pfIsLocker, pfCanClose, pfCanVendor, pfCanUnfreeze, pfHint, pfDownloadBlank, pfDownloadCur, pfLock, pfCancel, wfUp, wfCert, wfVen, wfUnf, openWfUp, onWfUpFile, submitWfUp, openWfVen, onWfVenFile, submitWfVen, openWfCert, submitWfCert, openWfUnf, submitWfUnf, dlLog, leavePdf, isDirector, scList, scProgress, newForm, tenderOpts, swOpts, tplOpts, unitOpts, ut, cascade, openNew, createSc,
       cur, curTpl, stageTab, itemNo, saveMsg, docShow, linkShow, applyForm, readonly, stageList, curItem, shownItems, judged, total, stageStat, stageDone, ans, ensure, lockOf, hstate, hreq, itemEditable, itemIcon,
-      itemSign, needSig, openItemSign, confirmItemSign,
+      itemSign, needSig, openItemSign, confirmItemSign, aiBusy, aiLabel, aiCls, runAi, applyAi,
       flush, queueSave, openSc, gotoItem, setStage, step, setJudge, addPhoto, addDemoPhoto, delPhoto, addFixPhoto, delFixPhoto, linkName, preLinked, linkedRec, linkedDone, linkedTpl, linkStatus, openLinked, createLinked, returnTo, canApply, openApply, applyShort, applyHours, submitApply, holdText, wasRejected,
       summary, holdItems, holdPending, attachCodes, canSubmit, goSign, finishStage, stageTabs, firstStage, stageNext, spStageTabs, spNextStage, leaveForm,
       sp, spStage, spItemNo, spSaveMsg, spNew, spTpl, spReq, spSc, spEditable, spStageList, spCurItem, spShown, spA, spJudged, spTotal, spSummary, spStageStat, spSelfJudge, spSelfText, spCalc, spLocked, spList, spProgress, spSave, spFlush, openSpot, spGoto, spSetStage, spJudge, spPhoto, spDemoPhoto, spDelPhoto, spGoSign, leaveSpot, openSpotNew, createSpot,

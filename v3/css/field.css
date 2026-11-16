@@ -131,3 +131,4 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
 .filters select { width: auto; min-width: 120px; max-width: 260px; flex: 0 1 auto; }
 @media (max-width: 600px) { .filters select { flex: 1 1 45%; max-width: none; min-width: 0; } }
 .isig { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 6px 10px; border: 1px dashed var(--line); border-radius: 8px; background: #fbfcfd; } .isig img { height: 40px; max-width: 160px; background: #fff; border-radius: 4px; }
+.aibox { margin-top: 8px; padding: 8px 10px; border: 1px solid #cfe3f5; border-radius: 8px; background: #f3f9ff; } .aibox .aireason { margin: 6px 0 8px; padding-left: 4px; list-style: none; font-size: 13px; line-height: 1.6; }

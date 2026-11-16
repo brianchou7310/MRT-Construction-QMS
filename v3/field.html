@@ -6,8 +6,8 @@
 <link rel="icon" href="images/logo.png">
 <title>捷運施工查驗系統 - 現場作業 v3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/common.css?v=20261116b">
-<link rel="stylesheet" href="css/field.css?v=20261116b">
+<link rel="stylesheet" href="css/common.css?v=20261116c">
+<link rel="stylesheet" href="css/field.css?v=20261116c">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -176,7 +176,7 @@
           <div class="lockmsg" v-if="lockOf(it)">🔒 {{ lockOf(it) }}</div>
           <template v-else>
             <div class="linked" v-if="it.type==='linked'"><a @click="linkShow=it.linked">開啟 表{{ it.linked }} {{ linkName(it.linked) }}</a><span class="chip ok" v-if="cur.linked[it.linked]">已完成 ○</span><span class="chip" v-else>未完成</span></div>
-            <div v-if="it.type==='text'"><label class="f">實際檢查情形（敘述檢查值）</label><textarea rows="3" v-model="ensure(it.no).text" @input="queueSave" :disabled="!itemEditable(it)" placeholder="例：垂直方向偏差 18mm、籠頂高程 EL 122.91m"></textarea></div>
+            <div v-if="it.type==='text'"><label class="f">實際檢查情形（敘述檢查值）</label><textarea rows="3" v-model="ensure(it.no).text" @input="queueSave" @change="runAi('self', it)" :disabled="!itemEditable(it)" placeholder="例：垂直方向偏差 18mm、籠頂高程 EL 122.91m"></textarea><div class="aibox" v-if="ensure(it.no).text && (itemEditable(it) || ensure(it.no).ai)"><div class="row"><span class="grow"><b>🤖 AI 判定</b><span class="small muted">（模擬）</span></span><span class="small muted" v-if="aiBusy['self'+it.no]">AI 判定中…</span><button class="btn sm" v-else-if="itemEditable(it)" @click="runAi('self', it)">{{ ensure(it.no).ai ? '重新判定' : 'AI 判定' }}</button></div><template v-if="ensure(it.no).ai && !aiBusy['self'+it.no]"><div class="mt">AI 建議：<span class="chip" :class="aiCls(ensure(it.no).ai.judge)">{{ aiLabel(ensure(it.no).ai.judge) }}</span><span class="small muted" v-if="ensure(it.no).ai.text !== ensure(it.no).text">　內容已修改，請重新判定</span></div><ul class="aireason"><li v-for="x in ensure(it.no).ai.reasons">{{ x }}</li></ul><button class="btn sm primary" v-if="itemEditable(it) && ['ok','ng'].includes(ensure(it.no).ai.judge) && ensure(it.no).judge !== ensure(it.no).ai.judge" @click="applyAi('self', it)">套用為「{{ aiLabel(ensure(it.no).ai.judge) }}」</button><div class="small muted mt">AI 僅提供建議，判定與簽名仍由檢查人員負責。</div></template></div></div>
             <div class="photos" v-if="it.photo || ans(it.no).photos.length || ans(it.no).judge==='ng'">
               <div class="photo th" v-for="(p,i) in ans(it.no).photos" :key="i" @click="delPhoto(it,i)"><img v-if="p && p!=='*'" :src="p"><span v-else>示範照片</span></div>
               <button class="cam" :disabled="!itemEditable(it)" @click="addPhoto(it)">📷<small>拍照</small></button><button class="cam demo" :disabled="!itemEditable(it)" @click="addDemoPhoto(it)">🖼<small>示範照片</small></button>
@@ -262,7 +262,7 @@
           <div class="linked" v-if="it.type==='linked'"><span>連結表單：表{{ it.linked }} {{ linkName(it.linked) }}</span><span class="chip" :class="spSc && spSc.linked[it.linked] ? 'ok' : ''">廠商{{ spSc && spSc.linked[it.linked] ? '已完成 ○' : '未完成' }}</span></div>
           <div class="small" v-if="spSelfJudge(it)">廠商自檢判定：<span class="chip" :class="spSelfJudge(it)==='ok'?'ok':spSelfJudge(it)==='ng'?'ng':''">{{ Q.JUDGE[spSelfJudge(it)] }}</span></div>
           <div v-if="it.type==='text'"><div class="small muted">廠商實際檢查情形（自主檢查表）</div><div class="pre">{{ spSelfText(it) || '—' }}</div>
-            <label class="f">實際抽查情形（載明抽查數值及單位）</label><textarea rows="3" v-model="spA(it.no).text" @input="spSave" :disabled="!spEditable" placeholder="例：垂直方向偏差 20mm"></textarea></div>
+            <label class="f">實際抽查情形（載明抽查數值及單位）</label><textarea rows="3" v-model="spA(it.no).text" @input="spSave" @change="runAi('spot', it)" :disabled="!spEditable" placeholder="例：垂直方向偏差 20mm"></textarea><div class="aibox" v-if="spA(it.no).text && (spEditable || spA(it.no).ai)"><div class="row"><span class="grow"><b>🤖 AI 判定</b><span class="small muted">（模擬）</span></span><span class="small muted" v-if="aiBusy['spot'+it.no]">AI 判定中…</span><button class="btn sm" v-else-if="spEditable" @click="runAi('spot', it)">{{ spA(it.no).ai ? '重新判定' : 'AI 判定' }}</button></div><template v-if="spA(it.no).ai && !aiBusy['spot'+it.no]"><div class="mt">AI 建議：<span class="chip" :class="aiCls(spA(it.no).ai.judge)">{{ aiLabel(spA(it.no).ai.judge) }}</span><span class="small muted" v-if="spA(it.no).ai.text !== spA(it.no).text">　內容已修改，請重新判定</span></div><ul class="aireason"><li v-for="x in spA(it.no).ai.reasons">{{ x }}</li></ul><button class="btn sm primary" v-if="spEditable && ['ok','ng'].includes(spA(it.no).ai.judge) && spA(it.no).judge !== spA(it.no).ai.judge" @click="applyAi('spot', it)">套用為「{{ aiLabel(spA(it.no).ai.judge) }}」</button><div class="small muted mt">AI 僅提供建議，判定與簽名仍由抽查人員負責。</div></template></div></div>
           <div class="photos" v-if="it.photo || spA(it.no).photos.length || it.hold">
             <div class="photo th" v-for="(p,i) in spA(it.no).photos" :key="i" @click="spDelPhoto(it,i)"><img v-if="p && p!=='*'" :src="p"><span v-else>示範照片</span></div>
             <button class="cam" :disabled="!spEditable" @click="spPhoto(it)">📷<small>拍照</small></button><button class="cam demo" :disabled="!spEditable" @click="spDemoPhoto(it)">🖼<small>示範照片</small></button>
@@ -439,12 +439,13 @@
 <div class="toast" :class="{ng: toastNg}" v-if="toastMsg">{{ toastMsg }}</div>
 </div>
 <script src="lib/vue.global.prod.js"></script>
-<script src="js/drawer.js?v=20261116b"></script>
-<script src="js/sample-pdfs.js?v=20261116b"></script>
+<script src="js/drawer.js?v=20261116c"></script>
+<script src="js/sample-pdfs.js?v=20261116c"></script>
 <script src="lib/html2canvas.min.js"></script>
 <script src="lib/jspdf.umd.min.js"></script>
-<script src="js/formpdf.js?v=20261116b"></script>
-<script src="js/db.js?v=20261116b"></script>
-<script src="js/field.js?v=20261116b"></script>
+<script src="js/aijudge.js?v=20261116c"></script>
+<script src="js/formpdf.js?v=20261116c"></script>
+<script src="js/db.js?v=20261116c"></script>
+<script src="js/field.js?v=20261116c"></script>
 </body>
 </html>
