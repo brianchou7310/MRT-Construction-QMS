@@ -244,15 +244,18 @@ createApp({
         // 停留點判缺失：立即建立缺失追蹤；改善後重新判定 ○ 再申請會驗，會驗合格時缺失自動結案
         const c = cur.value;
         Q.createDefect({ tenderCode: c.tenderCode, title: it.name, location: `${c.tenderCode}｜${c.subworkName} ${c.unit}`, source: '自主檢查（停留點）', refId: c.id, itemNo: it.no, subworkId: c.subworkId, scId: c.id, scItemNo: it.no }).then(df => { a.defectId = df.id; queueSave(); load(); });
-        toast('停留點判定缺失，已建立缺失追蹤；改善後請重新判定 ○ 並申請會驗');
+        toast('停留點判定缺失，已建立缺失追蹤；改善後請重新判定 ○（缺失即結案）並申請會驗');
       } else if (it.hold && j === 'ok' && prev === 'ng' && a.defectId) {
-        a.fixedAt = Date.now(); Q.setDefectStatus(a.defectId, 'review', '廠商改善後重新判定 ○，待停留點會驗複查').then(load);
-        toast('已改善並重新判定 ○，請申請會驗；會驗合格後缺失自動結案');
+        a.fixedAt = Date.now(); Q.setDefectStatus(a.defectId, 'closed', '廠商改善後重新判定 ○，自行結案').then(load);
+        toast('已改善並重新判定 ○，缺失已結案；請申請會驗');
       } else if (j === 'ng') toast('已判定缺失；送出後系統將自動建立缺失追蹤');
       if (wide.value && j && curTpl.value) { /* 判定後不自動跳項，讓使用者可申請會驗 */ }
     }
     function addPhoto(it) { if (!itemEditable(it)) return toast('此項目目前不可編輯', true); pickPhoto(`${cur.value.tenderCode}・${where(cur.value.unit, cur.value.subworkName)}・${it.name}`, url => { ensure(it.no).photos.push(url); queueSave(); }); }
     function addDemoPhoto(it) { if (!itemEditable(it)) return toast('此項目目前不可編輯', true); demoPhoto(`${cur.value.tenderCode}・${where(cur.value.unit, cur.value.subworkName)}・${it.name}`, url => { ensure(it.no).photos.push(url); queueSave(); }); }
+    // 缺失項目的改善後照片：與缺失照片（改善前）分開存放
+    function addFixPhoto(it, demo) { if (!itemEditable(it)) return toast('此項目目前不可編輯', true); const a = ensure(it.no), cb = url => { (a.fixPhotos = a.fixPhotos || []).push(url); queueSave(); }, label = `${cur.value.tenderCode}・${where(cur.value.unit, cur.value.subworkName)}・${it.name}（改善後）`; if (demo) demoPhoto(label, cb); else pickPhoto(label, cb); }
+    function delFixPhoto(it, i) { if (!itemEditable(it)) return; (ensure(it.no).fixPhotos || []).splice(i, 1); queueSave(); }
     function delPhoto(it, i) { if (!itemEditable(it)) return; ensure(it.no).photos.splice(i, 1); const a = ensure(it.no); if (it.photo && !a.photos.length && a.judge === 'ok') { a.judge = null; delete a.sig; } queueSave(); }
     /* 關聯子表單：連到同一單元的真實紀錄，簽認／結案後才算完成 */
     const returnTo = ref(null);
@@ -301,7 +304,7 @@ createApp({
       { const miss = curTpl.value.items.filter(i => needSig(ans(i.no))); if (miss.length) { gotoItem(miss[0]); return toast(`尚有 ${miss.length} 項檢查人員未簽名：${miss.slice(0, 3).map(i => i.name).join('、')}${miss.length > 3 ? '…' : ''}`, true); } }
       if (holdPending.value.length) { stageTab.value = 'sum'; return toast(`尚有 ${holdPending.value.length} 個停留點未經監造放行：${holdPending.value.map(i => i.name).join('、')}`, true); }
       if (summary.value.ng && !cur.value.recovery) { stageTab.value = 'sum'; return toast('有缺失項目，請先選擇缺失複查結果', true); }
-      if (cur.value.recovery === 'done') { const miss = curTpl.value.items.filter(i => ans(i.no).judge === 'ng' && !(ans(i.no).photos || []).length); if (miss.length) { gotoItem(miss[0]); return toast(`勾選「已完成改善」須檢附改善照片：${miss.map(i => i.name).join('、')}`, true); } }
+      if (cur.value.recovery === 'done') { const miss = curTpl.value.items.filter(i => ans(i.no).judge === 'ng' && !(ans(i.no).fixPhotos || []).length); if (miss.length) { gotoItem(miss[0]); return toast(`勾選「已完成改善」須檢附改善後照片：${miss.map(i => i.name).join('、')}`, true); } }
       await flush(); openSign('self', cur.value.id);
     }
     function finishStage() {
@@ -526,7 +529,7 @@ createApp({
     const defForm = ref(null);
     function defAct(x) { defForm.value = { x, note: '', photos: [], reason: '', rejecting: false }; }
     function defPhoto(demo) { const f = defForm.value, label = `${f.x.tenderCode}・缺失 ${f.x.id}・改善後`; (demo ? demoPhoto : pickPhoto)(label, u => f.photos.push(u)); }
-    async function submitFix() { const f = defForm.value; try { await Q.reportFix(f.x.id, { note: f.note, photos: f.photos, by: me.value.name }); defForm.value = null; await load(); toast('已回報改善完成，待工務所複查'); } catch (e) { toast(e.message, true); } }
+    async function submitFix() { const f = defForm.value; try { await Q.reportFix(f.x.id, { note: f.note, photos: f.photos, by: me.value.name }); const self = Q.isSelfDefect(f.x); defForm.value = null; await load(); toast(self ? '已回報改善完成，缺失已結案' : '已回報改善完成，待工務所複查'); } catch (e) { toast(e.message, true); } }
     async function submitReview(pass) { const f = defForm.value; try { await Q.reviewDefect(f.x.id, pass, f.reason, me.value.name); defForm.value = null; await load(); toast(pass ? '複查合格，缺失已結案' : '已退回廠商重新改善'); } catch (e) { toast(e.message, true); } }
     async function resetDemo() { if (!confirm('將清除所有資料並還原示範資料，確定？')) return; await Q.seed(true); cur.value = null; sp.value = null; view.value = 'todo'; await load(); toast('已還原示範資料'); }
     async function clearSigs() { for (const k of ['site', 'rep', 'insp', 'att']) await Q.del('meta', 'sig-' + k); toast('已清除已存簽名'); }
@@ -557,7 +560,7 @@ createApp({
       pf, pfPreview, pfUrl, pfTpl, pfRec, pfSelf, pfSt, wfCls, pfCanLock, pfIsLocker, pfCanClose, pfCanVendor, pfCanUnfreeze, pfHint, pfDownloadBlank, pfDownloadCur, pfLock, pfCancel, wfUp, wfCert, wfVen, wfUnf, openWfUp, onWfUpFile, submitWfUp, openWfVen, onWfVenFile, submitWfVen, openWfCert, submitWfCert, openWfUnf, submitWfUnf, dlLog, leavePdf, isDirector, scList, scProgress, newForm, tenderOpts, swOpts, tplOpts, unitOpts, ut, cascade, openNew, createSc,
       cur, curTpl, stageTab, itemNo, saveMsg, docShow, linkShow, applyForm, readonly, stageList, curItem, shownItems, judged, total, stageStat, stageDone, ans, ensure, lockOf, hstate, hreq, itemEditable, itemIcon,
       itemSign, needSig, openItemSign, confirmItemSign,
-      flush, queueSave, openSc, gotoItem, setStage, step, setJudge, addPhoto, addDemoPhoto, delPhoto, linkName, preLinked, linkedRec, linkedDone, linkedTpl, linkStatus, openLinked, createLinked, returnTo, canApply, openApply, applyShort, applyHours, submitApply, holdText, wasRejected,
+      flush, queueSave, openSc, gotoItem, setStage, step, setJudge, addPhoto, addDemoPhoto, delPhoto, addFixPhoto, delFixPhoto, linkName, preLinked, linkedRec, linkedDone, linkedTpl, linkStatus, openLinked, createLinked, returnTo, canApply, openApply, applyShort, applyHours, submitApply, holdText, wasRejected,
       summary, holdItems, holdPending, attachCodes, canSubmit, goSign, finishStage, stageTabs, firstStage, stageNext, spStageTabs, spNextStage, leaveForm,
       sp, spStage, spItemNo, spSaveMsg, spNew, spTpl, spReq, spSc, spEditable, spStageList, spCurItem, spShown, spA, spJudged, spTotal, spSummary, spStageStat, spSelfJudge, spSelfText, spCalc, spLocked, spList, spProgress, spSave, spFlush, openSpot, spGoto, spSetStage, spJudge, spPhoto, spDemoPhoto, spDelPhoto, spGoSign, leaveSpot, openSpotNew, createSpot,
       signCtx, signHash, signAgree, canvasEl, drawn, signers, signIdx, curSigner, signSummary, sDown, sMove, sUp, clearSign, applySaved, saveSig, confirmSign, cancelSign,
