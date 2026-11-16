@@ -6,8 +6,8 @@
 <link rel="icon" href="images/logo.png">
 <title>捷運施工查驗系統 - 現場作業 v3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/common.css?v=20261116a">
-<link rel="stylesheet" href="css/field.css?v=20261116a">
+<link rel="stylesheet" href="css/common.css?v=20261116b">
+<link rel="stylesheet" href="css/field.css?v=20261116b">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -161,7 +161,7 @@
             <div class="alert ng mt" v-if="holdPending.length">尚有 {{ holdPending.length }} 個停留點未經監造放行（{{ holdPending.map(i=>i.name).join('、') }}），放行後才能送出簽認。</div>
             <h5 class="mt">自動附件</h5><div class="row wrap"><span class="chip blue" v-for="c in attachCodes">表{{ c }} {{ linkName(c) }}</span><span class="chip blue">現場照片 {{ summary.photos }} 張</span></div></div>
           <div class="card mt" v-if="summary.ng"><h4>缺失複查結果 <span class="small muted">（任一項判定 ╳ 時必填）</span></h4>
-            <label class="opt"><input type="radio" value="done" v-model="cur.recovery" @change="queueSave" :disabled="readonly"> 已完成改善（檢附改善前、中、後照片）</label>
+            <label class="opt"><input type="radio" value="done" v-model="cur.recovery" @change="queueSave" :disabled="readonly"> 已完成改善（缺失項目須附改善後照片）</label>
             <label class="opt"><input type="radio" value="open" v-model="cur.recovery" @change="queueSave" :disabled="readonly"> 未改善完成，另填「缺失改善追蹤表」進行追蹤改善</label></div>
           <div class="card mt"><h4>簽認</h4>
             <div class="kvr"><span>現場工程師（檢查人員）</span><span class="chip" :class="cur.signatures.site?'ok':''">{{ cur.signatures.site ? '已簽 '+Q.fmtDT(cur.signatures.site.at) : '待簽' }}</span></div>
@@ -180,7 +180,11 @@
             <div class="photos" v-if="it.photo || ans(it.no).photos.length || ans(it.no).judge==='ng'">
               <div class="photo th" v-for="(p,i) in ans(it.no).photos" :key="i" @click="delPhoto(it,i)"><img v-if="p && p!=='*'" :src="p"><span v-else>示範照片</span></div>
               <button class="cam" :disabled="!itemEditable(it)" @click="addPhoto(it)">📷<small>拍照</small></button><button class="cam demo" :disabled="!itemEditable(it)" @click="addDemoPhoto(it)">🖼<small>示範照片</small></button>
-              <span class="small muted" v-if="it.photo && !ans(it.no).photos.length">此項必拍照片</span><span class="small muted" v-else-if="ans(it.no).judge==='ng' && !ans(it.no).photos.length">缺失項目：選「已完成改善」須在此附改善照片</span><span class="small muted" v-else>點照片可刪除</span></div>
+              <span class="small muted" v-if="it.photo && !ans(it.no).photos.length">此項必拍照片</span><span class="small muted" v-else-if="ans(it.no).judge==='ng'">缺失照片（改善前）{{ ans(it.no).photos.length ? '・點照片可刪除' : '' }}</span><span class="small muted" v-else>點照片可刪除</span></div>
+            <div class="photos" v-if="ans(it.no).judge==='ng'">
+              <div class="photo th" v-for="(p,i) in (ans(it.no).fixPhotos||[])" :key="'f'+i" @click="delFixPhoto(it,i)"><img v-if="p && p!=='*'" :src="p"><span v-else>示範照片</span></div>
+              <button class="cam" :disabled="!itemEditable(it)" @click="addFixPhoto(it,false)">📷<small>拍照</small></button><button class="cam demo" :disabled="!itemEditable(it)" @click="addFixPhoto(it,true)">🖼<small>示範照片</small></button>
+              <span class="small muted">改善後照片{{ (ans(it.no).fixPhotos||[]).length ? '・點照片可刪除' : '（選「已完成改善」時必附）' }}</span></div>
             <div class="judge">
               <button :class="['ok',{on: ans(it.no).judge==='ok'}]" @click="setJudge(it,'ok')">○ 合格</button>
               <button :class="['ng',{on: ans(it.no).judge==='ng'}]" @click="setJudge(it,'ng')">╳ 缺失</button>
@@ -190,8 +194,8 @@
             <div class="holdbox" v-if="it.hold"><div class="row"><b>☆ 檢驗停留點</b><span class="grow"></span><span class="chip" :class="hstate(it)==='passed'?'ok':hstate(it)==='failed'?'ng':hstate(it)==='none'?'warn':'blue'">{{ holdText(it) }}</span></div>
               <div class="small" style="color:var(--ng)" v-if="wasRejected(it)">上次申請 {{ wasRejected(it).id }} 已於 {{ Q.fmtDT(wasRejected(it).rejectedAt || wasRejected(it).notices[wasRejected(it).notices.length-1].at) }} 被退回。原因：{{ wasRejected(it).rejectReason || '—' }}。請修正後重新申請。</div>
               <div class="small" v-if="hstate(it)==='none'">判定 ○{{ it.photo ? ' 並拍照' : '' }}後，可申請監造會驗；合格放行前，第 {{ it.no+1 }} 項起鎖定。</div>
-              <div class="small" v-if="hstate(it)==='failed'">監造判定不合格，已建立缺失追蹤。改善後可直接重新申請會驗；會驗合格時缺失自動結案。</div>
-              <div class="small" style="color:var(--ng)" v-if="hstate(it)==='none' && ans(it.no).judge==='ng'">本停留點判定缺失，已建立缺失追蹤 {{ ans(it.no).defectId || '' }}。改善後請重新判定 ○ 並申請會驗。</div>
+              <div class="small" v-if="hstate(it)==='failed'">工務所會驗判定不合格，已建立缺失追蹤（來源：抽查）。改善後可直接重新申請會驗；會驗合格時該缺失自動結案。</div>
+              <div class="small" style="color:var(--ng)" v-if="hstate(it)==='none' && ans(it.no).judge==='ng'">本停留點判定缺失，已建立缺失追蹤 {{ ans(it.no).defectId || '' }}。改善後請重新判定 ○（缺失即結案）並申請會驗。</div>
               <div class="small" v-if="['applied','scheduled'].includes(hstate(it)) && hreq(it)">申請編號 {{ hreq(it).id }}｜預定 {{ Q.fmtDT(hreq(it).scheduledAt) }}<template v-if="hreq(it).status==='pending'">｜監造回覆期限 {{ rel(hreq(it).replyDue).text }}</template></div>
               <div class="small" v-if="hstate(it)==='passed' && hreq(it)">已合格放行 {{ Q.fmtDT(hreq(it).notices[hreq(it).notices.length-1].at) }}</div>
               <button class="btn amber block mt" v-if="canApply(it)" @click="openApply(it)">申請會驗（Email 通知監造）</button></div>
@@ -402,7 +406,7 @@
     <label class="f">改善說明（必填）</label><textarea rows="3" v-model="defForm.note" placeholder="例：已重新點焊並磨除裂紋，經目視檢查無異常"></textarea>
     <label class="f mt">改善後照片（至少 1 張）</label>
     <div class="photos"><div class="photo th" v-for="(p,i) in defForm.photos" :key="i" @click="defForm.photos.splice(i,1)"><img :src="p"></div><button class="cam" @click="defPhoto(false)">📷<small>拍照</small></button><button class="cam demo" @click="defPhoto(true)">🖼<small>示範照片</small></button></div>
-    <div class="foot"><button class="btn" @click="defForm=null">取消</button><button class="btn primary" @click="submitFix">送出，請工務所複查</button></div></template>
+    <div class="foot"><button class="btn" @click="defForm=null">取消</button><button class="btn primary" @click="submitFix">{{ Q.isSelfDefect(defForm.x) ? '送出並結案' : '送出，請工務所複查' }}</button></div></template>
   <template v-else>
     <template v-if="defForm.x.fix"><label class="f">廠商改善說明（{{ defForm.x.fix.by }}・{{ Q.fmtDT(defForm.x.fix.at) }}）</label><div class="pre">{{ defForm.x.fix.note }}</div>
       <div class="photos mt" v-if="(defForm.x.fix.photos||[]).length"><div class="photo th" v-for="(p,i) in defForm.x.fix.photos" :key="i"><img v-if="p && p!=='*'" :src="p"><span v-else>示範照片</span></div></div></template>
@@ -435,12 +439,12 @@
 <div class="toast" :class="{ng: toastNg}" v-if="toastMsg">{{ toastMsg }}</div>
 </div>
 <script src="lib/vue.global.prod.js"></script>
-<script src="js/drawer.js?v=20261116a"></script>
-<script src="js/sample-pdfs.js?v=20261116a"></script>
+<script src="js/drawer.js?v=20261116b"></script>
+<script src="js/sample-pdfs.js?v=20261116b"></script>
 <script src="lib/html2canvas.min.js"></script>
 <script src="lib/jspdf.umd.min.js"></script>
-<script src="js/formpdf.js?v=20261116a"></script>
-<script src="js/db.js?v=20261116a"></script>
-<script src="js/field.js?v=20261116a"></script>
+<script src="js/formpdf.js?v=20261116b"></script>
+<script src="js/db.js?v=20261116b"></script>
+<script src="js/field.js?v=20261116b"></script>
 </body>
 </html>

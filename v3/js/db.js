@@ -296,7 +296,7 @@
       if (sc) { sp.scId = sc.id; await put('spotChecks', sp); }
     }
   }
-  async function postSeed() { await clearRecords(); await migrateNoNumber(); await migrateKeys(); await migrateReqSub(); await migrateScLinks(); await seedLinked(); await migrateUnits(); await migrateUnitsWall(); await migrateUnitRule(); await migrateDocForms(); await migrateCalcFields(); }
+  async function postSeed() { await clearRecords(); await migrateNoNumber(); await migrateKeys(); await migrateReqSub(); await migrateScLinks(); await seedLinked(); await migrateUnits(); await migrateUnitsWall(); await migrateUnitRule(); await migrateDocForms(); await migrateCalcFields(); await migrateSelfDefects(); }
   // 分項工程有設定單元時，表單不可掛在分項工程層：舊資料的分項層表單移到該分項工程的第一個單元
   // 移除「數值」判定類型：既有範本的數值項目改為選項，並清除數值欄位
   // 一次性清除：自主檢查、停留點會驗、抽查紀錄、缺失追蹤的資料全部移除（只保留標案、分項工程、表單範本、參考文件、帳號等基本資料），編號重新起算
@@ -311,6 +311,10 @@
     if (await get('meta', 'calcFields1')) return;
     for (const t of await all('templates')) if (t.kind === 'spot' && t.code === 'SP-5' && !t.calcFields) { t.calcFields = defCalc(); await put('templates', t); }
     await put('meta', { id: 'calcFields1', at: Date.now() });
+  }
+  // 自主檢查的缺失不再經工務所複查：已在「待複查」的直接結案
+  async function migrateSelfDefects() {
+    for (const df of await all('defects')) if (/^自主檢查/.test(df.source || '') && df.status === 'review') { df.status = 'closed'; df.closedAt = Date.now(); df.closedBy = (df.fix || {}).by || '廠商'; df.note = '自主檢查缺失改為廠商自行結案'; (df.history = df.history || []).push({ at: Date.now(), text: df.note }); await put('defects', df); }
   }
   async function migrateNoNumber() {
     for (const t of await all('templates')) {
@@ -522,8 +526,8 @@
       const a = sc.answers[it.no] || {};
       if (a.judge === 'ng' && !a.defectId) {
         const df = await createDefect({ tenderCode: sc.tenderCode, title: it.name, location: `${sc.tenderCode}｜${sc.subworkName} ${sc.unit}`, source: '自主檢查', refId: sc.id, itemNo: it.no, subworkId: sc.subworkId, scId: sc.id, scItemNo: it.no });
-        // 自檢表已勾選「已完成改善」：缺失直接進入「待複查」，不需廠商再回報一次
-        if (sc.recovery === 'done') { df.status = 'review'; df.fix = { note: '廠商於自主檢查表勾選「已完成改善」', photos: (a.photos || []).slice(0, 6), at: Date.now(), by: (sc.signatures.site || {}).name || '廠商' }; df.history = [{ at: Date.now(), text: '自主檢查表勾選「已完成改善」，轉待複查' }]; await put('defects', df); }
+        // 自檢表已勾選「已完成改善」：自主檢查的缺失不經工務所複查，直接結案
+        if (sc.recovery === 'done') { const by = (sc.signatures.site || {}).name || '廠商'; df.status = 'closed'; df.closedAt = Date.now(); df.closedBy = by; df.note = '自主檢查表勾選「已完成改善」，廠商自行結案'; df.fix = { note: '廠商於自主檢查表勾選「已完成改善」', photos: (a.fixPhotos || []).slice(0, 6), at: Date.now(), by }; (df.history = df.history || []).push({ at: Date.now(), text: df.note }); await put('defects', df); }
       }
     }
     return sc;
@@ -611,17 +615,22 @@
   }
 
   // 缺失：廠商回報改善（須說明＋照片）→ 工務所複查（合格結案／退回重新改善）
+  const isSelfDefect = df => /^自主檢查/.test(df.source || '');
   async function reportFix(id, { note, photos, by }) {
     const df = await get('defects', id); if (df.status !== 'open') throw new Error('此缺失目前不是「待改善」狀態');
     if (!(note || '').trim()) throw new Error('請填寫改善說明'); if (!(photos || []).length) throw new Error('請至少附 1 張改善後照片');
-    df.status = 'review'; df.fix = { note: note.trim(), photos, at: Date.now(), by }; (df.history = df.history || []).push({ at: Date.now(), text: `${by} 回報改善完成：${note.trim()}` });
+    df.fix = { note: note.trim(), photos, at: Date.now(), by }; (df.history = df.history || []).push({ at: Date.now(), text: `${by} 回報改善完成：${note.trim()}` });
+    // 自主檢查的缺失由廠商自行改善結案，不經工務所複查；抽查的缺失才轉待複查
+    if (isSelfDefect(df)) { df.status = 'closed'; df.closedAt = Date.now(); df.closedBy = by; df.note = `${by} 改善完成，自行結案`; df.history.push({ at: Date.now(), text: '自主檢查缺失：廠商改善完成，自行結案（不經工務所複查）' }); }
+    else df.status = 'review';
     await put('defects', df); return df;
   }
   async function reviewDefect(id, pass, reason, by) {
-    const df = await get('defects', id); if (df.status !== 'review') throw new Error('廠商尚未回報改善，不可複查結案');
+    const df = await get('defects', id); if (isSelfDefect(df)) throw new Error('自主檢查的缺失由廠商自行結案，不需工務所複查');
+    if (df.status !== 'review') throw new Error('廠商尚未回報改善，不可複查結案');
     if (!pass && !(reason || '').trim()) throw new Error('請填寫退回原因');
     (df.history = df.history || []).push({ at: Date.now(), text: pass ? `${by} 複查合格，結案` : `${by} 複查不合格，退回重新改善：${reason.trim()}` });
-    if (pass) { df.status = 'closed'; df.closedAt = Date.now(); df.note = `${by} 複查合格`; } else { df.status = 'open'; df.lastFix = df.fix; df.fix = null; df.note = '退回：' + reason.trim(); }
+    if (pass) { df.status = 'closed'; df.closedAt = Date.now(); df.closedBy = by; df.note = `${by} 複查合格`; } else { df.status = 'open'; df.lastFix = df.fix; df.fix = null; df.note = '退回：' + reason.trim(); }
     await put('defects', df); return df;
   }
   async function setDefectStatus(id, status, note) {
@@ -646,6 +655,6 @@
     fmtDT, fmtD, fmtFull, toLocalInput, fromLocalInput, nextHour, atDay, relTime, uid, clone, hashOf,
     stageItems, stageDone, lockReason, holdState,
     STEP_TEXT, PROJ_TYPE_TEXT, DEPTS, rocDate, sortTenders, tenderFromProj, tLabel, tenderInDept, projKey, projOptions,
-    tickOverdue, newSelfCheck, saveSelf, applyHold, schedule, reject, spotOptions, startInspection, cancelInspection, reportFix, reviewDefect, newSpotCheck, autoNa, migrateSpots, wfLock, wfCancel, wfUpload, wfVendorSign, wfClose, wfUnfreeze, pdfBlobUrl, downloadPdf, downloadAny, openAny, canPreview, fileToDataUrl, fmtSize, dataUrlSize, createDefect, finalizeSelf, finalizeSpot, setDefectStatus, saveTemplate, putMany, I, ensureKeys, baseId
+    tickOverdue, newSelfCheck, saveSelf, applyHold, schedule, reject, spotOptions, startInspection, cancelInspection, reportFix, reviewDefect, newSpotCheck, autoNa, migrateSpots, wfLock, wfCancel, wfUpload, wfVendorSign, wfClose, wfUnfreeze, pdfBlobUrl, downloadPdf, downloadAny, openAny, canPreview, fileToDataUrl, fmtSize, dataUrlSize, createDefect, isSelfDefect, finalizeSelf, finalizeSpot, setDefectStatus, saveTemplate, putMany, I, ensureKeys, baseId
   };
 })();

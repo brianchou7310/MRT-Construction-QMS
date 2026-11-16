@@ -109,7 +109,10 @@
         const items = t.items.filter(i => i.stage === stg.key); if (!items.length) return;
         items.forEach((it, n) => {
           const a = ans[it.no] || {};
-          (a.photos || []).filter(isImg).forEach((u, k) => photos.push({ u, cap: `${it.name}${(a.photos || []).length > 1 ? `（${k + 1}）` : ''}` }));
+          // 自主檢查表的缺失項目：照片分「改善前」（缺失照片）與「改善後」
+          const ngSelf = self && a.judge === 'ng', tag = (base, l, k) => `${it.name}${base}${l.length > 1 ? `（${k + 1}）` : ''}`;
+          (a.photos || []).filter(isImg).forEach((u, k, l) => photos.push({ u, cap: tag(ngSelf ? '・改善前' : '', l, k) }));
+          if (ngSelf) (a.fixPhotos || []).filter(isImg).forEach((u, k, l) => photos.push({ u, cap: tag('・改善後', l, k) }));
           let info = a.text ? E(a.text).replace(/\n/g, '<br>') : '';
           if (self && it.type === 'linked' && it.linked) info += `${info ? '<br>' : ''}表${E(it.linked)}：${(r.linked || {})[it.linked] ? '已完成' : '未完成'}`;
           // 備註欄只放該項檢查人員／抽查人員的簽名與簽名日期時間
@@ -125,7 +128,7 @@
       // 缺失複查結果：依本紀錄產生的缺失追蹤狀態帶入
       const dfs = d.defects.filter(x => x.refId === r.id), closed = dfs.filter(x => x.status === 'closed');
       const doneAll = dfs.length ? closed.length === dfs.length : (self && r.recovery === 'done'), openAny = dfs.length ? closed.length < dfs.length : (self && r.recovery === 'open');
-      const lastClose = closed.sort((x, y) => (y.closedAt || 0) - (x.closedAt || 0))[0], by = lastClose ? String(lastClose.note || '').replace(/\s*複查合格$/, '') : '';
+      const lastClose = closed.sort((x, y) => (y.closedAt || 0) - (x.closedAt || 0))[0], by = lastClose ? (lastClose.closedBy || String(lastClose.note || '').replace(/\s*複查合格$/, '')) : '';
       const ids = dfs.filter(x => x.status !== 'closed').map(x => x.id).join('、');
       h += `<tr data-brk><td colspan="6" class="rv"><div>缺失複查結果：</div>
         <div>${box(doneAll)}已完成改善（${self ? '檢具' : '檢附'}改善前中後照片）</div>
