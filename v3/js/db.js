@@ -530,7 +530,7 @@
   async function cancelInspection(reqId, reason, user) {
     const r = await get('requests', reqId); if (r.status !== 'inspecting') throw new Error('只有「檢驗中」的會驗可以取消');
     if (!(reason || '').trim()) throw new Error('請填寫取消原因');
-    if (r.spotId) { const sp = await get('spotChecks', r.spotId); if (sp && sp.status === 'signed') throw new Error('抽查紀錄已簽認，不可取消'); if (sp) await del('spotChecks', sp.id); }
+    if (r.spotId) { const sp = await get('spotChecks', r.spotId); if (sp && sp.status === 'signed') throw new Error('抽查紀錄已簽認，不可取消'); if (sp) { for (const a of Object.values(sp.answers || {})) if (a.defectId) await withdrawDefect(a.defectId, '會驗取消，抽查紀錄草稿作廢，缺失撤銷'); await del('spotChecks', sp.id); } }
     r.status = 'scheduled'; r.spotId = null;
     r.notices.push({ at: Date.now(), text: `${user || '監造'}取消會驗：${reason.trim()}（抽查紀錄草稿已作廢，可改期或重新開始會驗）`, level: 'warn' });
     await put('requests', r); await syncHold(r, 'scheduled'); return r;
@@ -539,6 +539,12 @@
     const n = await counter('defect'), p = await getParams(), now = Date.now(), tender = (await all('tenders')).find(t => t.code === tenderCode);
     const df = { id: 'DF-' + pad(n, 4), tenderId: tender ? tender.id : '', tenderCode, title, location, source, refId, itemNo, subworkId: subworkId || '', scId: scId || '', scItemNo: scItemNo || 0, createdAt: now, due: now + p.defectDueDays * D, status: 'open', note: '', history: [{ at: now, text: `由「${source}」判定缺失，自動建立（改善期限 ${p.defectDueDays} 天）` }] };
     await put('defects', df); return df;
+  }
+  // 判定變更或表單作廢時撤回缺失單：尚未處理就直接刪除，已有改善內容則結案留底
+  async function withdrawDefect(id, why) {
+    const df = await get('defects', id); if (!df || df.status === 'closed') return;
+    if (df.status === 'open' && !df.fix && !df.lastFix) return del('defects', id);
+    df.status = 'closed'; df.closedAt = Date.now(); df.note = why || '判定已變更，缺失撤銷'; (df.history = df.history || []).push({ at: Date.now(), text: df.note }); await put('defects', df);
   }
   // 自主檢查表兩位簽認完成後鎖定
   async function finalizeSelf(scId) {
@@ -563,7 +569,8 @@
     sp.status = 'signed'; await put('spotChecks', sp);
     const ngItems = isPdf ? [] : tpl.items.filter(i => (sp.answers[i.no] || {}).judge === 'ng');
     const scItem = it => (it.no === sp.focusNo ? sp.itemNo : 0);
-    for (const it of ngItems) await createDefect({ tenderCode: sp.tenderCode, title: it.name, location: `${sp.tenderCode}｜${sp.location}`, source: '抽查', refId: sp.id, itemNo: it.no, subworkId: sp.subworkId, scId: sp.scId, scItemNo: scItem(it) });
+    for (const it of ngItems) if (!sp.answers[it.no].defectId) { const df = await createDefect({ tenderCode: sp.tenderCode, title: it.name, location: `${sp.tenderCode}｜${sp.location}`, source: '抽查', refId: sp.id, itemNo: it.no, subworkId: sp.subworkId, scId: sp.scId, scItemNo: scItem(it) }); sp.answers[it.no].defectId = df.id; }
+    if (ngItems.length) await put('spotChecks', sp);
     if (sp.requestId) {
       const r = await get('requests', sp.requestId);
       const pass = isPdf ? true : (sp.focusNo ? sp.answers[sp.focusNo].judge !== 'ng' : !ngItems.length);
@@ -698,6 +705,6 @@
     fmtDT, fmtD, fmtFull, toLocalInput, fromLocalInput, nextHour, atDay, relTime, uid, clone, hashOf,
     stageItems, stageDone, lockReason, holdState,
     STEP_TEXT, PROJ_TYPE_TEXT, DEPTS, rocDate, sortTenders, tenderFromProj, tLabel, tenderInDept, projKey, projOptions,
-    tickOverdue, newSelfCheck, saveSelf, applyHold, schedule, reject, spotOptions, startInspection, cancelInspection, reportFix, recheckDefect, reviewDefect, voidSelfCheck, findSelfDup, addAttachment, delAttachment, newSpotCheck, autoNa, migrateSpots, wfLock, wfCancel, wfUpload, wfVendorSign, wfClose, wfUnfreeze, pdfBlobUrl, downloadPdf, downloadAny, openAny, canPreview, fileToDataUrl, fmtSize, dataUrlSize, createDefect, isSelfDefect, finalizeSelf, finalizeSpot, setDefectStatus, saveTemplate, putMany, I, ensureKeys, baseId
+    tickOverdue, newSelfCheck, saveSelf, applyHold, schedule, reject, spotOptions, startInspection, cancelInspection, withdrawDefect, reportFix, recheckDefect, reviewDefect, voidSelfCheck, findSelfDup, addAttachment, delAttachment, newSpotCheck, autoNa, migrateSpots, wfLock, wfCancel, wfUpload, wfVendorSign, wfClose, wfUnfreeze, pdfBlobUrl, downloadPdf, downloadAny, openAny, canPreview, fileToDataUrl, fmtSize, dataUrlSize, createDefect, isSelfDefect, finalizeSelf, finalizeSpot, setDefectStatus, saveTemplate, putMany, I, ensureKeys, baseId
   };
 })();
