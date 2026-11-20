@@ -6,8 +6,8 @@
 <link rel="icon" href="images/logo.png">
 <title>捷運施工查驗系統 - 後台管理 v3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/common.css?v=20261120a">
-<link rel="stylesheet" href="css/admin.css?v=20261120a">
+<link rel="stylesheet" href="css/common.css?v=20261120d">
+<link rel="stylesheet" href="css/admin.css?v=20261120d">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -318,8 +318,8 @@
         <h4 class="mt mb">表尾備註（列印時顯示）</h4>
         <ol class="small muted" style="margin:0;padding-left:20px"><li>★ 為檢驗停留點。</li><li>檢查結果合格者註明「○」，不合格者註明「╳」，如無需檢查之項目則打「╱」。</li><li>嚴重缺失、缺失複查未能及時完成改善者，應填具「缺點改進工作指示通知／回報單」進行追蹤改善。</li></ol>
       </template>
-      <template v-if="tplTab==='defect' && edit.fillMode!=='pdf'"><div class="alert info">任一項判定「╳ 缺失」時，系統於簽認完成後自動建立缺失追蹤單，改善期限 {{ d.params.defectDueDays }} 天（可於「參數設定」調整）。<template v-if="edit.kind==='self'"><br>自主檢查表的缺失由廠商自行改善結案，不經工務所複查：勾「已完成改善」者簽認後直接結案；「未完成改善」者由廠商回報改善（說明＋照片）後結案。</template><template v-else><br>抽查紀錄表的缺失由廠商回報改善後，須經工務所複查合格才結案。</template></div>
-        <table class="table mt"><tbody><tr><td>☐ 已完成改善（缺失照片＝改善前；另附改善後照片）</td><td class="right"><span class="chip">上傳照片</span></td></tr><tr><td>☐ 未完成改善，另填「缺失改善追蹤表」</td><td class="right"><span class="chip ng">自動開立</span></td></tr></tbody></table></template>
+      <template v-if="tplTab==='defect' && edit.fillMode!=='pdf'"><div class="alert info">任一項判定「╳ 缺失」時，系統於簽認完成後自動建立缺失追蹤單，改善期限 {{ d.params.defectDueDays }} 天（可於「參數設定」調整）。<template v-if="edit.kind==='self'"><br>自主檢查表的缺失全部由廠商處理：缺失改善（多筆照片＋說明，簽名）→ 缺失複查（簽名，不合格退回改善）→ 結案，不經工務所複查。</template><template v-else><br>抽查紀錄表的缺失由廠商回報改善後，須經工務所複查合格才結案。</template></div>
+        <table class="table mt" v-if="edit.kind==='self'"><tbody><tr><td>缺失改善（照片＋說明，簽名）</td><td class="right"><span class="chip">廠商</span></td></tr><tr><td>缺失複查（合格結案／不合格退回，簽名）</td><td class="right"><span class="chip">廠商</span></td></tr></tbody></table></template>
       <template v-if="tplTab==='ver'"><table class="table"><thead><tr><th>版本</th><th>狀態</th><th>項目數</th><th>使用紀錄</th></tr></thead><tbody><tr v-for="t in tplHistory" :key="t.id"><td>v{{ t.version }}</td><td><span class="chip" :class="t.status==='published'?'ok':''">{{ t.status==='published'?'已發布':'已被取代' }}</span></td><td>{{ t.items.length }}</td><td>{{ usedCount(t) }} 張</td></tr></tbody></table></template>
     </div>
     <div class="card muted" v-else>請從左側選擇或新增範本</div>
@@ -496,16 +496,16 @@
 </div>
 <script src="lib/vue.global.prod.js"></script>
 <script src="lib/xlsx.full.min.js"></script>
-<script src="templates/export-template.js?v=20261120a"></script>
-<script src="js/drawer.js?v=20261120a"></script>
-<script src="js/sample-pdfs.js?v=20261120a"></script>
+<script src="templates/export-template.js?v=20261120d"></script>
+<script src="js/drawer.js?v=20261120d"></script>
+<script src="js/sample-pdfs.js?v=20261120d"></script>
 <script src="lib/html2canvas.min.js"></script>
 <script src="lib/jspdf.umd.min.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/pdfimport.js?v=20261120c"></script>
-<script src="js/formpdf.js?v=20261120a"></script>
-<script src="js/projbase.js?v=20261120a"></script>
-<script src="js/db.js?v=20261120a"></script>
-<script src="js/admin.js?v=20261120a"></script>
+<script src="js/pdfimport.js?v=20261120d"></script>
+<script src="js/formpdf.js?v=20261120d"></script>
+<script src="js/projbase.js?v=20261120d"></script>
+<script src="js/db.js?v=20261120d"></script>
+<script src="js/admin.js?v=20261120d"></script>
 </body>
 </html>
