@@ -127,12 +127,13 @@
       const dfs = d.defects.filter(x => x.refId === r.id), closed = dfs.filter(x => x.status === 'closed');
       const doneAll = dfs.length ? closed.length === dfs.length : (self && r.recovery === 'done'), openAny = dfs.length ? closed.length < dfs.length : (self && r.recovery === 'open');
       const lastClose = closed.sort((x, y) => (y.closedAt || 0) - (x.closedAt || 0))[0], by = lastClose ? (lastClose.closedBy || String(lastClose.note || '').replace(/\s*複查合格$/, '')) : '';
+      const rcSig = lastClose && lastClose.recheck ? lastClose.recheck.sig : null;
       const ids = dfs.filter(x => x.status !== 'closed').map(x => x.id).join('、');
       h += `<tr data-brk><td colspan="6" class="rv"><div>缺失複查結果：</div>
         <div>${box(doneAll)}已完成改善（${self ? '檢具' : '檢附'}改善前中後照片）</div>
         <div>${box(openAny)}未完成改善，填具${self ? `「不合格管制總表」第 <u>　${E(ids || '　　')}　</u> 項` : '「缺點改進工作指示通知／回報單」'}進行追蹤改善</div>
         <div>複查日期：${lastClose ? E(Q.fmtD(lastClose.closedAt)) : '　　年　　月　　日'}</div>
-        <div>複查人員職稱：${E(by)}　　　　${self ? '名簽' : '簽名'}：</div></td></tr>`;
+        <div>複查人員職稱：${E(by)}　　　　簽名：${rcSig && isImg(rcSig.img) ? `<img src="${rcSig.img}" style="height:34px;vertical-align:middle">` : ''}</div></td></tr>`;
       const notes = self ? ['檢查標準及檢查情形應具體明確（例：磚砌完成後須不透光）或量化尺寸（例：磚縫 7mm~10mm）。', '檢查結果合格者註明「○」，不合格者註明「╳」，如無需檢查之項目則打「╱」。', '嚴重缺失、缺失複查未能改善，應填具「不合格品管制總表」進行追蹤改善，本表單可先行存檔。', '本表由工地現場工程師或領班實地檢查後覈實記載簽認。']
         : ['★為檢驗停留點。', '抽查結果合格者註明「○」，不合格者註明「╳」，如無需檢查之項目則打「╱」。', '抽查標準及實際抽查情形應依設計圖說、規範及實際檢查情形，具體敘述檢查情形。', '嚴重缺失、缺失複查未能及時完成改善者，應填具「缺點改進工作指示通知／回報單」進行追蹤改善，本表單可先行存檔。', '本表由監造工務所現場人員實地抽查後覈實記載簽認。', '施工廠商施工自主檢查表將於檢查完成後，作為本抽查記錄表之附件存檔。'];
       h += `<tr data-brk><td colspan="6" class="rv"><div>備註：</div>${notes.map((x, i) => `<div class="ni">${i + 1}. ${x}</div>`).join('')}</td></tr></table>`;
