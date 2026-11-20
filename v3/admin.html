@@ -436,10 +436,10 @@
     <div class="row wrap mb" style="gap:10px"><label class="f" style="margin:0">類型</label><select v-model="bulk.pdf.res.kind" style="width:auto"><option value="self">自主檢查表</option><option value="spot">抽查紀錄表</option></select>
       <label class="f" style="margin:0">表號</label><input type="text" v-model="bulk.pdf.res.code" style="max-width:100px"><label class="f" style="margin:0">表單名稱</label><input type="text" v-model="bulk.pdf.res.name" style="max-width:300px">
       <template v-if="tplUnits.length"><label class="f" style="margin:0">建立位置</label><select v-model="bulk.pdf.res.unit" style="width:auto"><option value="" disabled>選擇單元…</option><option v-for="u in tplUnits" :key="u" :value="u">單元 {{ u }}</option></select></template></div>
-    <div class="tbl-scroll" style="max-height:340px"><table class="table"><thead><tr><th>序</th><th>階段</th><th>{{ bulk.pdf.res.kind==='spot' ? '抽查項目' : '檢查項目' }}</th><th>{{ bulk.pdf.res.kind==='spot' ? '抽查標準' : '檢查標準' }}</th><th>{{ bulk.pdf.res.kind==='spot' ? '★' : '☆' }}停留點</th><th></th></tr></thead><tbody>
-      <tr v-for="(i,k) in bulk.pdf.res.items" :key="k"><td>{{ k+1 }}</td><td><select v-model="i.stage"><option v-for="s in pdfStageOpts" :key="s.key" :value="s.key">{{ s.name }}</option></select></td><td style="min-width:150px"><input type="text" v-model="i.name"></td><td style="min-width:220px"><textarea rows="2" v-model="i.std"></textarea></td><td><input type="checkbox" v-model="i.hold"></td><td><button class="btn sm danger" @click="bulk.pdf.res.items.splice(k,1)">刪</button></td></tr>
-      <tr v-if="!bulk.pdf.res.items.length"><td colspan="6" class="muted">沒有辨識到檢查項目</td></tr></tbody></table></div>
-    <div class="row mt"><span class="grow muted small">共 {{ bulk.pdf.res.items.length }} 項；項目一律匯入為「實際檢查情形：文字」，階段預設「施工中」，可逐項調整。</span><button class="btn primary" :disabled="!bulk.pdf.res.items.length" @click="doPdfImport">匯入為表單範本</button></div>
+    <div class="tbl-scroll" style="max-height:340px"><table class="table"><thead><tr><th>序</th><th>階段</th><th>{{ bulk.pdf.res.kind==='spot' ? '抽查項目' : '檢查項目' }}</th><th>{{ bulk.pdf.res.kind==='spot' ? '抽查標準' : '檢查標準' }}</th><th>{{ bulk.pdf.res.kind==='spot' ? '實際抽查情形（預設文字）' : '實際檢查情形（預設文字）' }}</th><th>{{ bulk.pdf.res.kind==='spot' ? '★' : '☆' }}停留點</th><th></th></tr></thead><tbody>
+      <tr v-for="(i,k) in bulk.pdf.res.items" :key="k"><td>{{ k+1 }}</td><td><select v-model="i.stage"><option v-for="s in pdfStageOpts" :key="s.key" :value="s.key">{{ s.name }}</option></select></td><td style="min-width:150px"><input type="text" v-model="i.name"></td><td style="min-width:220px"><textarea rows="2" v-model="i.std"></textarea></td><td style="min-width:200px"><textarea rows="2" v-model="i.defText" placeholder="空白＝現場自行填寫"></textarea></td><td><input type="checkbox" v-model="i.hold"></td><td><button class="btn sm danger" @click="bulk.pdf.res.items.splice(k,1)">刪</button></td></tr>
+      <tr v-if="!bulk.pdf.res.items.length"><td colspan="7" class="muted">沒有辨識到檢查項目</td></tr></tbody></table></div>
+    <div class="row mt"><span class="grow muted small">共 {{ bulk.pdf.res.items.length }} 項；項目一律匯入為「實際檢查情形：文字」（PDF 上的填寫欄位文字帶入預設文字），階段依 PDF 的施工前／中／後判斷，可逐項調整。</span><button class="btn primary" :disabled="!bulk.pdf.res.items.length" @click="doPdfImport">匯入為表單範本</button></div>
   </template></div></div>
 <div class="modal-bg" v-if="stageForm" @click.self="stageForm=null"><div class="modal"><h3>階段設定 → {{ edit && edit.name }}</h3>
   <div class="alert info mb">階段決定現場填寫時的頁籤與順序：前一個階段的項目都判定完，才能填下一個階段。可改名、新增、刪除、調整順序（例：挖掘前／挖掘中／挖掘後）。已有填寫紀錄的表單，儲存後會另存新版本，舊紀錄維持原本的階段。</div>
@@ -502,7 +502,7 @@
 <script src="lib/html2canvas.min.js"></script>
 <script src="lib/jspdf.umd.min.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/pdfimport.js?v=20261120a"></script>
+<script src="js/pdfimport.js?v=20261120b"></script>
 <script src="js/formpdf.js?v=20261120a"></script>
 <script src="js/projbase.js?v=20261120a"></script>
 <script src="js/db.js?v=20261120a"></script>
