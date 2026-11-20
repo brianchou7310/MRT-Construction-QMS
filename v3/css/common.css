@@ -69,3 +69,4 @@ label.f { display: block; font-size: 12px; color: var(--gray); margin-bottom: 3p
 .photo { background: #d3d9e3; color: #334155; font-size: 11px; display: flex; align-items: flex-end; border-radius: 6px; overflow: hidden; position: relative; }
 .photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .photo span { position: absolute; left: 6px; bottom: 3px; }
+.modal > * { flex-shrink: 0; }   /* 內容超過視窗高度時捲動，不要把欄位壓扁 */
