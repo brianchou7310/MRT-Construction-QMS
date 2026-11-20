@@ -296,7 +296,7 @@
       if (sc) { sp.scId = sc.id; await put('spotChecks', sp); }
     }
   }
-  async function postSeed() { await clearRecords(); await migrateNoNumber(); await migrateKeys(); await migrateReqSub(); await migrateScLinks(); await seedLinked(); await migrateUnits(); await migrateUnitsWall(); await migrateUnitRule(); await migrateDocForms(); await migrateCalcFields(); await migrateSelfDefects(); }
+  async function postSeed() { await clearRecords(); await migrateNoNumber(); await migrateKeys(); await migrateReqSub(); await migrateScLinks(); await seedLinked(); await migrateUnits(); await migrateUnitsWall(); await migrateUnitRule(); await migrateDocForms(); await migrateCalcFields(); }
   // 分項工程有設定單元時，表單不可掛在分項工程層：舊資料的分項層表單移到該分項工程的第一個單元
   // 移除「數值」判定類型：既有範本的數值項目改為選項，並清除數值欄位
   // 一次性清除：自主檢查、停留點會驗、抽查紀錄、缺失追蹤的資料全部移除（只保留標案、分項工程、表單範本、參考文件、帳號等基本資料），編號重新起算
@@ -417,8 +417,12 @@
     }
   }
 
+  // 同標案、工項、單元、表號只能填寫一次（已作廢者不計）；要重填須先作廢原表單
+  async function findSelfDup({ tenderId, subworkId, unit, code }) { return (await all('selfChecks')).find(s => !s.voided && s.tenderId === tenderId && s.subworkId === subworkId && (s.unit || '') === (unit || '') && s.templateCode === code) || null; }
   async function newSelfCheck({ templateId, unit, location, drawingNo }) {
     const tpl = await get('templates', templateId), tender = await get('tenders', tpl.tenderId), sw = await get('subworks', tpl.subworkId);
+    const dup = await findSelfDup({ tenderId: tender.id, subworkId: sw.id, unit, code: tpl.code });
+    if (dup) throw new Error(`同標案、工項、單元、表號只能填寫一次（已有 ${dup.id}）`);
     const n = await counter('sc'); const d = new Date();
     const sc = {
       id: `SC-${tender.code}-${String(d.getFullYear()).slice(2)}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(n, 3)}`,
@@ -431,6 +435,25 @@
     await put('selfChecks', sc); return sc;
   }
   async function saveSelf(sc) { sc.updatedAt = Date.now(); return put('selfChecks', sc); }
+  // 作廢自主檢查表：讓出「同標案、工項、單元、表號」的填寫名額；其未結案缺失一併結案
+  async function voidSelfCheck(id, reason, by) {
+    const sc = await get('selfChecks', id); if (!sc) throw new Error('找不到表單'); if (sc.voided) throw new Error('此表單已作廢');
+    if (!(reason || '').trim()) throw new Error('請填寫作廢原因');
+    sc.voided = { at: Date.now(), by, reason: reason.trim() }; await saveSelf(sc);
+    for (const df of (await all('defects')).filter(x => x.scId === id && x.status !== 'closed')) { df.status = 'closed'; df.closedAt = Date.now(); df.closedBy = by; df.note = `表單 ${id} 已作廢，缺失一併結案`; (df.history = df.history || []).push({ at: Date.now(), text: df.note }); await put('defects', df); }
+    for (const r of (await all('requests')).filter(x => x.scId === id && ['pending', 'scheduled'].includes(x.status))) { r.status = 'rejected'; r.rejectReason = '自主檢查表已作廢'; r.notices.push({ at: Date.now(), text: '自主檢查表已作廢，會驗申請自動取消', level: 'danger' }); await put('requests', r); }
+    return sc;
+  }
+  // 附件：廠商與局內人員皆可上傳；直接對資料庫的最新紀錄增刪，避免兩邊同時編輯互相覆蓋
+  const ATT_STORE = { self: 'selfChecks', spot: 'spotChecks' };
+  async function addAttachment(kind, id, att) {
+    const rec = await get(ATT_STORE[kind], id); if (!rec) throw new Error('找不到表單');
+    att.id = att.id || uid('AT'); (rec.attachments = rec.attachments || []).push(att); await put(ATT_STORE[kind], rec); return rec.attachments;
+  }
+  async function delAttachment(kind, id, attId) {
+    const rec = await get(ATT_STORE[kind], id); if (!rec) throw new Error('找不到表單');
+    rec.attachments = (rec.attachments || []).filter(a => a.id !== attId); await put(ATT_STORE[kind], rec); return rec.attachments;
+  }
 
   async function applyHold(scId, itemNo, { scheduledAt, reason, location, applicant }) {
     const sc = await get('selfChecks', scId), tpl = await get('templates', sc.templateId), it = tpl.items.find(i => i.no === itemNo), p = await getParams();
@@ -525,9 +548,7 @@
     for (const it of tpl.items) {
       const a = sc.answers[it.no] || {};
       if (a.judge === 'ng' && !a.defectId) {
-        const df = await createDefect({ tenderCode: sc.tenderCode, title: it.name, location: `${sc.tenderCode}｜${sc.subworkName} ${sc.unit}`, source: '自主檢查', refId: sc.id, itemNo: it.no, subworkId: sc.subworkId, scId: sc.id, scItemNo: it.no });
-        // 自檢表已勾選「已完成改善」：自主檢查的缺失不經工務所複查，直接結案
-        if (sc.recovery === 'done') { const by = (sc.signatures.site || {}).name || '廠商'; df.status = 'closed'; df.closedAt = Date.now(); df.closedBy = by; df.note = '自主檢查表勾選「已完成改善」，廠商自行結案'; df.fix = { note: '廠商於自主檢查表勾選「已完成改善」', photos: (a.fixPhotos || []).slice(0, 6), at: Date.now(), by }; (df.history = df.history || []).push({ at: Date.now(), text: df.note }); await put('defects', df); }
+        await createDefect({ tenderCode: sc.tenderCode, title: it.name, location: `${sc.tenderCode}｜${sc.subworkName} ${sc.unit}`, source: '自主檢查', refId: sc.id, itemNo: it.no, subworkId: sc.subworkId, scId: sc.id, scItemNo: it.no });
       }
     }
     return sc;
@@ -614,19 +635,41 @@
     }
   }
 
-  // 缺失：廠商回報改善（須說明＋照片）→ 工務所複查（合格結案／退回重新改善）
+  // 缺失流程
+  //   自主檢查表：有缺失(廠商) → 缺失改善(廠商，多筆照片＋說明，簽名) → 缺失複查(廠商，簽名；不合格退回改善) → 結案
+  //   抽查記錄表：廠商回報改善 → 工務所複查（合格結案／退回）
   const isSelfDefect = df => /^自主檢查/.test(df.source || '');
-  async function reportFix(id, { note, photos, by }) {
+  async function reportFix(id, { note, photos, items, by, sig }) {
     const df = await get('defects', id); if (df.status !== 'open') throw new Error('此缺失目前不是「待改善」狀態');
+    if (isSelfDefect(df)) {
+      items = (items || []).filter(x => x && (x.photo || (x.desc || '').trim()));
+      if (!items.length) throw new Error('請至少新增 1 筆改善照片與說明');
+      const bad = items.findIndex(x => !x.photo || !(x.desc || '').trim()); if (bad >= 0) throw new Error(`第 ${bad + 1} 筆須同時有照片與說明`);
+      if (!sig) throw new Error('請簽名後送出');
+      items = items.map(x => ({ photo: x.photo, desc: x.desc.trim() }));
+      df.fix = { items, photos: items.map(x => x.photo), note: items.map((x, k) => `${k + 1}. ${x.desc}`).join('\n'), at: Date.now(), by, sig };
+      df.status = 'review'; df.recheck = null;
+      (df.history = df.history || []).push({ at: Date.now(), text: `${by} 完成缺失改善（${items.length} 筆照片與說明）並簽名，待廠商缺失複查` });
+      await put('defects', df); return df;
+    }
     if (!(note || '').trim()) throw new Error('請填寫改善說明'); if (!(photos || []).length) throw new Error('請至少附 1 張改善後照片');
     df.fix = { note: note.trim(), photos, at: Date.now(), by }; (df.history = df.history || []).push({ at: Date.now(), text: `${by} 回報改善完成：${note.trim()}` });
-    // 自主檢查的缺失由廠商自行改善結案，不經工務所複查；抽查的缺失才轉待複查
-    if (isSelfDefect(df)) { df.status = 'closed'; df.closedAt = Date.now(); df.closedBy = by; df.note = `${by} 改善完成，自行結案`; df.history.push({ at: Date.now(), text: '自主檢查缺失：廠商改善完成，自行結案（不經工務所複查）' }); }
-    else df.status = 'review';
+    df.status = 'review';
+    await put('defects', df); return df;
+  }
+  // 自主檢查缺失的複查（廠商）：合格 → 結案；不合格 → 退回缺失改善
+  async function recheckDefect(id, { pass, note, by, sig }) {
+    const df = await get('defects', id); if (!isSelfDefect(df)) throw new Error('抽查缺失由工務所複查');
+    if (df.status !== 'review') throw new Error('此缺失尚未完成改善，不可複查');
+    if (!sig) throw new Error('請簽名後送出'); if (!pass && !(note || '').trim()) throw new Error('複查不合格請填寫原因');
+    df.recheck = { pass: !!pass, note: (note || '').trim(), at: Date.now(), by, sig };
+    (df.history = df.history || []).push({ at: Date.now(), text: pass ? `${by} 缺失複查合格並簽名，結案` : `${by} 缺失複查不合格並簽名，退回重新改善：${df.recheck.note}` });
+    if (pass) { df.status = 'closed'; df.closedAt = Date.now(); df.closedBy = by; df.note = `${by} 缺失複查合格`; }
+    else { df.status = 'open'; df.lastFix = df.fix; df.fix = null; df.note = '退回：' + df.recheck.note; }
     await put('defects', df); return df;
   }
   async function reviewDefect(id, pass, reason, by) {
-    const df = await get('defects', id); if (isSelfDefect(df)) throw new Error('自主檢查的缺失由廠商自行結案，不需工務所複查');
+    const df = await get('defects', id); if (isSelfDefect(df)) throw new Error('自主檢查的缺失由廠商自行複查，不需工務所複查');
     if (df.status !== 'review') throw new Error('廠商尚未回報改善，不可複查結案');
     if (!pass && !(reason || '').trim()) throw new Error('請填寫退回原因');
     (df.history = df.history || []).push({ at: Date.now(), text: pass ? `${by} 複查合格，結案` : `${by} 複查不合格，退回重新改善：${reason.trim()}` });
@@ -655,6 +698,6 @@
     fmtDT, fmtD, fmtFull, toLocalInput, fromLocalInput, nextHour, atDay, relTime, uid, clone, hashOf,
     stageItems, stageDone, lockReason, holdState,
     STEP_TEXT, PROJ_TYPE_TEXT, DEPTS, rocDate, sortTenders, tenderFromProj, tLabel, tenderInDept, projKey, projOptions,
-    tickOverdue, newSelfCheck, saveSelf, applyHold, schedule, reject, spotOptions, startInspection, cancelInspection, reportFix, reviewDefect, newSpotCheck, autoNa, migrateSpots, wfLock, wfCancel, wfUpload, wfVendorSign, wfClose, wfUnfreeze, pdfBlobUrl, downloadPdf, downloadAny, openAny, canPreview, fileToDataUrl, fmtSize, dataUrlSize, createDefect, isSelfDefect, finalizeSelf, finalizeSpot, setDefectStatus, saveTemplate, putMany, I, ensureKeys, baseId
+    tickOverdue, newSelfCheck, saveSelf, applyHold, schedule, reject, spotOptions, startInspection, cancelInspection, reportFix, recheckDefect, reviewDefect, voidSelfCheck, findSelfDup, addAttachment, delAttachment, newSpotCheck, autoNa, migrateSpots, wfLock, wfCancel, wfUpload, wfVendorSign, wfClose, wfUnfreeze, pdfBlobUrl, downloadPdf, downloadAny, openAny, canPreview, fileToDataUrl, fmtSize, dataUrlSize, createDefect, isSelfDefect, finalizeSelf, finalizeSpot, setDefectStatus, saveTemplate, putMany, I, ensureKeys, baseId
   };
 })();

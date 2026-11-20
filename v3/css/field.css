@@ -132,3 +132,12 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
 @media (max-width: 600px) { .filters select { flex: 1 1 45%; max-width: none; min-width: 0; } }
 .isig { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 6px 10px; border: 1px dashed var(--line); border-radius: 8px; background: #fbfcfd; } .isig img { height: 40px; max-width: 160px; background: #fff; border-radius: 4px; }
 .aibox { margin-top: 8px; padding: 8px 10px; border: 1px solid #cfe3f5; border-radius: 8px; background: #f3f9ff; } .aibox .aireason { margin: 6px 0 8px; padding-left: 4px; list-style: none; font-size: 13px; line-height: 1.6; }
+
+/* 上傳附件、缺失改善 */
+.attrow { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.attrow:first-of-type { margin-top: 10px; }
+.attth { width: 56px; height: 56px; border-radius: 8px; background: #e2e8f0; display: grid; place-items: center; overflow: hidden; flex: none; cursor: pointer; color: #475569; font-size: 12px; }
+.attth img { width: 100%; height: 100%; object-fit: cover; }
+.defitem { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-top: 8px; background: #fafcfd; }
+.defitem .photos { margin: 8px 0; }
+.steps span.on { font-weight: 700; color: var(--primary-d); }
