@@ -505,7 +505,7 @@ createApp({
       if (tplUnits.value.length && !r.unit) return toast('此分項工程已設定單元，表單必須掛在單元下，請選擇建立位置', true);
       const unit = r.unit || '', old = d.templates.find(t => t.subworkId === sw.id && t.kind === r.kind && t.code === code && (t.unitNo || '') === unit && t.status === 'published' && t.fillMode !== 'pdf');
       if (d.templates.some(t => t.subworkId === sw.id && t.kind === r.kind && t.code === code && (t.unitNo || '') === unit && t.status === 'published' && t.fillMode === 'pdf')) return toast(`${unit ? '單元 ' + unit : '此分項工程'}已有同表號 ${code} 的「空白範本（PDF）」表單，請改用其他表號或建立位置`, true);
-      const items = r.items.map((i, k) => Q.I(k + 1, i.stage, i.name.trim(), (i.std || '').trim(), { type: 'text', hold: !!i.hold, photo: false, ref: '', linked: '', defText: '' }));
+      const items = r.items.map((i, k) => Q.I(k + 1, i.stage, i.name.trim(), (i.std || '').trim(), { type: 'text', hold: !!i.hold, photo: false, ref: '', linked: '', defText: (i.defText || '').trim() }));
       const base = { tenderId: sw.tenderId, subworkId: sw.id, unitNo: unit, kind: r.kind, code, name, source: `匯入：PDF「${p.file.name}」（AI 分析）`, fillMode: 'online', stages: Q.clone(Q.DEF_STAGES), items, order: old ? old.order : d.templates.filter(t => t.subworkId === sw.id && t.kind === r.kind).length + 1, pairedSelf: old ? (old.pairedSelf || '') : '', original: p.file };
       finalizeItems(base); let t, how;
       if (!old) { t = Object.assign({ id: Q.uid('TP-'), version: 1, status: 'published', used: 0 }, base); await Q.put('templates', Q.ensureKeys(t)); how = '新增'; }
