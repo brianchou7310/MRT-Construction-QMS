@@ -143,6 +143,20 @@
       h += `<table class="sg" data-brk><tr>${who.map(([k, l]) => { const g = sig[k] || {}; return `<td class="sl">${l}：</td><td class="sv">${isImg(g.img) ? `<img src="${g.img}">` : ''}<div>${E(g.name || '')}</div>${g.at ? `<div class="mut">${E(Q.fmtFull(g.at))}</div>` : ''}</td>`; }).join('')}</tr></table>`;
       if (self) h += `<div class="mut" data-brk>註：檢查人員簽核並加註檢查日期及時間。</div>`;
       h += `<div class="meta" data-brk>紀錄編號 ${E(r.id)}・表單版本 v${E(r.templateVer)}${self && r.drawingNo ? `・施工圖核准文號 ${E(r.drawingNo)}` : ''}・${r.status === 'signed' ? '已簽認' : '填寫中（草稿）'}${r.hash ? `・內容雜湊 ${E(r.hash)}` : ''}・${E(Q.fmtFull(Date.now()))} 由捷運施工查驗系統產生</div>`;
+      // 缺失改善與複查紀錄：改善內容（照片＋說明）與簽名、複查結果與簽名
+      const fixed = dfs.filter(x => x.fix || x.recheck || x.lastFix);
+      if (fixed.length) {
+        const sg = (g, who) => g && isImg(g.img) ? `<div style="margin-top:4px;font-size:10px">${who}：<img src="${g.img}" style="height:30px;vertical-align:middle"> ${E(g.name || '')}　${g.at ? E(Q.fmtFull(g.at)) : ''}</div>` : '';
+        const imgs = f => (f.items || (f.photos || []).map(u => ({ photo: u, desc: '' }))).map((it, k) => `<div style="display:inline-block;vertical-align:top;width:170px;margin:4px 8px 4px 0;font-size:10px">${isImg(it.photo) ? `<img src="${it.photo}" style="width:170px;height:120px;object-fit:cover;border:1px solid #cbd5e1">` : ''}<div>${k + 1}. ${E(it.desc || '')}</div></div>`).join('');
+        h += `<div class="ttl" data-brk>附件：缺失改善與複查紀錄（${fixed.length} 筆缺失）</div>`;
+        fixed.forEach(df => {
+          const st = df.status === 'closed' ? '已結案' : df.status === 'review' ? '待複查' : '待改善', f = df.fix || df.lastFix;
+          h += `<div data-brk style="margin:6px 0 10px;padding:6px 8px;border:1px solid #cbd5e1;font-size:11px"><div><b>缺失 ${E(df.id)}：${E(df.title)}</b>（${st}）</div>`;
+          if (f) h += `<div style="margin-top:4px">缺失改善（${E(f.by || '')}・${f.at ? E(Q.fmtFull(f.at)) : ''}）${df.fix ? '' : '〔已退回，內容為上一次改善〕'}：</div><div>${imgs(f)}</div>${sg(f.sig, '改善人員簽名')}`;
+          if (df.recheck) h += `<div style="margin-top:6px">缺失複查（${E(df.recheck.by || '')}・${E(Q.fmtFull(df.recheck.at))}）：<b>${df.recheck.pass ? '合格' : '不合格，退回改善'}</b>${df.recheck.note ? '　' + E(df.recheck.note) : ''}</div>${sg(df.recheck.sig, '複查人員簽名')}`;
+          h += `</div>`;
+        });
+      }
       if (photos.length) {
         h += `<div class="ttl" data-brk>附件：照片紀錄（${photos.length} 張）</div>`;
         for (let i = 0; i < photos.length; i += 4) h += `<div data-brk>${photos.slice(i, i + 4).map(p => `<div class="ph"><img src="${p.u}"><div style="width:150px">${E(p.cap)}</div></div>`).join('')}</div>`;

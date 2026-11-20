@@ -112,7 +112,7 @@ createApp({
     const judgeText = j => j ? Q.JUDGE[j] : '—';
     const spotCount = (sp, j) => Object.values(sp.answers || {}).filter(a => a.judge === j).length;
     const defCls = x => x.status === 'closed' ? 'ok' : x.due < now.value ? 'ng' : x.status === 'review' ? 'warn' : 'blue';
-    const defText = x => x.status === 'closed' ? '已結案' : x.status === 'review' ? '待複查' : x.due < now.value ? `逾期 ${Math.ceil((now.value - x.due) / Q.D)} 天` : '改善中';
+    const defText = x => x.status === 'closed' ? '已結案' : x.status === 'review' ? (Q.isSelfDefect(x) ? '待廠商複查' : '待複查') : x.due < now.value ? `逾期 ${Math.ceil((now.value - x.due) / Q.D)} 天` : '改善中';
     const defTab = ref('open');
     const defList = computed(() => ft(d.defects).filter(x => defTab.value === 'all' || (defTab.value === 'open' ? x.status !== 'closed' : x.status === 'closed')).sort((a, b) => a.due - b.due));
     // 缺失複查：須廠商回報改善後才可結案，可退回重新改善
@@ -360,7 +360,7 @@ createApp({
     const bulk = ref(null);
     const BULK_TYPE = { 選項: 'option', 照片: 'photo', 文字: 'text', 連結表單: 'linked' };
     const BULK_KIND = { 自主檢查表: 'self', 抽查紀錄表: 'spot' };
-    function openBulk() { bulk.value = { fileName: '', err: '', units: [], forms: [], loose: [], sel: null, done: null }; }
+    function openBulk() { bulk.value = { fileName: '', err: '', units: [], forms: [], loose: [], sel: null, done: null, pdf: { busy: false, step: '', err: '', res: null, file: null, done: null } }; }
     function bulkSheet(wb, name) {
       const ws = wb.Sheets[name]; if (!ws) return null;
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' }); if (!rows.length) return [];
@@ -486,6 +486,41 @@ createApp({
       toast(`匯入完成：新增 ${res.add} 張、更新 ${res.upd} 張、另存新版 ${res.ver} 張${res.units ? `，新增單元 ${res.units} 個` : ''}`);
       tplPickFirst();
     }
+
+    /* ---------- 上傳 PDF（自主檢查表／抽查記錄表）→ 模擬 AI 分析 → 預覽 → 匯入成表單範本；PDF 自動成為「原始表單」 ---------- */
+    async function onBulkPdf(e) {
+      const file = e.target.files[0]; e.target.value = ''; if (!file) return;
+      const p = bulk.value.pdf; p.err = ''; p.res = null; p.done = null;
+      if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') { p.err = '請選擇 PDF 檔案'; return; }
+      if (file.size > 10 * 1048576) { p.err = 'PDF 檔案過大（上限 10 MB）'; return; }
+      p.busy = true; p.step = '讀取 PDF 檔案…';
+      try { const res = await PdfImport.analyze(file, t => { p.step = t; }); res.unit = tplUnits.value.includes(tplUnit.value) ? tplUnit.value : ''; p.file = { name: file.name, size: file.size, data: await Q.fileToDataUrl(file), at: Date.now() }; p.res = res; }
+      catch (err) { p.err = err.message || 'AI 分析失敗'; } finally { p.busy = false; }
+    }
+    const pdfStageOpts = computed(() => Q.DEF_STAGES);
+    async function doPdfImport() {
+      const p = bulk.value.pdf, r = p.res, sw = swById(tplSw.value); if (!r) return;
+      const code = r.code.trim(), name = r.name.trim(); r.items = r.items.filter(i => i.name.trim());
+      if (!name) return toast('請輸入表單名稱', true); if (!code) return toast('請輸入表號', true); if (!r.items.length) return toast('沒有可匯入的檢查項目', true);
+      if (tplUnits.value.length && !r.unit) return toast('此分項工程已設定單元，表單必須掛在單元下，請選擇建立位置', true);
+      const unit = r.unit || '', old = d.templates.find(t => t.subworkId === sw.id && t.kind === r.kind && t.code === code && (t.unitNo || '') === unit && t.status === 'published' && t.fillMode !== 'pdf');
+      if (d.templates.some(t => t.subworkId === sw.id && t.kind === r.kind && t.code === code && (t.unitNo || '') === unit && t.status === 'published' && t.fillMode === 'pdf')) return toast(`${unit ? '單元 ' + unit : '此分項工程'}已有同表號 ${code} 的「空白範本（PDF）」表單，請改用其他表號或建立位置`, true);
+      const items = r.items.map((i, k) => Q.I(k + 1, i.stage, i.name.trim(), (i.std || '').trim(), { type: 'text', hold: !!i.hold, photo: false, ref: '', linked: '', defText: '' }));
+      const base = { tenderId: sw.tenderId, subworkId: sw.id, unitNo: unit, kind: r.kind, code, name, source: `匯入：PDF「${p.file.name}」（AI 分析）`, fillMode: 'online', stages: Q.clone(Q.DEF_STAGES), items, order: old ? old.order : d.templates.filter(t => t.subworkId === sw.id && t.kind === r.kind).length + 1, pairedSelf: old ? (old.pairedSelf || '') : '', original: p.file };
+      finalizeItems(base); let t, how;
+      if (!old) { t = Object.assign({ id: Q.uid('TP-'), version: 1, status: 'published', used: 0 }, base); await Q.put('templates', Q.ensureKeys(t)); how = '新增'; }
+      else if (usedCount(old)) { t = await Q.saveTemplate(Object.assign(Q.clone(old), base), true); how = `另存新版 v${t.version}`; }
+      else { t = Object.assign(Q.clone(old), base); await Q.put('templates', Q.ensureKeys(t)); how = '更新'; }
+      if (unit) tplUnit.value = unit; await load(); p.done = { how, id: t.id, name }; pickTpl(d.templates.find(x => x.id === t.id) || t);
+      toast(`已${how}表單範本「${name}」，PDF 已設為原始表單`);
+    }
+    // 原始表單：範本右側可上傳／下載（任意檔案類型），透過 PDF 匯入時自動帶入
+    async function onEditOriginal(e) {
+      const file = e.target.files[0]; e.target.value = ''; if (!file) return;
+      if (file.size > 10 * 1048576) return toast('檔案過大（上限 10 MB）', true);
+      edit.value.original = { name: file.name, size: file.size, data: await Q.fileToDataUrl(file), at: Date.now() }; toast('已選擇原始表單，按「儲存」後生效');
+    }
+    function delOriginal() { edit.value.original = null; toast('已移除原始表單，按「儲存」後生效'); }
     // 匯出目前內容：本分項工程全部線上表單（自主檢查表＋抽查紀錄表），格式與匯入範本相同，可修改後整批匯入
     // 同表號建在多個單元時，還原成「共用＋單元覆蓋」：第一個單元的內容當共用列，其他單元只寫差異（覆蓋／新增／排除）
     function exportSubwork() {
@@ -905,7 +940,7 @@ createApp({
       progTender, progFilter, progRows, progCount, holdTab, holdTabs, holdCount, holdList, holdByDate, selReqId, selReq, calView, sched, lockedAfter, hoursBefore, doSchedule, doReject, doStart, doCancel,
       addCalc, calcOf, pairOpts, pairCode, srcOf, pairItems, setSrc, srcDup, showSC, showSP, itemsOf, reqText, judgeText, spotCount, defCls, defText, defTab, defList, defAct, defShow, defReview,
       selTenderId, selTender, treeGroups, tenderRefs, delTender, tDragId, tDragOver, tDragStart, tDragEnd, tDrop, grpOpen, grpIsOpen, treeOpen, swPick, treeAll, dept, deptName, setDept, allTenders, pick, pickData, pickSel, pickGroupAll, doPick, pickTender, pickSw, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, swForm, saveSw, moveSw, delSw, newTender, swImp, openSwImp, downloadSwSample, onSwFile, swImpOk, swImpBad, doSwImp,
-      tplSw, tplUnit, tplUnits, unitForm, unitTplN, openUnitForm, addUnit, delUnit, swGroups, selTplId, tplTab, edit, previewOn, tplList, tplHistory, pickTpl, editUsed, editStages, isPdf, newTplForm, onNewPdf, onEditPdf, createTpl, pdfUrl, downloadFile, wfCls, readPdf, TYPES, holdN, addItem, delItem, moveItem, onType, saveEdit, delTpl, syncFromSelf, bulk, openBulk, onBulkFile, bulkOk, bulkView, doBulk, downloadBulkSample, exportSubwork, stageForm, stageItemN, openStageForm, stageAdd, stageMove, stageDel, stagePreset, applyStages, STAGE_PRESETS, newTpl, exportXlsx, dragId, dragOver, onDragStart, onDragEnd, onDrop, itemImp, openItemImp, onItemFile, itemImpForm, itemImpView, itemImpErrs, doItemImp,
+      tplSw, tplUnit, tplUnits, onBulkPdf, doPdfImport, pdfStageOpts, onEditOriginal, delOriginal, unitForm, unitTplN, openUnitForm, addUnit, delUnit, swGroups, selTplId, tplTab, edit, previewOn, tplList, tplHistory, pickTpl, editUsed, editStages, isPdf, newTplForm, onNewPdf, onEditPdf, createTpl, pdfUrl, downloadFile, wfCls, readPdf, TYPES, holdN, addItem, delItem, moveItem, onType, saveEdit, delTpl, syncFromSelf, bulk, openBulk, onBulkFile, bulkOk, bulkView, doBulk, downloadBulkSample, exportSubwork, stageForm, stageItemN, openStageForm, stageAdd, stageMove, stageDel, stagePreset, applyStages, STAGE_PRESETS, newTpl, exportXlsx, dragId, dragOver, onDragStart, onDragEnd, onDrop, itemImp, openItemImp, onItemFile, itemImpForm, itemImpView, itemImpErrs, doItemImp,
       linkOpts, adminUser, swText, projOf, projOpts, projText, tendersOfProj, qf, qfOpts, qfList, qfSet, qfClear, ex, exOpts, exList, exRows, exSet, exClear, downloadRec, downloadBatch, recCode,
       docForm, userForm, docProj, docList, editProj, refDocs, saveDoc, newDoc, editDoc, onDocFile, saveUser, delRow, saveParams, resetDemo, navItems, navTree, collapsed, toggleGroup, titles, todayStr
     };
