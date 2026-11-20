@@ -235,11 +235,11 @@ createApp({
       const lk = lockOf(it); if (lk) return toast('項目已鎖定：' + lk, true);
       if (!['none', 'failed'].includes(hstate(it))) return toast('已申請會驗，判定不可更改', true);
       const a = ensure(it.no);
-      if (a.judge === j) { a.judge = null; delete a.sig; queueSave(); return; }
+      if (a.judge === j) { a.judge = null; delete a.sig; dropDefect(a, it); queueSave(); return; }
       if (j === 'ok') {
         if (it.photo && !a.photos.length) return toast('此項必須拍照後才能判定 ○', true);
       }
-      const prev = a.judge; a.judge = j; delete a.sig; queueSave();
+      const prev = a.judge; a.judge = j; delete a.sig; if (j !== 'ng') dropDefect(a, it); queueSave();
       if (j !== 'na') openItemSign('self', it);   // 每一項檢查完，檢查人員即簽名
       if (it.hold && j === 'ng' && !a.defectId) {
         // 停留點判缺失：立即建立缺失追蹤；改善後重新判定 ○ 再申請會驗，會驗合格時缺失自動結案
@@ -249,7 +249,7 @@ createApp({
       } else if (it.hold && j === 'ok' && prev === 'ng' && a.defectId) {
         a.fixedAt = Date.now(); Q.setDefectStatus(a.defectId, 'closed', '廠商改善後重新判定 ○，自行結案').then(load);
         toast('已改善並重新判定 ○，缺失已結案；請申請會驗');
-      } else if (j === 'ng') toast('已判定缺失；送出後系統將自動建立缺失追蹤');
+      } else if (j === 'ng') toast('已判定缺失；檢查人員簽名後系統即開立缺失單');
       if (wide.value && j && curTpl.value) { /* 判定後不自動跳項，讓使用者可申請會驗 */ }
     }
     function addPhoto(it) { if (!itemEditable(it)) return toast('此項目目前不可編輯', true); pickPhoto(`${cur.value.tenderCode}・${where(cur.value.unit, cur.value.subworkName)}・${it.name}`, url => { ensure(it.no).photos.push(url); queueSave(); }); }
@@ -359,9 +359,9 @@ createApp({
     function spSetStage(st) { spStage.value = st; if (st === 'att') return; const l = Q.stageItems(spTpl.value, st); const f = l.find(i => i.no === sp.value.focusNo) || l.find(i => !spA(i.no).judge) || l[0]; if (f) spItemNo.value = f.no; }
     function spJudge(it, j) {
       if (!spEditable.value) return toast(isSup.value ? '表單已簽認，不可修改' : '抽查紀錄由監造人員填寫（請於「我的」切換為監造）', true);
-      const a = sp.value.answers[it.no]; if (a.judge === j) { a.judge = null; delete a.sig; spSave(); return; }
+      const a = sp.value.answers[it.no]; if (a.judge === j) { a.judge = null; delete a.sig; dropDefect(a, it); spSave(); return; }
       if (j === 'ok' && it.photo && !a.photos.length) return toast('此項必須拍照後才能判定 ○', true);
-      a.judge = j; delete a.sig; spSave(); if (j === 'ng') toast('已判定缺失；簽認後系統將自動建立缺失追蹤');
+      a.judge = j; delete a.sig; if (j !== 'ng') dropDefect(a, it); spSave(); if (j === 'ng') toast('已判定缺失；抽查人員簽名後系統即開立缺失單');
       if (j !== 'na') openItemSign('spot', it);   // 每一項抽查完，抽查人員即簽名
     }
     const spLabel = it => `${sp.value.tenderCode}・${where(sp.value.unit, sp.value.subworkName)}・${it.name}`;
@@ -515,6 +515,15 @@ createApp({
       a.ai = { judge: r.judge, reasons: r.reasons, text, at: Date.now() }; if (kind === 'self') queueSave(); else spSave();
     }
     function applyAi(kind, it) { const rec = kind === 'self' ? cur.value : sp.value, a = rec.answers[it.no]; if (!a || !a.ai || a.judge === a.ai.judge) return; kind === 'self' ? setJudge(it, a.ai.judge) : spJudge(it, a.ai.judge); }
+    // 判定 ╳ 並簽名後立即開立缺失單；判定改掉（或取消）就撤回
+    async function openDefectOnSign(kind, no, a) {
+      if (a.judge !== 'ng' || a.defectId) return; const rec = kind === 'self' ? cur.value : sp.value, tpl = kind === 'self' ? curTpl.value : spTpl.value, it = tpl.items.find(i => i.no === no);
+      const df = kind === 'self'
+        ? await Q.createDefect({ tenderCode: rec.tenderCode, title: it.name, location: `${rec.tenderCode}｜${rec.subworkName} ${rec.unit}`, source: '自主檢查', refId: rec.id, itemNo: it.no, subworkId: rec.subworkId, scId: rec.id, scItemNo: it.no })
+        : await Q.createDefect({ tenderCode: rec.tenderCode, title: it.name, location: `${rec.tenderCode}｜${rec.location}`, source: '抽查', refId: rec.id, itemNo: it.no, subworkId: rec.subworkId, scId: rec.scId, scItemNo: it.no === rec.focusNo ? rec.itemNo : 0 });
+      a.defectId = df.id; await load(); toast(`已簽名並開立缺失單 ${df.id}，請廠商於「缺失改善」處理`);
+    }
+    function dropDefect(a, it) { if (a.defectId && !it.hold) { const id = a.defectId; delete a.defectId; Q.withdrawDefect(id, '判定已變更，缺失單撤銷').then(load); } }
     const itemSign = ref(null);
     const needSig = a => !!a && (a.judge === 'ok' || a.judge === 'ng') && !a.sig;
     async function openItemSign(kind, it) {
@@ -529,7 +538,8 @@ createApp({
       const a = f.kind === 'self' ? ensure(f.no) : sp.value.answers[f.no];
       a.sig = { img, name: me.value.name, at: Date.now() };
       if (!useSaved) await Q.put('meta', { id: 'sig-item-' + me.value.name, img });
-      itemSign.value = null; if (f.kind === 'self') queueSave(); else spSave();
+      itemSign.value = null; await openDefectOnSign(f.kind, f.no, a);
+      if (f.kind === 'self') queueSave(); else spSave();
     }
     function cancelSign() { const c = signCtx.value; signCtx.value = null; view.value = c.kind === 'self' ? 'form' : 'spot'; }
 
