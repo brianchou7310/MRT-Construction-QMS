@@ -6,8 +6,8 @@
 <link rel="icon" href="images/logo.png">
 <title>捷運施工查驗系統 - 後台管理 v3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/common.css?v=20261120f">
-<link rel="stylesheet" href="css/admin.css?v=20261120f">
+<link rel="stylesheet" href="css/common.css?v=20261120g">
+<link rel="stylesheet" href="css/admin.css?v=20261120g">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -169,7 +169,7 @@
   <div class="tabs"><a :class="{on:defTab==='open'}" @click="defTab='open'">未結案</a><a :class="{on:defTab==='closed'}" @click="defTab='closed'">已結案</a><a :class="{on:defTab==='all'}" @click="defTab='all'">全部</a></div>
   <div class="card tbl-scroll"><table class="table"><thead><tr><th>編號</th><th>缺失</th><th>位置</th><th>來源</th><th>改善期限</th><th>狀態</th><th></th></tr></thead><tbody>
     <tr v-for="x in defList" :key="x.id"><td>{{ x.id }}</td><td><b>{{ x.title }}</b></td><td>{{ x.location }}</td><td>{{ x.source }}</td><td>{{ Q.fmtD(x.due) }}</td><td><span class="chip" :class="defCls(x)">{{ defText(x) }}</span></td>
-      <td class="nowrap"><button class="btn sm primary" v-if="x.status==='review' && !Q.isSelfDefect(x)" @click="defAct(x)">複查</button><span class="small muted" v-else-if="x.status==='review'">待廠商複查</span><span class="small muted" v-else-if="x.status==='open'">待廠商改善</span><button class="btn sm" v-else @click="defAct(x)">檢視</button></td></tr>
+      <td class="nowrap"><span class="small muted" v-if="x.status==='review'">待{{ Q.isSelfDefect(x) ? '廠商' : '工務所' }}複查</span><span class="small muted" v-else-if="x.status==='open'">待廠商改善</span><button class="btn sm" v-else @click="defAct(x)">檢視</button></td></tr>
     <tr v-if="!defList.length"><td colspan="7" class="muted">沒有資料</td></tr></tbody></table></div>
 </template>
 
@@ -208,12 +208,8 @@
     <div class="row wrap mt" v-if="(defShow.x.fix.photos||[]).length"><div class="photo th" v-for="(p,i) in defShow.x.fix.photos" :key="i" style="width:120px;height:90px;overflow:hidden;border-radius:6px"><img v-if="p && p!=='*'" :src="p" style="width:100%;height:100%;object-fit:cover"><span v-else>示範照片</span></div></div></template>
   <div class="alert warn" v-if="!defShow.x.fix && defShow.x.status==='review'">廠商未附改善說明（示範資料）。</div>
   <template v-if="(defShow.x.history||[]).length"><h4 class="mt mb">處理歷程</h4><ul class="timeline"><li v-for="(h,i) in defShow.x.history" :key="i">{{ Q.fmtDT(h.at) }} {{ h.text }}</li></ul></template>
-  <div class="alert info mt" v-if="defShow.x.status==='review' && Q.isSelfDefect(defShow.x)">自主檢查缺失由廠商自行完成缺失複查並簽名，工務所僅供檢視。</div>
-  <template v-if="defShow.x.status==='review' && !Q.isSelfDefect(defShow.x)">
-    <template v-if="defShow.rejecting"><label class="f mt">退回原因（必填）</label><textarea rows="2" v-model="defShow.reason"></textarea>
-      <div class="foot"><button class="btn" @click="defShow.rejecting=false">返回</button><button class="btn danger" @click="defReview(false)">確認退回</button></div></template>
-    <div class="foot" v-else><button class="btn" @click="defShow=null">取消</button><button class="btn danger" @click="defShow.rejecting=true">退回重新改善</button><button class="btn primary" @click="defReview(true)">複查合格・結案</button></div></template>
-  <div class="foot" v-else><button class="btn primary" @click="defShow=null">關閉</button></div></div></div>
+  <div class="alert info mt" v-if="defShow.x.status!=='closed'">缺失改善與缺失複查都需簽名，請至「現場作業」操作（改善：廠商；複查：{{ Q.isSelfDefect(defShow.x) ? '廠商' : '工務所' }}）。後台僅供檢視。</div>
+  <div class="foot"><button class="btn primary" @click="defShow=null">關閉</button></div></div></div>
 
 <!-- ================= 標案與分項工程 ================= -->
 <template v-if="page==='projects'">
@@ -496,16 +492,16 @@
 </div>
 <script src="lib/vue.global.prod.js"></script>
 <script src="lib/xlsx.full.min.js"></script>
-<script src="templates/export-template.js?v=20261120f"></script>
-<script src="js/drawer.js?v=20261120f"></script>
-<script src="js/sample-pdfs.js?v=20261120f"></script>
+<script src="templates/export-template.js?v=20261120g"></script>
+<script src="js/drawer.js?v=20261120g"></script>
+<script src="js/sample-pdfs.js?v=20261120g"></script>
 <script src="lib/html2canvas.min.js"></script>
 <script src="lib/jspdf.umd.min.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/pdfimport.js?v=20261120f"></script>
-<script src="js/formpdf.js?v=20261120f"></script>
-<script src="js/projbase.js?v=20261120f"></script>
-<script src="js/db.js?v=20261120f"></script>
-<script src="js/admin.js?v=20261120f"></script>
+<script src="js/pdfimport.js?v=20261120g"></script>
+<script src="js/formpdf.js?v=20261120g"></script>
+<script src="js/projbase.js?v=20261120g"></script>
+<script src="js/db.js?v=20261120g"></script>
+<script src="js/admin.js?v=20261120g"></script>
 </body>
 </html>

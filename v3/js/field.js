@@ -105,8 +105,6 @@ createApp({
     });
     // 廠商：被退回、尚未重新申請的停留點
     const rejectedCards = computed(() => isSup.value ? [] : d.requests.filter(r => r.status === 'rejected' && r.scId && inTender(r)).map(r => ({ r, sc: d.selfChecks.find(s => s.id === r.scId) })).filter(x => x.sc && x.sc.status === 'draft' && ((x.sc.hold || {})[x.r.itemNo] || {}).requestId === x.r.id && Q.holdState(x.sc, x.r.itemNo) === 'none'));
-    // 自主檢查缺失：待改善、待複查都由廠商處理；抽查缺失：廠商改善、工務所複查
-    const defMine = x => Q.isSelfDefect(x) ? !isSup.value : (isSup.value ? x.status === 'review' : x.status === 'open');
     const defTodos = computed(() => openDefects.value.filter(defMine));
     const todoCount = computed(() => todoReqs.value.length + rejectedCards.value.length + draftSpots.value.length + pdfTodos.value.length + defTodos.value.length);
     const openPdfTodo = x => x.kind === 'self' ? openSc(x.rec.id) : openSpot(x.rec.id);
@@ -548,16 +546,17 @@ createApp({
     const defText = x => x.status === 'review' ? (Q.isSelfDefect(x) ? '待廠商複查' : '待複查') : x.due < now.value ? `逾期 ${Math.ceil((now.value - x.due) / Q.D)} 天` : `期限 ${Q.fmtD(x.due)}`;
     // 缺失：廠商回報改善（說明＋照片）／工務所複查（合格結案或退回）
     const defForm = ref(null);
-    // mode: fix=自主缺失改善（多筆照片＋說明，簽名）／recheck=自主缺失複查（簽名）／spotfix=抽查缺失廠商回報／review=工務所複查／view=僅檢視
-    function defMode(x) { if (Q.isSelfDefect(x)) return isSup.value ? 'view' : x.status === 'open' ? 'fix' : 'recheck'; return isSup.value ? 'review' : 'spotfix'; }
-    const defBtn = x => defMode(x) === 'fix' ? '缺失改善' : defMode(x) === 'recheck' ? '缺失複查' : defMode(x) === 'spotfix' ? '回報改善完成' : defMode(x) === 'review' ? '複查' : '';
-    const defCan = x => (defMode(x) === 'fix' && x.status === 'open') || (defMode(x) === 'recheck' && x.status === 'review') || (defMode(x) === 'spotfix' && x.status === 'open') || (defMode(x) === 'review' && x.status === 'review');
-    function defAct(x) { defForm.value = { x, mode: defMode(x), note: '', photos: [], reason: '', rejecting: false, items: [{ photo: '', desc: '' }], pass: null }; }
-    function defPhoto(demo) { const f = defForm.value, label = `${f.x.tenderCode}・缺失 ${f.x.id}・改善後`; (demo ? demoPhoto : pickPhoto)(label, u => f.photos.push(u)); }
+    // mode: fix=缺失改善（廠商：多筆照片＋說明，簽名）／recheck=缺失複查（自主檢查＝廠商；抽查＝工務所，簽名）／view=僅檢視
+    const recheckBySup = x => !Q.isSelfDefect(x);
+    const defMine = x => x.status === 'open' ? !isSup.value : x.status === 'review' ? (recheckBySup(x) ? isSup.value : !isSup.value) : false;
+    function defMode(x) { return !defMine(x) ? 'view' : x.status === 'open' ? 'fix' : 'recheck'; }
+    const defBtn = x => defMode(x) === 'fix' ? '缺失改善' : defMode(x) === 'recheck' ? '缺失複查' : '';
+    const defCan = x => defMode(x) !== 'view';
+    const defWait = x => x.status === 'open' ? '待廠商缺失改善' : recheckBySup(x) ? '待工務所缺失複查' : '待廠商缺失複查';
+    function defAct(x) { defForm.value = { x, mode: defMode(x), note: '', items: [{ photo: '', desc: '' }], pass: null }; }
     function defItemAdd() { defForm.value.items.push({ photo: '', desc: '' }); }
     function defItemDel(i) { defForm.value.items.splice(i, 1); }
     function defItemPhoto(i, demo) { const f = defForm.value, label = `${f.x.tenderCode}・缺失 ${f.x.id}・改善後（${i + 1}）`; (demo ? demoPhoto : pickPhoto)(label, u => { f.items[i].photo = u; }); }
-    async function submitFix() { const f = defForm.value; try { await Q.reportFix(f.x.id, { note: f.note, photos: f.photos, by: me.value.name }); defForm.value = null; await load(); toast('已回報改善完成，待工務所複查'); } catch (e) { toast(e.message, true); } }
     // 自主缺失：改善／複查送出前先簽名
     async function defGoSign() {
       const f = defForm.value;
@@ -579,7 +578,6 @@ createApp({
         defForm.value = null; await load();
       } catch (e) { toast(e.message, true); }
     }
-    async function submitReview(pass) { const f = defForm.value; try { await Q.reviewDefect(f.x.id, pass, f.reason, me.value.name); defForm.value = null; await load(); toast(pass ? '複查合格，缺失已結案' : '已退回廠商重新改善'); } catch (e) { toast(e.message, true); } }
     async function resetDemo() { if (!confirm('將清除所有資料並還原示範資料，確定？')) return; await Q.seed(true); cur.value = null; sp.value = null; view.value = 'todo'; await load(); toast('已還原示範資料'); }
     async function clearSigs() { for (const k of ['site', 'rep', 'insp', 'att']) await Q.del('meta', 'sig-' + k); toast('已清除已存簽名'); }
     const navItems = computed(() => [['todo', '待辦', todoCount.value], ['checks', '自主檢查', 0], ['spots', '抽查紀錄', 0], ['holds', '停留點', 0], ['docs', '參考文件', 0], ['me', '我的', 0]]);
@@ -649,7 +647,7 @@ createApp({
       summary, holdItems, holdPending, attachCodes, canSubmit, goSign, finishStage, stageTabs, firstStage, stageNext, spStageTabs, spNextStage, leaveForm,
       sp, spStage, spItemNo, spSaveMsg, spNew, spTpl, spReq, spSc, spEditable, spStageList, spCurItem, spShown, spA, spJudged, spTotal, spSummary, spStageStat, spSelfJudge, spSelfText, spCalc, spLocked, spList, spProgress, spSave, spFlush, openSpot, spGoto, spSetStage, spJudge, spPhoto, spDemoPhoto, spDelPhoto, spGoSign, leaveSpot, openSpotNew, createSpot,
       signCtx, signHash, signAgree, canvasEl, drawn, signers, signIdx, curSigner, signSummary, sDown, sMove, sUp, clearSign, applySaved, saveSig, confirmSign, cancelSign,
-      defCls, defText, defAct, defForm, defPhoto, submitFix, submitReview, defMode, defBtn, defCan, defMine, defItemAdd, defItemDel, defItemPhoto, defGoSign, voidForm, canVoid, openVoid, submitVoid, attList, spAttList, attNote, attIcon, attMine, pickAttach, delAttach, openAtt, resetDemo, clearSigs, navItems, nav, navActive, printForm
+      defCls, defText, defAct, defForm, defMode, defBtn, defCan, defMine, defWait, defItemAdd, defItemDel, defItemPhoto, defGoSign, voidForm, canVoid, openVoid, submitVoid, attList, spAttList, attNote, attIcon, attMine, pickAttach, delAttach, openAtt, resetDemo, clearSigs, navItems, nav, navActive, printForm
     };
   }
 }).mount('#app');

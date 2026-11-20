@@ -642,45 +642,29 @@
     }
   }
 
-  // 缺失流程
-  //   自主檢查表：有缺失(廠商) → 缺失改善(廠商，多筆照片＋說明，簽名) → 缺失複查(廠商，簽名；不合格退回改善) → 結案
-  //   抽查記錄表：廠商回報改善 → 工務所複查（合格結案／退回）
+  // 缺失流程（自主檢查與抽查相同）：有缺失 → 缺失改善（廠商，多筆照片＋說明，簽名）→ 缺失複查（簽名；不合格退回改善）→ 結案
+  //   複查人：自主檢查缺失＝廠商；抽查缺失＝工務所
   const isSelfDefect = df => /^自主檢查/.test(df.source || '');
-  async function reportFix(id, { note, photos, items, by, sig }) {
+  async function reportFix(id, { items, by, sig }) {
     const df = await get('defects', id); if (df.status !== 'open') throw new Error('此缺失目前不是「待改善」狀態');
-    if (isSelfDefect(df)) {
-      items = (items || []).filter(x => x && (x.photo || (x.desc || '').trim()));
-      if (!items.length) throw new Error('請至少新增 1 筆改善照片與說明');
-      const bad = items.findIndex(x => !x.photo || !(x.desc || '').trim()); if (bad >= 0) throw new Error(`第 ${bad + 1} 筆須同時有照片與說明`);
-      if (!sig) throw new Error('請簽名後送出');
-      items = items.map(x => ({ photo: x.photo, desc: x.desc.trim() }));
-      df.fix = { items, photos: items.map(x => x.photo), note: items.map((x, k) => `${k + 1}. ${x.desc}`).join('\n'), at: Date.now(), by, sig };
-      df.status = 'review'; df.recheck = null;
-      (df.history = df.history || []).push({ at: Date.now(), text: `${by} 完成缺失改善（${items.length} 筆照片與說明）並簽名，待廠商缺失複查` });
-      await put('defects', df); return df;
-    }
-    if (!(note || '').trim()) throw new Error('請填寫改善說明'); if (!(photos || []).length) throw new Error('請至少附 1 張改善後照片');
-    df.fix = { note: note.trim(), photos, at: Date.now(), by }; (df.history = df.history || []).push({ at: Date.now(), text: `${by} 回報改善完成：${note.trim()}` });
-    df.status = 'review';
+    items = (items || []).filter(x => x && (x.photo || (x.desc || '').trim()));
+    if (!items.length) throw new Error('請至少新增 1 筆改善照片與說明');
+    const bad = items.findIndex(x => !x.photo || !(x.desc || '').trim()); if (bad >= 0) throw new Error(`第 ${bad + 1} 筆須同時有照片與說明`);
+    if (!sig) throw new Error('請簽名後送出');
+    items = items.map(x => ({ photo: x.photo, desc: x.desc.trim() }));
+    df.fix = { items, photos: items.map(x => x.photo), note: items.map((x, k) => `${k + 1}. ${x.desc}`).join('\n'), at: Date.now(), by, sig };
+    df.status = 'review'; df.recheck = null;
+    (df.history = df.history || []).push({ at: Date.now(), text: `${by} 完成缺失改善（${items.length} 筆照片與說明）並簽名，待${isSelfDefect(df) ? '廠商' : '工務所'}缺失複查` });
     await put('defects', df); return df;
   }
-  // 自主檢查缺失的複查（廠商）：合格 → 結案；不合格 → 退回缺失改善
   async function recheckDefect(id, { pass, note, by, sig }) {
-    const df = await get('defects', id); if (!isSelfDefect(df)) throw new Error('抽查缺失由工務所複查');
+    const df = await get('defects', id);
     if (df.status !== 'review') throw new Error('此缺失尚未完成改善，不可複查');
     if (!sig) throw new Error('請簽名後送出'); if (!pass && !(note || '').trim()) throw new Error('複查不合格請填寫原因');
     df.recheck = { pass: !!pass, note: (note || '').trim(), at: Date.now(), by, sig };
     (df.history = df.history || []).push({ at: Date.now(), text: pass ? `${by} 缺失複查合格並簽名，結案` : `${by} 缺失複查不合格並簽名，退回重新改善：${df.recheck.note}` });
     if (pass) { df.status = 'closed'; df.closedAt = Date.now(); df.closedBy = by; df.note = `${by} 缺失複查合格`; }
     else { df.status = 'open'; df.lastFix = df.fix; df.fix = null; df.note = '退回：' + df.recheck.note; }
-    await put('defects', df); return df;
-  }
-  async function reviewDefect(id, pass, reason, by) {
-    const df = await get('defects', id); if (isSelfDefect(df)) throw new Error('自主檢查的缺失由廠商自行複查，不需工務所複查');
-    if (df.status !== 'review') throw new Error('廠商尚未回報改善，不可複查結案');
-    if (!pass && !(reason || '').trim()) throw new Error('請填寫退回原因');
-    (df.history = df.history || []).push({ at: Date.now(), text: pass ? `${by} 複查合格，結案` : `${by} 複查不合格，退回重新改善：${reason.trim()}` });
-    if (pass) { df.status = 'closed'; df.closedAt = Date.now(); df.closedBy = by; df.note = `${by} 複查合格`; } else { df.status = 'open'; df.lastFix = df.fix; df.fix = null; df.note = '退回：' + reason.trim(); }
     await put('defects', df); return df;
   }
   async function setDefectStatus(id, status, note) {
@@ -705,6 +689,6 @@
     fmtDT, fmtD, fmtFull, toLocalInput, fromLocalInput, nextHour, atDay, relTime, uid, clone, hashOf,
     stageItems, stageDone, lockReason, holdState,
     STEP_TEXT, PROJ_TYPE_TEXT, DEPTS, rocDate, sortTenders, tenderFromProj, tLabel, tenderInDept, projKey, projOptions,
-    tickOverdue, newSelfCheck, saveSelf, applyHold, schedule, reject, spotOptions, startInspection, cancelInspection, withdrawDefect, reportFix, recheckDefect, reviewDefect, voidSelfCheck, findSelfDup, addAttachment, delAttachment, newSpotCheck, autoNa, migrateSpots, wfLock, wfCancel, wfUpload, wfVendorSign, wfClose, wfUnfreeze, pdfBlobUrl, downloadPdf, downloadAny, openAny, canPreview, fileToDataUrl, fmtSize, dataUrlSize, createDefect, isSelfDefect, finalizeSelf, finalizeSpot, setDefectStatus, saveTemplate, putMany, I, ensureKeys, baseId
+    tickOverdue, newSelfCheck, saveSelf, applyHold, schedule, reject, spotOptions, startInspection, cancelInspection, withdrawDefect, reportFix, recheckDefect, voidSelfCheck, findSelfDup, addAttachment, delAttachment, newSpotCheck, autoNa, migrateSpots, wfLock, wfCancel, wfUpload, wfVendorSign, wfClose, wfUnfreeze, pdfBlobUrl, downloadPdf, downloadAny, openAny, canPreview, fileToDataUrl, fmtSize, dataUrlSize, createDefect, isSelfDefect, finalizeSelf, finalizeSpot, setDefectStatus, saveTemplate, putMany, I, ensureKeys, baseId
   };
 })();
