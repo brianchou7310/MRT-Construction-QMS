@@ -120,7 +120,8 @@
     const text = l => l.items.map(i => i.s).join('');
     const warnings = [];
     // 標題：第一頁最上方的一行；表號：「表單編號：表 5-7」或「表單編號：SP-7」
-    const first = pages[0] || [], title = clean(first[0] ? text(first[0]) : '');
+    const first = pages[0] || [], tops = first.slice(0, 8).map(l => clean(text(l)));
+    const title = tops.find(t => /表$/.test(t) && /(檢查|抽查|紀錄|記錄)/.test(t) && !/工程名稱|項目/.test(t)) || tops[0] || '';   // 標題不一定是第一行（第一行常是機關名稱）
     const codeLine = first.map(l => clean(text(l))).find(t => /表單編號/.test(t)) || '', cm = codeLine.match(/表單編號[:：]?表?([A-Za-z]*[A-Za-z0-9\-]*\d[A-Za-z0-9\-]*)/);
     let code = cm ? cm[1] : '', ttl = title; const tm = title.match(/^表?(\d+(?:-\d+)+|[A-Za-z]{1,4}-\d+)(.+)$/); if (!code && tm) { code = tm[1]; ttl = tm[2]; } else if (tm && tm[1] === code) ttl = tm[2];
     if (!code) warnings.push('未找到「表單編號」，請手動填寫表號。');
