@@ -109,10 +109,8 @@
         const items = t.items.filter(i => i.stage === stg.key); if (!items.length) return;
         items.forEach((it, n) => {
           const a = ans[it.no] || {};
-          // 自主檢查表的缺失項目：照片分「改善前」（缺失照片）與「改善後」
-          const ngSelf = self && a.judge === 'ng', tag = (base, l, k) => `${it.name}${base}${l.length > 1 ? `（${k + 1}）` : ''}`;
-          (a.photos || []).filter(isImg).forEach((u, k, l) => photos.push({ u, cap: tag(ngSelf ? '・改善前' : '', l, k) }));
-          if (ngSelf) (a.fixPhotos || []).filter(isImg).forEach((u, k, l) => photos.push({ u, cap: tag('・改善後', l, k) }));
+          const tag = (l, k) => `${it.name}${l.length > 1 ? `（${k + 1}）` : ''}`;
+          (a.photos || []).filter(isImg).forEach((u, k, l) => photos.push({ u, cap: tag(l, k) }));
           let info = a.text ? E(a.text).replace(/\n/g, '<br>') : '';
           if (self && it.type === 'linked' && it.linked) info += `${info ? '<br>' : ''}表${E(it.linked)}：${(r.linked || {})[it.linked] ? '已完成' : '未完成'}`;
           // 備註欄只放該項檢查人員／抽查人員的簽名與簽名日期時間

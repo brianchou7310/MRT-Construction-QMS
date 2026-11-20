@@ -254,9 +254,6 @@ createApp({
     }
     function addPhoto(it) { if (!itemEditable(it)) return toast('此項目目前不可編輯', true); pickPhoto(`${cur.value.tenderCode}・${where(cur.value.unit, cur.value.subworkName)}・${it.name}`, url => { ensure(it.no).photos.push(url); queueSave(); }); }
     function addDemoPhoto(it) { if (!itemEditable(it)) return toast('此項目目前不可編輯', true); demoPhoto(`${cur.value.tenderCode}・${where(cur.value.unit, cur.value.subworkName)}・${it.name}`, url => { ensure(it.no).photos.push(url); queueSave(); }); }
-    // 缺失項目的改善後照片：與缺失照片（改善前）分開存放
-    function addFixPhoto(it, demo) { if (!itemEditable(it)) return toast('此項目目前不可編輯', true); const a = ensure(it.no), cb = url => { (a.fixPhotos = a.fixPhotos || []).push(url); queueSave(); }, label = `${cur.value.tenderCode}・${where(cur.value.unit, cur.value.subworkName)}・${it.name}（改善後）`; if (demo) demoPhoto(label, cb); else pickPhoto(label, cb); }
-    function delFixPhoto(it, i) { if (!itemEditable(it)) return; (ensure(it.no).fixPhotos || []).splice(i, 1); queueSave(); }
     function delPhoto(it, i) { if (!itemEditable(it)) return; ensure(it.no).photos.splice(i, 1); const a = ensure(it.no); if (it.photo && !a.photos.length && a.judge === 'ok') { a.judge = null; delete a.sig; } queueSave(); }
     /* 關聯子表單：連到同一單元的真實紀錄，簽認／結案後才算完成 */
     const returnTo = ref(null);
@@ -638,7 +635,7 @@ createApp({
       pf, pfPreview, pfUrl, pfTpl, pfRec, pfSelf, pfSt, wfCls, pfCanLock, pfIsLocker, pfCanClose, pfCanVendor, pfCanUnfreeze, pfHint, pfDownloadBlank, pfDownloadCur, pfLock, pfCancel, wfUp, wfCert, wfVen, wfUnf, openWfUp, onWfUpFile, submitWfUp, openWfVen, onWfVenFile, submitWfVen, openWfCert, submitWfCert, openWfUnf, submitWfUnf, dlLog, leavePdf, isDirector, scList, scProgress, newForm, tenderOpts, swOpts, tplOpts, unitOpts, ut, cascade, openNew, createSc,
       cur, curTpl, stageTab, itemNo, saveMsg, docShow, linkShow, applyForm, readonly, stageList, curItem, shownItems, judged, total, stageStat, stageDone, ans, ensure, lockOf, hstate, hreq, itemEditable, itemIcon,
       itemSign, needSig, openItemSign, confirmItemSign, aiBusy, aiLabel, aiCls, runAi, applyAi,
-      flush, queueSave, openSc, gotoItem, setStage, step, setJudge, addPhoto, addDemoPhoto, delPhoto, addFixPhoto, delFixPhoto, linkName, preLinked, linkedRec, linkedDone, linkedTpl, linkStatus, openLinked, createLinked, returnTo, canApply, openApply, applyShort, applyHours, submitApply, holdText, wasRejected,
+      flush, queueSave, openSc, gotoItem, setStage, step, setJudge, addPhoto, addDemoPhoto, delPhoto, linkName, preLinked, linkedRec, linkedDone, linkedTpl, linkStatus, openLinked, createLinked, returnTo, canApply, openApply, applyShort, applyHours, submitApply, holdText, wasRejected,
       summary, holdItems, holdPending, attachCodes, canSubmit, goSign, finishStage, stageTabs, firstStage, stageNext, spStageTabs, spNextStage, leaveForm,
       sp, spStage, spItemNo, spSaveMsg, spNew, spTpl, spReq, spSc, spEditable, spStageList, spCurItem, spShown, spA, spJudged, spTotal, spSummary, spStageStat, spSelfJudge, spSelfText, spCalc, spLocked, spList, spProgress, spSave, spFlush, openSpot, spGoto, spSetStage, spJudge, spPhoto, spDemoPhoto, spDelPhoto, spGoSign, leaveSpot, openSpotNew, createSpot,
       signCtx, signHash, signAgree, canvasEl, drawn, signers, signIdx, curSigner, signSummary, sDown, sMove, sUp, clearSign, applySaved, saveSig, confirmSign, cancelSign,
