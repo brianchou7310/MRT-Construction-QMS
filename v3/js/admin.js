@@ -117,8 +117,7 @@ createApp({
     const defList = computed(() => ft(d.defects).filter(x => defTab.value === 'all' || (defTab.value === 'open' ? x.status !== 'closed' : x.status === 'closed')).sort((a, b) => a.due - b.due));
     // 缺失複查：須廠商回報改善後才可結案，可退回重新改善
     const defShow = ref(null);
-    function defAct(x) { defShow.value = { x, reason: '', rejecting: false }; }
-    async function defReview(pass) { const f = defShow.value; try { await Q.reviewDefect(f.x.id, pass, f.reason, adminUser.value.name); defShow.value = null; await load(); toast(pass ? '複查合格，缺失已結案' : '已退回廠商重新改善'); } catch (e) { toast(e.message, true); } }
+    function defAct(x) { defShow.value = { x }; }
 
     /* ---------- 標案與分項工程 ---------- */
     const selTenderId = ref('T671'), swSearch = ref(''), swStatus = ref(''), swPage = ref(1);
@@ -938,7 +937,7 @@ createApp({
     return {
       Q, d, now, loaded, page, menuOpen, toastMsg, toastNg, toast, go, tenderById, swById, tenderFilter, supervisors, reqCls, rel, openReqs, overdueReqs, openDefects, overdueDefects, weekHolds, spotRate, kpiSelf, todayAgenda, tplOf, usedCount,
       progTender, progFilter, progRows, progCount, holdTab, holdTabs, holdCount, holdList, holdByDate, selReqId, selReq, calView, sched, lockedAfter, hoursBefore, doSchedule, doReject, doStart, doCancel,
-      addCalc, calcOf, pairOpts, pairCode, srcOf, pairItems, setSrc, srcDup, showSC, showSP, itemsOf, reqText, judgeText, spotCount, defCls, defText, defTab, defList, defAct, defShow, defReview,
+      addCalc, calcOf, pairOpts, pairCode, srcOf, pairItems, setSrc, srcDup, showSC, showSP, itemsOf, reqText, judgeText, spotCount, defCls, defText, defTab, defList, defAct, defShow,
       selTenderId, selTender, treeGroups, tenderRefs, delTender, tDragId, tDragOver, tDragStart, tDragEnd, tDrop, grpOpen, grpIsOpen, treeOpen, swPick, treeAll, dept, deptName, setDept, allTenders, pick, pickData, pickSel, pickGroupAll, doPick, pickTender, pickSw, swSearch, swStatus, swPage, swPages, swPaged, swAll, swTplText, swHold, swForm, saveSw, moveSw, delSw, newTender, swImp, openSwImp, downloadSwSample, onSwFile, swImpOk, swImpBad, doSwImp,
       tplSw, tplUnit, tplUnits, onBulkPdf, doPdfImport, pdfStageOpts, onEditOriginal, delOriginal, unitForm, unitTplN, openUnitForm, addUnit, delUnit, swGroups, selTplId, tplTab, edit, previewOn, tplList, tplHistory, pickTpl, editUsed, editStages, isPdf, newTplForm, onNewPdf, onEditPdf, createTpl, pdfUrl, downloadFile, wfCls, readPdf, TYPES, holdN, addItem, delItem, moveItem, onType, saveEdit, delTpl, syncFromSelf, bulk, openBulk, onBulkFile, bulkOk, bulkView, doBulk, downloadBulkSample, exportSubwork, stageForm, stageItemN, openStageForm, stageAdd, stageMove, stageDel, stagePreset, applyStages, STAGE_PRESETS, newTpl, exportXlsx, dragId, dragOver, onDragStart, onDragEnd, onDrop, itemImp, openItemImp, onItemFile, itemImpForm, itemImpView, itemImpErrs, doItemImp,
       linkOpts, adminUser, swText, projOf, projOpts, projText, tendersOfProj, qf, qfOpts, qfList, qfSet, qfClear, ex, exOpts, exList, exRows, exSet, exClear, downloadRec, downloadBatch, recCode,

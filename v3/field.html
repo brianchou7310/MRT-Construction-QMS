@@ -6,8 +6,8 @@
 <link rel="icon" href="images/logo.png">
 <title>捷運施工查驗系統 - 現場作業 v3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/common.css?v=20261120f">
-<link rel="stylesheet" href="css/field.css?v=20261120f">
+<link rel="stylesheet" href="css/common.css?v=20261120g">
+<link rel="stylesheet" href="css/field.css?v=20261120g">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -35,7 +35,7 @@
         <button :class="{on: todoTab==='hold'}" @click="todoTab='hold'">會驗 {{ todoReqs.length + rejectedCards.length }}</button>
         <button :class="{on: todoTab==='spot'}" @click="todoTab='spot'" v-if="isSup">抽查 {{ draftSpots.length }}</button>
         <button :class="{on: todoTab==='pdf'}" @click="todoTab='pdf'">表單簽辦 {{ pdfTodos.length }}</button>
-        <button :class="{on: todoTab==='defect'}" @click="todoTab='defect'">{{ isSup ? '缺失複查' : '缺失改善／複查' }} {{ defTodos.length }}</button>
+        <button :class="{on: todoTab==='defect'}" @click="todoTab='defect'">缺失改善／複查 {{ defTodos.length }}</button>
       </div>
       <template v-if="todoTab==='hold'">
         <div class="tcard" v-for="r in todoReqs" :key="r.id" :class="{sel: r.id===selReqId}" @click="selectReq(r)">
@@ -65,7 +65,7 @@
         <div class="tcard" v-for="x in openDefects" :key="x.id"><div class="row"><div class="grow"><div class="t">{{ x.title }}</div><div class="muted small">{{ x.location }}｜{{ x.source }}</div></div><span class="chip" :class="defCls(x)">{{ defText(x) }}</span></div>
           <div class="small" style="color:var(--ng)" v-if="x.status==='open' && x.lastFix">上次退回：{{ (x.note||'').replace('退回：','') }}</div>
           <button class="btn primary block" v-if="defCan(x)" @click="defAct(x)">{{ defBtn(x) }}</button>
-          <div class="small muted" v-else>{{ Q.isSelfDefect(x) ? '自主檢查缺失由廠商改善、複查（目前身分僅供檢視）' : isSup ? '待廠商回報改善' : '已回報，待工務所複查' }}</div></div>
+          <div class="small muted" v-else>{{ defWait(x) }}（目前身分僅供檢視）</div></div>
         <div class="empty" v-if="!openDefects.length">沒有未結案的缺失</div>
       </template>
     </template>
@@ -412,9 +412,9 @@
   <div class="row mt" v-if="itemSign.saved"><img :src="itemSign.saved" alt="上次簽名" style="height:44px;border:1px solid var(--line);border-radius:6px;background:#fff"><span class="small muted grow">上次的簽名</span><button class="btn" @click="confirmItemSign(true)">沿用上次簽名</button></div>
   <div class="foot"><button class="btn" @click="itemSign=null">稍後再簽</button><button class="btn" @click="clearSign">清除</button><button class="btn primary" @click="confirmItemSign(false)">確認簽名</button></div></div></div>
 <!-- 缺失：改善／複查（自主檢查：廠商改善→廠商複查，各簽名；抽查：廠商回報→工務所複查） -->
-<div class="modal-bg" v-if="defForm" @click.self="defForm=null"><div class="modal"><h3>{{ {fix:'缺失改善',recheck:'缺失複查',spotfix:'回報改善完成',review:'缺失複查',view:'缺失資料'}[defForm.mode] }}｜{{ defForm.x.id }}</h3>
+<div class="modal-bg" v-if="defForm" @click.self="defForm=null"><div class="modal"><h3>{{ {fix:'缺失改善',recheck:'缺失複查',view:'缺失資料'}[defForm.mode] }}｜{{ defForm.x.id }}</h3>
   <div class="alert info mb"><b>{{ defForm.x.title }}</b><br>{{ defForm.x.location }}｜來源：{{ defForm.x.source }}｜期限 {{ Q.fmtD(defForm.x.due) }}</div>
-  <div class="steps small mb" v-if="Q.isSelfDefect(defForm.x)"><span :class="{on: defForm.x.status==='open'}">① 缺失改善</span> › <span :class="{on: defForm.x.status==='review'}">② 缺失複查</span> › <span :class="{on: defForm.x.status==='closed'}">③ 結案</span></div>
+  <div class="steps small mb"><span :class="{on: defForm.x.status==='open'}">① 缺失改善</span> › <span :class="{on: defForm.x.status==='review'}">② 缺失複查</span> › <span :class="{on: defForm.x.status==='closed'}">③ 結案</span></div>
   <div class="alert ng mb" v-if="defForm.x.status==='open' && defForm.x.lastFix">上次複查退回原因：{{ (defForm.x.note||'').replace('退回：','') }}</div>
   <!-- 自主檢查：缺失改善 -->
   <template v-if="defForm.mode==='fix'">
@@ -432,27 +432,14 @@
     <label class="f">缺失改善內容（{{ (defForm.x.fix||{}).by }}・{{ Q.fmtDT((defForm.x.fix||{}).at) }}）</label>
     <template v-if="defForm.x.fix && defForm.x.fix.items"><div class="defitem" v-for="(it,i) in defForm.x.fix.items" :key="i"><div class="photos"><div class="photo th"><img v-if="it.photo && it.photo!=='*'" :src="it.photo"><span v-else>示範照片</span></div></div><div class="pre">{{ i+1 }}. {{ it.desc }}</div></div>
       <div class="row small muted mt" v-if="defForm.x.fix.sig && defForm.x.fix.sig.img">改善簽名：<img :src="defForm.x.fix.sig.img" style="height:34px;background:#fff;border:1px solid var(--line);border-radius:6px"></div></template>
-    <div class="pre" v-else-if="defForm.x.fix">{{ defForm.x.fix.note }}</div><div class="alert warn" v-else>尚無改善內容（示範資料）。</div>
+    <template v-else-if="defForm.x.fix"><div class="pre">{{ defForm.x.fix.note }}</div><div class="photos mt" v-if="(defForm.x.fix.photos||[]).length"><div class="photo th" v-for="(p,i) in defForm.x.fix.photos" :key="i"><img v-if="p && p!=='*'" :src="p"><span v-else>示範照片</span></div></div></template><div class="alert warn" v-else>尚無改善內容（示範資料）。</div>
     <label class="f mt">複查結果</label>
     <label class="opt"><input type="radio" :value="true" v-model="defForm.pass"> 合格，結案</label>
     <label class="opt"><input type="radio" :value="false" v-model="defForm.pass"> 不合格，退回缺失改善</label>
     <label class="f mt">複查說明{{ defForm.pass===false ? '（必填）' : '（選填）' }}</label><textarea rows="2" v-model="defForm.note"></textarea>
     <div class="small muted mt">送出時需簽名。</div>
     <div class="foot"><button class="btn" @click="defForm=null">取消</button><button class="btn primary" @click="defGoSign">送出並簽名</button></div></template>
-  <!-- 抽查缺失：廠商回報改善 -->
-  <template v-else-if="defForm.mode==='spotfix'">
-    <label class="f">改善說明（必填）</label><textarea rows="3" v-model="defForm.note" placeholder="例：已重新點焊並磨除裂紋，經目視檢查無異常"></textarea>
-    <label class="f mt">改善後照片（至少 1 張）</label>
-    <div class="photos"><div class="photo th" v-for="(p,i) in defForm.photos" :key="i" @click="defForm.photos.splice(i,1)"><img :src="p"></div><button class="cam" @click="defPhoto(false)">📷<small>拍照</small></button><button class="cam demo" @click="defPhoto(true)">🖼<small>示範照片</small></button></div>
-    <div class="foot"><button class="btn" @click="defForm=null">取消</button><button class="btn primary" @click="submitFix">送出，請工務所複查</button></div></template>
-  <!-- 抽查缺失：工務所複查 -->
-  <template v-else>
-    <template v-if="defForm.x.fix"><label class="f">廠商改善說明（{{ defForm.x.fix.by }}・{{ Q.fmtDT(defForm.x.fix.at) }}）</label><div class="pre">{{ defForm.x.fix.note }}</div>
-      <div class="photos mt" v-if="(defForm.x.fix.photos||[]).length"><div class="photo th" v-for="(p,i) in defForm.x.fix.photos" :key="i"><img v-if="p && p!=='*'" :src="p"><span v-else>示範照片</span></div></div></template>
-    <div class="alert warn" v-else>廠商未附改善說明。</div>
-    <template v-if="defForm.rejecting"><label class="f mt">退回原因（必填）</label><textarea rows="2" v-model="defForm.reason"></textarea>
-      <div class="foot"><button class="btn" @click="defForm.rejecting=false">返回</button><button class="btn danger" @click="submitReview(false)">確認退回</button></div></template>
-    <div class="foot" v-else><button class="btn" @click="defForm=null">取消</button><button class="btn danger" @click="defForm.rejecting=true">退回重新改善</button><button class="btn primary" @click="submitReview(true)">複查合格・結案</button></div></template>
+  <div class="alert gray" v-if="defForm.mode==='view'">{{ defWait(defForm.x) }}，目前身分僅供檢視。</div>
 </div></div>
 <div class="modal-bg" v-if="voidForm" @click.self="voidForm=null"><div class="modal"><h3>作廢表單</h3>
   <div class="alert ng mb">作廢後本表單保留為紀錄但不再有效，並讓出「同標案、工項、單元、表號」的名額，可重新新增；本表尚未結案的缺失與會驗申請一併結案／取消。</div>
@@ -482,13 +469,13 @@
 <div class="toast" :class="{ng: toastNg}" v-if="toastMsg">{{ toastMsg }}</div>
 </div>
 <script src="lib/vue.global.prod.js"></script>
-<script src="js/drawer.js?v=20261120f"></script>
-<script src="js/sample-pdfs.js?v=20261120f"></script>
+<script src="js/drawer.js?v=20261120g"></script>
+<script src="js/sample-pdfs.js?v=20261120g"></script>
 <script src="lib/html2canvas.min.js"></script>
 <script src="lib/jspdf.umd.min.js"></script>
-<script src="js/aijudge.js?v=20261120f"></script>
-<script src="js/formpdf.js?v=20261120f"></script>
-<script src="js/db.js?v=20261120f"></script>
-<script src="js/field.js?v=20261120f"></script>
+<script src="js/aijudge.js?v=20261120g"></script>
+<script src="js/formpdf.js?v=20261120g"></script>
+<script src="js/db.js?v=20261120g"></script>
+<script src="js/field.js?v=20261120g"></script>
 </body>
 </html>
