@@ -6,8 +6,8 @@
 <link rel="icon" href="images/logo.png">
 <title>捷運施工查驗系統 - 現場作業 v3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/common.css?v=20261120h">
-<link rel="stylesheet" href="css/field.css?v=20261120h">
+<link rel="stylesheet" href="css/common.css?v=20261125a">
+<link rel="stylesheet" href="css/field.css?v=20261125a">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -193,7 +193,7 @@
               <button :class="['ok',{on: ans(it.no).judge==='ok'}]" @click="setJudge(it,'ok')">○ 合格</button>
               <button :class="['ng',{on: ans(it.no).judge==='ng'}]" @click="setJudge(it,'ng')">╳ 缺失</button>
               <button :class="['na',{on: ans(it.no).judge==='na'}]" @click="setJudge(it,'na')">╱ 無此項</button></div>
-            <div class="isig" v-if="['ok','ng'].includes(ans(it.no).judge)"><template v-if="ans(it.no).sig"><img :src="ans(it.no).sig.img" alt="簽名"><span class="small muted grow">檢查人員 {{ ans(it.no).sig.name }}・{{ Q.fmtDT(ans(it.no).sig.at) }}</span><a v-if="itemEditable(it)" @click="openItemSign('self', it)">重簽</a></template>
+            <div class="isig" v-if="['ok','ng'].includes(ans(it.no).judge)"><template v-if="ans(it.no).sig"><img :src="ans(it.no).sig.img" alt="簽名"><span class="small muted grow">檢查人員 {{ ans(it.no).sig.name }}・{{ Q.fmtDT(ans(it.no).sig.at) }}</span></template>
               <template v-else><span class="grow" style="color:var(--ng)">檢查人員尚未簽名</span><button class="btn sm primary" v-if="itemEditable(it)" @click="openItemSign('self', it)">簽名</button></template></div>
             <div class="holdbox" v-if="it.hold"><div class="row"><b>☆ 檢驗停留點</b><span class="grow"></span><span class="chip" :class="hstate(it)==='passed'?'ok':hstate(it)==='failed'?'ng':hstate(it)==='none'?'warn':'blue'">{{ holdText(it) }}</span></div>
               <div class="small" style="color:var(--ng)" v-if="wasRejected(it)">上次申請 {{ wasRejected(it).id }} 已於 {{ Q.fmtDT(wasRejected(it).rejectedAt || wasRejected(it).notices[wasRejected(it).notices.length-1].at) }} 被退回。原因：{{ wasRejected(it).rejectReason || '—' }}。請修正後重新申請。</div>
@@ -275,13 +275,13 @@
           <div class="linked" v-if="it.type==='linked'"><span>連結表單：表{{ it.linked }} {{ linkName(it.linked) }}</span><span class="chip" :class="spSc && spSc.linked[it.linked] ? 'ok' : ''">廠商{{ spSc && spSc.linked[it.linked] ? '已完成 ○' : '未完成' }}</span></div>
           <div class="small" v-if="spSelfJudge(it)">廠商自檢判定：<span class="chip" :class="spSelfJudge(it)==='ok'?'ok':spSelfJudge(it)==='ng'?'ng':''">{{ Q.JUDGE[spSelfJudge(it)] }}</span></div>
           <div v-if="it.type==='text'"><div class="small muted">廠商實際檢查情形（自主檢查表）</div><div class="pre">{{ spSelfText(it) || '—' }}</div>
-            <label class="f">實際抽查情形（載明抽查數值及單位）</label><textarea rows="3" v-model="spA(it.no).text" @input="spSave" @change="runAi('spot', it)" :disabled="!spEditable" placeholder="例：垂直方向偏差 20mm"></textarea><div class="aibox" v-if="spA(it.no).text && (spEditable || spA(it.no).ai)"><div class="row"><span class="grow"><b>🤖 AI 判定</b><span class="small muted">（模擬）</span></span><span class="small muted" v-if="aiBusy['spot'+it.no]">AI 判定中…</span><button class="btn sm" v-else-if="spEditable" @click="runAi('spot', it)">{{ spA(it.no).ai ? '重新判定' : 'AI 判定' }}</button></div><template v-if="spA(it.no).ai && !aiBusy['spot'+it.no]"><div class="mt">AI 建議：<span class="chip" :class="aiCls(spA(it.no).ai.judge)">{{ aiLabel(spA(it.no).ai.judge) }}</span><span class="small muted" v-if="spA(it.no).ai.text !== spA(it.no).text">　內容已修改，請重新判定</span></div><ul class="aireason"><li v-for="x in spA(it.no).ai.reasons">{{ x }}</li></ul><button class="btn sm primary" v-if="spEditable && ['ok','ng'].includes(spA(it.no).ai.judge) && spA(it.no).judge !== spA(it.no).ai.judge" @click="applyAi('spot', it)">套用為「{{ aiLabel(spA(it.no).ai.judge) }}」</button><div class="small muted mt">AI 僅提供建議，判定與簽名仍由抽查人員負責。</div></template></div></div>
+            <label class="f">實際抽查情形（載明抽查數值及單位）</label><textarea rows="3" v-model="spA(it.no).text" @input="spSave" @change="runAi('spot', it)" :disabled="!spItemEd(it)" placeholder="例：垂直方向偏差 20mm"></textarea><div class="aibox" v-if="spA(it.no).text && (spItemEd(it) || spA(it.no).ai)"><div class="row"><span class="grow"><b>🤖 AI 判定</b><span class="small muted">（模擬）</span></span><span class="small muted" v-if="aiBusy['spot'+it.no]">AI 判定中…</span><button class="btn sm" v-else-if="spItemEd(it)" @click="runAi('spot', it)">{{ spA(it.no).ai ? '重新判定' : 'AI 判定' }}</button></div><template v-if="spA(it.no).ai && !aiBusy['spot'+it.no]"><div class="mt">AI 建議：<span class="chip" :class="aiCls(spA(it.no).ai.judge)">{{ aiLabel(spA(it.no).ai.judge) }}</span><span class="small muted" v-if="spA(it.no).ai.text !== spA(it.no).text">　內容已修改，請重新判定</span></div><ul class="aireason"><li v-for="x in spA(it.no).ai.reasons">{{ x }}</li></ul><button class="btn sm primary" v-if="spItemEd(it) && ['ok','ng'].includes(spA(it.no).ai.judge) && spA(it.no).judge !== spA(it.no).ai.judge" @click="applyAi('spot', it)">套用為「{{ aiLabel(spA(it.no).ai.judge) }}」</button><div class="small muted mt">AI 僅提供建議，判定與簽名仍由抽查人員負責。</div></template></div></div>
           <div class="photos" v-if="it.photo || spA(it.no).photos.length || it.hold">
             <div class="photo th" v-for="(p,i) in spA(it.no).photos" :key="i" @click="spDelPhoto(it,i)"><img v-if="p && p!=='*'" :src="p"><span v-else>示範照片</span></div>
-            <button class="cam" :disabled="!spEditable" @click="spPhoto(it)">📷<small>拍照</small></button><button class="cam demo" :disabled="!spEditable" @click="spDemoPhoto(it)">🖼<small>示範照片</small></button>
+            <button class="cam" :disabled="!spItemEd(it)" @click="spPhoto(it)">📷<small>拍照</small></button><button class="cam demo" :disabled="!spItemEd(it)" @click="spDemoPhoto(it)">🖼<small>示範照片</small></button>
             <span class="small muted" v-if="it.photo && !spA(it.no).photos.length">此項必拍照片（自動壓浮水印）</span><span class="small muted" v-else>點照片可刪除</span></div>
           <div class="judge"><button :class="['ok',{on: spA(it.no).judge==='ok'}]" @click="spJudge(it,'ok')">○ {{ it.hold ? '合格放行' : '合格' }}</button><button :class="['ng',{on: spA(it.no).judge==='ng'}]" @click="spJudge(it,'ng')">╳ 有缺失</button><button :class="['na',{on: spA(it.no).judge==='na'}]" @click="spJudge(it,'na')">╱ 無此項</button></div>
-          <div class="isig" v-if="['ok','ng'].includes(spA(it.no).judge)"><template v-if="spA(it.no).sig"><img :src="spA(it.no).sig.img" alt="簽名"><span class="small muted grow">抽查人員 {{ spA(it.no).sig.name }}・{{ Q.fmtDT(spA(it.no).sig.at) }}</span><a v-if="spEditable" @click="openItemSign('spot', it)">重簽</a></template>
+          <div class="isig" v-if="['ok','ng'].includes(spA(it.no).judge)"><template v-if="spA(it.no).sig"><img :src="spA(it.no).sig.img" alt="簽名"><span class="small muted grow">抽查人員 {{ spA(it.no).sig.name }}・{{ Q.fmtDT(spA(it.no).sig.at) }}</span></template>
             <template v-else><span class="grow" style="color:var(--ng)">抽查人員尚未簽名</span><button class="btn sm primary" v-if="spEditable" @click="openItemSign('spot', it)">簽名</button></template></div>
         </div>
         <div class="card" v-if="!wide && spStage!=='sum' && spStage!=='att'"><div class="small muted">{{ spStageStat(spStage) }} 項已抽查</div><button class="btn block mt" @click="spNextStage">下一階段 ›</button></div>
@@ -469,13 +469,13 @@
 <div class="toast" :class="{ng: toastNg}" v-if="toastMsg">{{ toastMsg }}</div>
 </div>
 <script src="lib/vue.global.prod.js"></script>
-<script src="js/drawer.js?v=20261120h"></script>
-<script src="js/sample-pdfs.js?v=20261120h"></script>
+<script src="js/drawer.js?v=20261125a"></script>
+<script src="js/sample-pdfs.js?v=20261125a"></script>
 <script src="lib/html2canvas.min.js"></script>
 <script src="lib/jspdf.umd.min.js"></script>
-<script src="js/aijudge.js?v=20261120h"></script>
-<script src="js/formpdf.js?v=20261120h"></script>
-<script src="js/db.js?v=20261120h"></script>
-<script src="js/field.js?v=20261120h"></script>
+<script src="js/aijudge.js?v=20261125a"></script>
+<script src="js/formpdf.js?v=20261125a"></script>
+<script src="js/db.js?v=20261125a"></script>
+<script src="js/field.js?v=20261125a"></script>
 </body>
 </html>
