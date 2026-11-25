@@ -209,7 +209,9 @@ createApp({
     const lockOf = it => cur.value && curTpl.value ? Q.lockReason(cur.value, curTpl.value, it) : null;
     const hstate = it => Q.holdState(cur.value, it.no);
     const hreq = it => d.requests.find(r => r.id === ((cur.value.hold[it.no] || {}).requestId));
-    const itemEditable = it => !readonly.value && !lockOf(it) && ['none', 'failed'].includes(hstate(it));
+    // 該項簽名後不可再修改（唯一例外：停留點判 ╳ 後須改善重判 ○，才能申請會驗）
+    const signLocked = (a, it) => !!(a && a.sig) && !(it.hold && a.judge === 'ng');
+    const itemEditable = it => !readonly.value && !lockOf(it) && ['none', 'failed'].includes(hstate(it)) && !signLocked(ans(it.no), it);
     const itemIcon = it => { const j = ans(it.no).judge; return j === 'ok' ? '○' : j === 'ng' ? '╳' : j === 'na' ? '╱' : ''; };
 
     function queueSave() { if (!cur.value || cur.value.status === 'signed') return; saveMsg.value = '儲存中…'; clearTimeout(saveTimer); saveTimer = setTimeout(flush, 500); }
@@ -232,7 +234,7 @@ createApp({
       if (readonly.value) return toast(isSup.value ? '工務所同仁身分僅能檢視自主檢查表' : '表單已簽認，不可修改', true);
       const lk = lockOf(it); if (lk) return toast('項目已鎖定：' + lk, true);
       if (!['none', 'failed'].includes(hstate(it))) return toast('已申請會驗，判定不可更改', true);
-      const a = ensure(it.no);
+      const a = ensure(it.no); if (signLocked(a, it)) return toast('該項已簽名，不可修改', true);
       if (a.judge === j) { a.judge = null; delete a.sig; dropDefect(a, it); queueSave(); return; }
       if (j === 'ok') {
         if (it.photo && !a.photos.length) return toast('此項必須拍照後才能判定 ○', true);
@@ -324,6 +326,7 @@ createApp({
     const spStageList = computed(() => spTpl.value ? Q.stageItems(spTpl.value, spStage.value) : []);
     const spCurItem = computed(() => spTpl.value && (spTpl.value.items.find(i => i.no === spItemNo.value) || spTpl.value.items[0]));
     const spShown = computed(() => wide.value ? (spCurItem.value ? [spCurItem.value] : []) : spStageList.value);
+    const spItemEd = it => !!spEditable.value && !signLocked(spA(it.no), it);
     const spA = no => (sp.value && sp.value.answers[no]) || { judge: null, values: {}, photos: [], note: '' };
     const spJudged = computed(() => sp.value ? Object.values(sp.value.answers).filter(a => a.judge).length : 0);
     const spTotal = computed(() => spTpl.value ? spTpl.value.items.length : 0);
@@ -357,15 +360,15 @@ createApp({
     function spSetStage(st) { spStage.value = st; if (st === 'att') return; const l = Q.stageItems(spTpl.value, st); const f = l.find(i => i.no === sp.value.focusNo) || l.find(i => !spA(i.no).judge) || l[0]; if (f) spItemNo.value = f.no; }
     function spJudge(it, j) {
       if (!spEditable.value) return toast(isSup.value ? '表單已簽認，不可修改' : '抽查紀錄由監造人員填寫（請於「我的」切換為監造）', true);
-      const a = sp.value.answers[it.no]; if (a.judge === j) { a.judge = null; delete a.sig; dropDefect(a, it); spSave(); return; }
+      const a = sp.value.answers[it.no]; if (signLocked(a, it)) return toast('該項已簽名，不可修改', true); if (a.judge === j) { a.judge = null; delete a.sig; dropDefect(a, it); spSave(); return; }
       if (j === 'ok' && it.photo && !a.photos.length) return toast('此項必須拍照後才能判定 ○', true);
       a.judge = j; delete a.sig; if (j !== 'ng') dropDefect(a, it); spSave(); if (j === 'ng') toast('已判定缺失；抽查人員簽名後系統即開立缺失單');
       if (j !== 'na') openItemSign('spot', it);   // 每一項抽查完，抽查人員即簽名
     }
     const spLabel = it => `${sp.value.tenderCode}・${where(sp.value.unit, sp.value.subworkName)}・${it.name}`;
-    function spPhoto(it) { if (!spEditable.value) return toast('目前不可編輯', true); pickPhoto(spLabel(it), u => { sp.value.answers[it.no].photos.push(u); spSave(); }); }
-    function spDemoPhoto(it) { if (!spEditable.value) return toast('目前不可編輯', true); demoPhoto(spLabel(it), u => { sp.value.answers[it.no].photos.push(u); spSave(); }); }
-    function spDelPhoto(it, i) { if (!spEditable.value) return; const a = sp.value.answers[it.no]; a.photos.splice(i, 1); if (it.photo && !a.photos.length && a.judge === 'ok') { a.judge = null; delete a.sig; } spSave(); }
+    function spPhoto(it) { if (!spItemEd(it)) return toast('目前不可編輯', true); pickPhoto(spLabel(it), u => { sp.value.answers[it.no].photos.push(u); spSave(); }); }
+    function spDemoPhoto(it) { if (!spItemEd(it)) return toast('目前不可編輯', true); demoPhoto(spLabel(it), u => { sp.value.answers[it.no].photos.push(u); spSave(); }); }
+    function spDelPhoto(it, i) { if (!spItemEd(it)) return; const a = sp.value.answers[it.no]; a.photos.splice(i, 1); if (it.photo && !a.photos.length && a.judge === 'ok') { a.judge = null; delete a.sig; } spSave(); }
     async function spGoSign() {
       if (!spEditable.value) return toast('抽查紀錄由監造人員填寫', true);
       const f = sp.value.focusNo; if (f && !sp.value.answers[f].judge) { spGoto(spTpl.value.items.find(i => i.no === f)); return toast('請先判定本次會驗項目：' + sp.value.title, true); }
@@ -506,7 +509,7 @@ createApp({
     async function runAi(kind, it) {
       const rec = kind === 'self' ? cur.value : sp.value; if (!rec) return; const a = rec.answers[it.no], k = kind + it.no;
       if (!a || !(a.text || '').trim() || a.text === (it.defText || '') && !a.ai) return;
-      if (kind === 'self' ? !itemEditable(it) : !spEditable.value) return;
+      if (kind === 'self' ? !itemEditable(it) : !spItemEd(it)) return;
       const text = a.text; aiBusy[k] = text;
       const r = await AIJudge.judge(it.std, text, it.name);
       if (aiBusy[k] !== text) return; delete aiBusy[k];
@@ -641,7 +644,7 @@ createApp({
       Q, d, loaded, now, view, todoTab, tenderSel, dept, deptName, projOf, projOpts, docProj, docList, fc, fsp, scOpts, spOpts, setF, clearF, NO_UNIT, scAll, spAll, allTenderLabel, role, isSup, me, wide, toastMsg, toastNg, toast, tplOf, rel, hh, todayLabel, reqCls,
       todoReqs, rejectedCards, defTodos, draftSpots, pdfTodos, openPdfTodo, openDefects, todoCount, holdFilter, holdsList, selReqId, selReq, sched, selectReq, reqText, reqPhotos, lockedAfter, doSchedule, doReject, doStart, doCancel,
       pf, pfPreview, pfUrl, pfTpl, pfRec, pfSelf, pfSt, wfCls, pfCanLock, pfIsLocker, pfCanClose, pfCanVendor, pfCanUnfreeze, pfHint, pfDownloadBlank, pfDownloadCur, pfLock, pfCancel, wfUp, wfCert, wfVen, wfUnf, openWfUp, onWfUpFile, submitWfUp, openWfVen, onWfVenFile, submitWfVen, openWfCert, submitWfCert, openWfUnf, submitWfUnf, dlLog, leavePdf, isDirector, scList, scProgress, newForm, tenderOpts, swOpts, tplOpts, unitOpts, ut, cascade, openNew, createSc,
-      cur, curTpl, stageTab, itemNo, saveMsg, docShow, linkShow, applyForm, readonly, stageList, curItem, shownItems, judged, total, stageStat, stageDone, ans, ensure, lockOf, hstate, hreq, itemEditable, itemIcon,
+      cur, curTpl, stageTab, itemNo, saveMsg, docShow, linkShow, applyForm, readonly, stageList, curItem, shownItems, judged, total, stageStat, stageDone, ans, ensure, lockOf, hstate, hreq, itemEditable, itemIcon, signLocked, spItemEd,
       itemSign, needSig, openItemSign, confirmItemSign, aiBusy, aiLabel, aiCls, runAi, applyAi,
       flush, queueSave, openSc, gotoItem, setStage, step, setJudge, addPhoto, addDemoPhoto, delPhoto, linkName, preLinked, linkedRec, linkedDone, linkedTpl, linkStatus, openLinked, createLinked, returnTo, canApply, openApply, applyShort, applyHours, submitApply, holdText, wasRejected,
       summary, holdItems, holdPending, attachCodes, canSubmit, goSign, finishStage, stageTabs, firstStage, stageNext, spStageTabs, spNextStage, leaveForm,
