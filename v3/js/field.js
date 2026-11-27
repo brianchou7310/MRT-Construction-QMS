@@ -14,7 +14,7 @@ createApp({
     const dept = ref((() => { try { return localStorage.getItem('qms3-field-dept') || '2J'; } catch (e) { return '2J'; } })());
     watch(dept, v => { try { localStorage.setItem('qms3-field-dept', v); } catch (e) { /* ignore */ } });
     const deptName = computed(() => (Q.DEPTS.find(x => x.id === dept.value) || {}).name || '');
-    watch([role, dept], () => { if (loaded.value) load(); });
+    watch([role, dept], () => { if (loaded.value) load().then(() => loadPrep()); });
     // 目前身分 → 對應「帳號與權限」中的使用者（不再寫死姓名與單位）
     const ROLE_NAME = { contractor: '廠商品管人員', supervisor: '捷運局工務所同仁', director: '捷運局工務所主任' };
     const userOf = (roleName, org) => d.users.find(u => u.role === roleName && (!org || u.org === org)) || d.users.find(u => u.role === roleName) || null;
@@ -632,9 +632,56 @@ createApp({
     }
     const openAtt = a => Q.canPreview(a) ? Q.openAny(a) : Q.downloadAny(a);
 
+
+    /* ---------- 離線準備：出門前把現場要用的資料與程式整批備齊，並記錄備妥時間；範本或文件有異動時提示重做 ----------
+     * 雛型沒有後端，資料原本就在本機 IndexedDB；這裡模擬「從伺服器下載」並實際檢查：程式快取、標案／單元／範本／參考文件是否齊全、儲存空間 */
+    const prep = reactive({ busy: false, step: '', result: null, saved: null });
+    const sigOf = () => d.templates.filter(t => t.status === 'published').map(t => t.id + '@' + t.version).sort().join(',') + '|' + d.docs.map(x => x.id + (x.file ? x.file.size : 0)).sort().join(',') + '|' + d.tenders.map(t => t.id).sort().join(',');
+    const prepStale = computed(() => !!prep.saved && prep.saved.sig !== sigOf());
+    const prepOk = computed(() => !!prep.saved && !prepStale.value);
+    async function loadPrep() { prep.saved = (await Q.get('meta', 'offlinePrep:' + role.value + ':' + dept.value)) || null; }
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    async function runPrep() {
+      if (prep.busy) return; prep.busy = true; const items = [], warn = [];
+      try {
+        prep.step = '更新程式與頁面快取…'; await sleep(300);
+        let shell = { ok: 0, total: 0, active: false };
+        if ('serviceWorker' in navigator) {
+          const reg = await navigator.serviceWorker.getRegistration().catch(() => null);
+          if (reg && reg.active) { shell.active = true; reg.update().catch(() => {});
+            const r = await new Promise(res => { const t = setTimeout(() => res(null), 8000); navigator.serviceWorker.addEventListener('message', function h(e) { if (e.data && e.data.type === 'refreshed') { clearTimeout(t); navigator.serviceWorker.removeEventListener('message', h); res(e.data); } }); reg.active.postMessage('refresh'); });
+            if (r) { shell.ok = r.ok; shell.total = r.total; } }
+        }
+        items.push(shell.active ? `程式與頁面：已快取 ${shell.ok}/${shell.total} 個檔案` : '程式與頁面：尚未啟用離線快取（需 https 或 localhost，且曾連線開啟過）');
+        if (!shell.active || shell.ok < shell.total) warn.push('程式快取不完整，離線時可能無法開啟頁面，請在有網路時重新按「離線準備」。');
+        prep.step = '下載標案、分項工程、單元、帳號…'; await load(); await sleep(450);
+        const units = d.subworks.reduce((n, s) => n + (s.unitList || []).length, 0);
+        items.push(`標案 ${d.tenders.length} 件、分項工程 ${d.subworks.length} 項、單元 ${units} 個、帳號 ${d.users.length} 位`);
+        if (!d.tenders.length) warn.push('目前身分沒有可看到的標案。');
+        prep.step = '下載已發布的表單範本…'; await sleep(450);
+        const pub = d.templates.filter(t => t.status === 'published'), self = pub.filter(t => t.kind === 'self').length, spot = pub.filter(t => t.kind === 'spot').length;
+        items.push(`表單範本：自主檢查表 ${self} 張、抽查紀錄表 ${spot} 張（含版本，離線填寫沿用此版）`);
+        { const no = d.subworks.filter(s => !pub.some(t => t.subworkId === s.id)); if (no.length) items.push(`另有 ${no.length} 項分項工程尚未設定表單範本（現場無法新增表單）：${no.slice(0, 3).map(s => s.name).join('、')}${no.length > 3 ? '…' : ''}`); }
+        prep.step = '下載參考文件檔案…'; await sleep(450);
+        const withFile = d.docs.filter(x => x.file), bytes = withFile.reduce((n, x) => n + (x.file.size || 0), 0);
+        items.push(`參考文件：${withFile.length}/${d.docs.length} 份已備妥檔案（${Q.fmtSize(bytes)}）`);
+        { const nf = d.docs.filter(x => !x.file); if (nf.length) warn.push(`${nf.length} 份參考文件尚未上傳檔案，離線時無法開啟：${nf.slice(0, 3).map(x => x.code).join('、')}${nf.length > 3 ? '…' : ''}`); }
+        prep.step = '確認本機儲存空間…'; await sleep(250);
+        let persisted = null, usage = '';
+        if (navigator.storage) {
+          if (navigator.storage.persist) persisted = await navigator.storage.persist().catch(() => null);
+          if (navigator.storage.estimate) { const e = await navigator.storage.estimate().catch(() => null); if (e && e.quota) usage = `已用 ${Q.fmtSize(e.usage)} / 可用約 ${Q.fmtSize(e.quota)}`; if (e && e.quota && e.usage / e.quota > 0.8) warn.push('本機儲存空間快滿了，請先上傳或清理。'); }
+        }
+        items.push(`本機儲存：${persisted ? '已設為持久儲存（瀏覽器不會自動清除）' : '未取得持久儲存（瀏覽器空間不足時可能清除資料）'}${usage ? '；' + usage : ''}`);
+        if (persisted === false) warn.push('瀏覽器未允許持久儲存：請用「加到主畫面」安裝後再試，並避免清除瀏覽資料。');
+        const rec = { id: 'offlinePrep:' + role.value + ':' + dept.value, at: Date.now(), sig: sigOf(), items, warn };
+        await Q.put('meta', rec); prep.saved = rec; prep.result = rec;
+        toast(warn.length ? `離線準備完成，有 ${warn.length} 項提醒` : '離線準備完成，可以放心外出');
+      } catch (e) { toast('離線準備失敗：' + e.message, true); } finally { prep.busy = false; prep.step = ''; }
+    }
     watch(wide, () => { if (view.value === 'sign') nextTick(initCanvas); });
     onMounted(async () => {
-      await Q.ready; await load();
+      await Q.ready; await load(); await loadPrep();
       const q = new URLSearchParams(location.search); if (q.get('role')) role.value = q.get('role');
       Q.onChange(async () => { await load(); if (cur.value) { const sc = await Q.get('selfChecks', cur.value.id); if (sc) cur.value.attachments = sc.attachments || []; if (sc && cur.value.status !== 'signed') { cur.value.hold = sc.hold; syncLinked(); } } if (sp.value) { const r = await Q.get('spotChecks', sp.value.id); if (r) sp.value.attachments = r.attachments || []; } });
       setInterval(async () => { await Q.tickOverdue(); await load(); }, 30000);
@@ -642,7 +689,7 @@ createApp({
     });
 
     return {
-      Q, d, loaded, now, online, view, todoTab, tenderSel, dept, deptName, projOf, projOpts, docProj, docList, fc, fsp, scOpts, spOpts, setF, clearF, NO_UNIT, scAll, spAll, allTenderLabel, role, isSup, me, wide, toastMsg, toastNg, toast, tplOf, rel, hh, todayLabel, reqCls,
+      Q, d, loaded, now, online, prep, prepOk, prepStale, runPrep, view, todoTab, tenderSel, dept, deptName, projOf, projOpts, docProj, docList, fc, fsp, scOpts, spOpts, setF, clearF, NO_UNIT, scAll, spAll, allTenderLabel, role, isSup, me, wide, toastMsg, toastNg, toast, tplOf, rel, hh, todayLabel, reqCls,
       todoReqs, rejectedCards, defTodos, draftSpots, pdfTodos, openPdfTodo, openDefects, todoCount, holdFilter, holdsList, selReqId, selReq, sched, selectReq, reqText, reqPhotos, lockedAfter, doSchedule, doReject, doStart, doCancel,
       pf, pfPreview, pfUrl, pfTpl, pfRec, pfSelf, pfSt, wfCls, pfCanLock, pfIsLocker, pfCanClose, pfCanVendor, pfCanUnfreeze, pfHint, pfDownloadBlank, pfDownloadCur, pfLock, pfCancel, wfUp, wfCert, wfVen, wfUnf, openWfUp, onWfUpFile, submitWfUp, openWfVen, onWfVenFile, submitWfVen, openWfCert, submitWfCert, openWfUnf, submitWfUnf, dlLog, leavePdf, isDirector, scList, scProgress, newForm, tenderOpts, swOpts, tplOpts, unitOpts, ut, cascade, openNew, createSc,
       cur, curTpl, stageTab, itemNo, saveMsg, docShow, linkShow, applyForm, readonly, stageList, curItem, shownItems, judged, total, stageStat, stageDone, ans, ensure, lockOf, hstate, hreq, itemEditable, itemIcon, signLocked, spItemEd,
