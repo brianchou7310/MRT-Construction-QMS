@@ -10,8 +10,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>捷運施工查驗系統 - 現場作業 v3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/common.css?v=20261125a">
-<link rel="stylesheet" href="css/field.css?v=20261125a">
+<link rel="stylesheet" href="css/common.css?v=20261127b">
+<link rel="stylesheet" href="css/field.css?v=20261127b">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -33,6 +33,7 @@
       <div class="grow"><div class="small sub">{{ todayLabel }}・{{ me.org || me.title }}・{{ me.name }}</div><h1>{{ view==='todo' ? '今日待辦' : '停留點會驗' }}</h1></div>
       <select v-model="tenderSel" class="sel-tender"><option value="all">{{ allTenderLabel }}</option><option v-for="t in d.tenders" :value="t.id">{{ t.code }}</option></select>
     </header>
+    <div class="alert warn" v-if="view==='todo' && !prepOk" style="margin:8px 12px;cursor:pointer" @click="nav('me')">{{ prepStale ? '標案、範本或文件已更新，出門前請到「我的」重做離線準備 ›' : '尚未做離線準備；要到沒有網路的地點作業前，請到「我的」先備妥資料 ›' }}</div>
 
     <template v-if="view==='todo'">
       <div class="pills">
@@ -354,6 +355,14 @@
     <div class="small muted mt">{{ me.name }}｜{{ me.org }}。廠商：填自主檢查表、申請會驗、簽名上傳；工務所同仁：回覆排定、開始會驗、填抽查紀錄表；工務所主任：加簽結案。</div>
     <hr><div class="row wrap"><button class="btn" @click="clearSigs">清除已存簽名</button><button class="btn danger" @click="resetDemo">還原示範資料</button><a class="btn" href="admin.html" target="_blank">開啟後台管理</a></div></div></div>
 
+  <div class="card mt" style="max-width:520px"><h4>離線準備 <span class="chip sm" :class="prepOk ? 'ok' : prepStale ? 'warn' : ''">{{ prepOk ? '已備妥' : prepStale ? '資料已更新，請重做' : '尚未準備' }}</span></h4>
+    <div class="small muted">預計到沒有網路的地點作業前，先在有網路時按「開始離線準備」：更新程式快取、備齊標案、單元、表單範本、參考文件，並申請持久儲存。{{ prep.saved ? '上次備妥：' + Q.fmtFull(prep.saved.at) + '（' + me.title + (isSup ? '・' + dept : '') + '）' : '' }}</div>
+    <div class="alert warn mt" v-if="prep.busy"><b>準備中…</b> {{ prep.step }}</div>
+    <ul class="small" style="margin:10px 0 0;padding-left:18px" v-if="prep.saved"><li v-for="t in prep.saved.items" :key="t">{{ t }}</li></ul>
+    <div class="alert ng mt" v-if="prep.saved && prep.saved.warn.length"><div v-for="w in prep.saved.warn" :key="w">• {{ w }}</div></div>
+    <button class="btn primary block mt" :disabled="prep.busy || !online" @click="runPrep">{{ prep.saved ? '重新離線準備' : '開始離線準備' }}</button>
+    <div class="small muted mt" v-if="!online">目前沒有網路，無法進行離線準備。</div></div>
+
   </main>
 </div>
 
@@ -474,14 +483,14 @@
 <div class="toast" :class="{ng: toastNg}" v-if="toastMsg">{{ toastMsg }}</div>
 </div>
 <script src="lib/vue.global.prod.js"></script>
-<script src="js/drawer.js?v=20261125a"></script>
-<script src="js/sample-pdfs.js?v=20261125a"></script>
+<script src="js/drawer.js?v=20261127b"></script>
+<script src="js/sample-pdfs.js?v=20261127b"></script>
 <script src="lib/html2canvas.min.js"></script>
 <script src="lib/jspdf.umd.min.js"></script>
-<script src="js/aijudge.js?v=20261125a"></script>
-<script src="js/formpdf.js?v=20261125a"></script>
-<script src="js/db.js?v=20261125a"></script>
-<script src="js/field.js?v=20261125a"></script>
+<script src="js/aijudge.js?v=20261127b"></script>
+<script src="js/formpdf.js?v=20261127b"></script>
+<script src="js/db.js?v=20261127b"></script>
+<script src="js/field.js?v=20261127b"></script>
 <script>if ("serviceWorker" in navigator) window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js").catch(function (e) { console.warn("離線快取未啟用：", e.message); }); });</script>
 </body>
 </html>
