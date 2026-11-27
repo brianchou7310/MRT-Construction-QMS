@@ -1,0 +1,16 @@
+{
+  "name": "捷運施工查驗系統（現場作業）",
+  "short_name": "施工查驗",
+  "description": "自主檢查、抽查紀錄、檢驗停留點的現場作業，可離線開啟與填寫",
+  "lang": "zh-Hant",
+  "start_url": "field.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#009cce",
+  "icons": [
+    { "src": "images/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "images/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

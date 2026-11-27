@@ -19,6 +19,7 @@ createApp({
     const ROLE_NAME = { contractor: '廠商品管人員', supervisor: '捷運局工務所同仁', director: '捷運局工務所主任' };
     const userOf = (roleName, org) => d.users.find(u => u.role === roleName && (!org || u.org === org)) || d.users.find(u => u.role === roleName) || null;
     const me = computed(() => { const t = ROLE_NAME[role.value], u = userOf(t); return { id: u ? u.id : '', name: u ? u.name : `（未設定${t}帳號）`, org: role.value !== 'contractor' && deptName.value ? `${deptName.value}（${dept.value}）` : (u ? u.org : ''), title: t }; });
+    const online = ref(navigator.onLine); window.addEventListener('online', () => { online.value = true; }); window.addEventListener('offline', () => { online.value = false; });
     const wide = ref(window.matchMedia('(min-width: 900px)').matches);
     window.matchMedia('(min-width: 900px)').addEventListener('change', e => { wide.value = e.matches; });
     const toastMsg = ref(''), toastNg = ref(false); let tt;
@@ -217,7 +218,7 @@ createApp({
     function queueSave() { if (!cur.value || cur.value.status === 'signed') return; saveMsg.value = '儲存中…'; clearTimeout(saveTimer); saveTimer = setTimeout(flush, 500); }
     async function flush() {
       clearTimeout(saveTimer); saveTimer = null; if (!cur.value || cur.value.status === 'signed') return;
-      await Q.saveSelf(Q.clone(cur.value)); const t = new Date(); saveMsg.value = `已自動儲存 ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}・離線時暫存於本機，連線後自動上傳`;
+      await Q.saveSelf(Q.clone(cur.value)); const t = new Date(); saveMsg.value = `已自動儲存 ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}・資料暫存於本機`;
     }
     async function openSc(id) {
       const sc = await Q.get('selfChecks', id);
@@ -641,7 +642,7 @@ createApp({
     });
 
     return {
-      Q, d, loaded, now, view, todoTab, tenderSel, dept, deptName, projOf, projOpts, docProj, docList, fc, fsp, scOpts, spOpts, setF, clearF, NO_UNIT, scAll, spAll, allTenderLabel, role, isSup, me, wide, toastMsg, toastNg, toast, tplOf, rel, hh, todayLabel, reqCls,
+      Q, d, loaded, now, online, view, todoTab, tenderSel, dept, deptName, projOf, projOpts, docProj, docList, fc, fsp, scOpts, spOpts, setF, clearF, NO_UNIT, scAll, spAll, allTenderLabel, role, isSup, me, wide, toastMsg, toastNg, toast, tplOf, rel, hh, todayLabel, reqCls,
       todoReqs, rejectedCards, defTodos, draftSpots, pdfTodos, openPdfTodo, openDefects, todoCount, holdFilter, holdsList, selReqId, selReq, sched, selectReq, reqText, reqPhotos, lockedAfter, doSchedule, doReject, doStart, doCancel,
       pf, pfPreview, pfUrl, pfTpl, pfRec, pfSelf, pfSt, wfCls, pfCanLock, pfIsLocker, pfCanClose, pfCanVendor, pfCanUnfreeze, pfHint, pfDownloadBlank, pfDownloadCur, pfLock, pfCancel, wfUp, wfCert, wfVen, wfUnf, openWfUp, onWfUpFile, submitWfUp, openWfVen, onWfVenFile, submitWfVen, openWfCert, submitWfCert, openWfUnf, submitWfUnf, dlLog, leavePdf, isDirector, scList, scProgress, newForm, tenderOpts, swOpts, tplOpts, unitOpts, ut, cascade, openNew, createSc,
       cur, curTpl, stageTab, itemNo, saveMsg, docShow, linkShow, applyForm, readonly, stageList, curItem, shownItems, judged, total, stageStat, stageDone, ans, ensure, lockOf, hstate, hreq, itemEditable, itemIcon, signLocked, spItemEd,
