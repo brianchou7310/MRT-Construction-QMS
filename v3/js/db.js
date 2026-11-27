@@ -43,8 +43,18 @@
   function notify() { if (bc) bc.postMessage('change'); }
   const all = s => tx(s, 'readonly', st => st.getAll());
   const get = (s, id) => tx(s, 'readonly', st => st.get(id));
-  const put = (s, o) => tx(s, 'readwrite', st => st.put(clone(o))).then(() => { notify(); return o; });
-  const del = (s, id) => tx(s, 'readwrite', st => st.delete(id)).then(() => notify());
+  /* ---------- 待上傳佇列（現場作業專用）：現場寫入的紀錄先留在本機，記入佇列，連線後再上傳；雛型沒有後端，上傳為模擬 ---------- */
+  const OUT_STORES = new Set(['selfChecks', 'spotChecks', 'requests', 'defects']), outFns = [];
+  let outTrack = false, outbox = {}, outTimer = null;
+  const outLabel = (s, o) => s === 'selfChecks' ? `自主檢查表 表${o.templateCode} ${o.templateName}${o.unit ? '（' + o.unit + '）' : ''}` : s === 'spotChecks' ? `抽查紀錄表 ${o.title || o.templateName}${o.unit ? '（' + o.unit + '）' : ''}` : s === 'defects' ? `缺失單 ${o.id} ${o.title}` : `會驗申請 ${o.id} ${o.title}`;
+  function outSave() { clearTimeout(outTimer); outTimer = setTimeout(() => tx('meta', 'readwrite', st => st.put({ id: 'outbox', items: clone(outbox) })), 150); outFns.forEach(f => f()); }
+  function outMark(s, o, id, gone) { if (!outTrack || !OUT_STORES.has(s)) return; outbox[s + ':' + id] = { key: s + ':' + id, store: s, id, at: Date.now(), gone: !!gone, label: o ? outLabel(s, o) : (outbox[s + ':' + id] || {}).label || id }; outSave(); }
+  async function trackOutbox() { const m = await get('meta', 'outbox'); outbox = (m && m.items) || {}; outTrack = true; outFns.forEach(f => f()); }
+  const getOutbox = () => Object.values(outbox).sort((a, b) => b.at - a.at);
+  function clearOutbox(key, at) { const x = outbox[key]; if (x && (at == null || x.at === at)) { delete outbox[key]; outSave(); } }
+  const resetOutbox = () => { outbox = {}; outSave(); };
+  const put = (s, o) => tx(s, 'readwrite', st => st.put(clone(o))).then(() => { outMark(s, o, o.id); notify(); return o; });
+  const del = (s, id) => tx(s, 'readwrite', st => st.delete(id)).then(() => { outMark(s, null, id, true); notify(); });
   async function clearAll() { for (const s of STORES) await tx(s, 'readwrite', st => st.clear()); }
   async function putMany(s, arr) { for (const o of arr) await tx(s, 'readwrite', st => st.put(clone(o))); }
 
@@ -684,7 +694,7 @@
   }
 
   window.QMS = {
-    ready, open, all, get, put, del, seed, getParams, onChange: f => listeners.push(f),
+    ready, open, all, get, put, del, seed, getParams, trackOutbox, getOutbox, clearOutbox, resetOutbox, onOutbox: f => outFns.push(f), onChange: f => listeners.push(f),
     LINKED, JUDGE, STAGES, DEF_STAGES, stagesOf, stageName, HOLD_TEXT, REQ_TEXT, H, D,
     fmtDT, fmtD, fmtFull, toLocalInput, fromLocalInput, nextHour, atDay, relTime, uid, clone, hashOf,
     stageItems, stageDone, lockReason, holdState,

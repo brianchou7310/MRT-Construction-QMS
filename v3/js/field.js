@@ -582,7 +582,7 @@ createApp({
         defForm.value = null; await load();
       } catch (e) { toast(e.message, true); }
     }
-    async function resetDemo() { if (!confirm('將清除所有資料並還原示範資料，確定？')) return; await Q.seed(true); cur.value = null; sp.value = null; view.value = 'todo'; await load(); toast('已還原示範資料'); }
+    async function resetDemo() { if (!confirm('將清除所有資料並還原示範資料，確定？')) return; await Q.seed(true); Q.resetOutbox(); cur.value = null; sp.value = null; view.value = 'todo'; await load(); toast('已還原示範資料'); }
     async function clearSigs() { for (const k of ['site', 'rep', 'insp', 'att']) await Q.del('meta', 'sig-' + k); toast('已清除已存簽名'); }
     const navItems = computed(() => [['todo', '待辦', todoCount.value], ['checks', '自主檢查', 0], ['spots', '抽查紀錄', 0], ['holds', '停留點', 0], ['docs', '參考文件', 0], ['me', '我的', 0]]);
     function nav(v) { if (view.value === 'form') flush(); if (view.value === 'spot') spFlush(); view.value = v; if (v !== 'form') cur.value = null; sp.value = null; pf.value = null; selReqId.value = null; window.scrollTo(0, 0); }
@@ -633,6 +633,20 @@ createApp({
     const openAtt = a => Q.canPreview(a) ? Q.openAny(a) : Q.downloadAny(a);
 
 
+    /* ---------- 待上傳：現場寫入先記在本機佇列，連線後自動（模擬）上傳；離線時累積，畫面顯示筆數 ---------- */
+    const sync = reactive({ items: [], busy: false, lastAt: null });
+    const syncN = computed(() => sync.items.length);
+    const syncGroups = computed(() => { const g = {}; sync.items.forEach(x => { const k = { selfChecks: '自主檢查表', spotChecks: '抽查紀錄表', defects: '缺失單', requests: '會驗申請' }[x.store]; g[k] = (g[k] || 0) + 1; }); return Object.entries(g); });
+    const syncText = computed(() => sync.busy ? '上傳中…' : syncN.value ? (online.value ? `待上傳 ${syncN.value} 筆` : `離線・待上傳 ${syncN.value} 筆`) : '已同步');
+    let syncTimer = null;
+    function syncSchedule() { clearTimeout(syncTimer); if (online.value && syncN.value && !sync.busy) syncTimer = setTimeout(flushSync, 3000); }
+    async function flushSync() {
+      if (sync.busy || !online.value || !sync.items.length) return; sync.busy = true;
+      try { for (const x of sync.items.slice()) { if (!online.value) break; await new Promise(r => setTimeout(r, 250)); Q.clearOutbox(x.key, x.at); }   // 模擬逐筆上傳；正式系統在此呼叫 API，成功才移出佇列
+        if (!Q.getOutbox().length) { sync.lastAt = Date.now(); await Q.put('meta', { id: 'lastSync', at: sync.lastAt }); } }
+      finally { sync.busy = false; syncSchedule(); }
+    }
+    watch([online, syncN], syncSchedule);
     /* ---------- 離線準備：出門前把現場要用的資料與程式整批備齊，並記錄備妥時間；範本或文件有異動時提示重做 ----------
      * 雛型沒有後端，資料原本就在本機 IndexedDB；這裡模擬「從伺服器下載」並實際檢查：程式快取、標案／單元／範本／參考文件是否齊全、儲存空間 */
     const prep = reactive({ busy: false, step: '', result: null, saved: null });
@@ -681,7 +695,7 @@ createApp({
     }
     watch(wide, () => { if (view.value === 'sign') nextTick(initCanvas); });
     onMounted(async () => {
-      await Q.ready; await load(); await loadPrep();
+      await Q.ready; await load(); await loadPrep(); await Q.trackOutbox(); Q.onOutbox(() => { sync.items = Q.getOutbox(); }); sync.items = Q.getOutbox(); const ls = await Q.get('meta', 'lastSync'); sync.lastAt = ls ? ls.at : null;
       const q = new URLSearchParams(location.search); if (q.get('role')) role.value = q.get('role');
       Q.onChange(async () => { await load(); if (cur.value) { const sc = await Q.get('selfChecks', cur.value.id); if (sc) cur.value.attachments = sc.attachments || []; if (sc && cur.value.status !== 'signed') { cur.value.hold = sc.hold; syncLinked(); } } if (sp.value) { const r = await Q.get('spotChecks', sp.value.id); if (r) sp.value.attachments = r.attachments || []; } });
       setInterval(async () => { await Q.tickOverdue(); await load(); }, 30000);
@@ -689,7 +703,7 @@ createApp({
     });
 
     return {
-      Q, d, loaded, now, online, prep, prepOk, prepStale, runPrep, view, todoTab, tenderSel, dept, deptName, projOf, projOpts, docProj, docList, fc, fsp, scOpts, spOpts, setF, clearF, NO_UNIT, scAll, spAll, allTenderLabel, role, isSup, me, wide, toastMsg, toastNg, toast, tplOf, rel, hh, todayLabel, reqCls,
+      Q, d, loaded, now, online, sync, syncN, syncGroups, syncText, flushSync, prep, prepOk, prepStale, runPrep, view, todoTab, tenderSel, dept, deptName, projOf, projOpts, docProj, docList, fc, fsp, scOpts, spOpts, setF, clearF, NO_UNIT, scAll, spAll, allTenderLabel, role, isSup, me, wide, toastMsg, toastNg, toast, tplOf, rel, hh, todayLabel, reqCls,
       todoReqs, rejectedCards, defTodos, draftSpots, pdfTodos, openPdfTodo, openDefects, todoCount, holdFilter, holdsList, selReqId, selReq, sched, selectReq, reqText, reqPhotos, lockedAfter, doSchedule, doReject, doStart, doCancel,
       pf, pfPreview, pfUrl, pfTpl, pfRec, pfSelf, pfSt, wfCls, pfCanLock, pfIsLocker, pfCanClose, pfCanVendor, pfCanUnfreeze, pfHint, pfDownloadBlank, pfDownloadCur, pfLock, pfCancel, wfUp, wfCert, wfVen, wfUnf, openWfUp, onWfUpFile, submitWfUp, openWfVen, onWfVenFile, submitWfVen, openWfCert, submitWfCert, openWfUnf, submitWfUnf, dlLog, leavePdf, isDirector, scList, scProgress, newForm, tenderOpts, swOpts, tplOpts, unitOpts, ut, cascade, openNew, createSc,
       cur, curTpl, stageTab, itemNo, saveMsg, docShow, linkShow, applyForm, readonly, stageList, curItem, shownItems, judged, total, stageStat, stageDone, ans, ensure, lockOf, hstate, hreq, itemEditable, itemIcon, signLocked, spItemEd,
