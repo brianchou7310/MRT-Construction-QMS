@@ -10,8 +10,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>捷運施工查驗系統 - 現場作業 v3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/common.css?v=20261127b">
-<link rel="stylesheet" href="css/field.css?v=20261127b">
+<link rel="stylesheet" href="css/common.css?v=20261127d">
+<link rel="stylesheet" href="css/field.css?v=20261127d">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -355,6 +355,13 @@
     <div class="small muted mt">{{ me.name }}｜{{ me.org }}。廠商：填自主檢查表、申請會驗、簽名上傳；工務所同仁：回覆排定、開始會驗、填抽查紀錄表；工務所主任：加簽結案。</div>
     <hr><div class="row wrap"><button class="btn" @click="clearSigs">清除已存簽名</button><button class="btn danger" @click="resetDemo">還原示範資料</button><a class="btn" href="admin.html" target="_blank">開啟後台管理</a></div></div></div>
 
+  <div class="card mt" style="max-width:520px"><h4>資料同步 <span class="chip sm" :class="sync.busy ? 'blue' : syncN ? 'warn' : 'ok'">{{ syncText }}</span></h4>
+    <div class="small muted">現場填寫的表單、簽名、照片、缺失單會先存在這台裝置，連線後自動上傳；沒有網路時會累積在「待上傳」。{{ sync.lastAt ? '上次全部同步：' + Q.fmtFull(sync.lastAt) : '' }}</div>
+    <div class="row wrap mt" v-if="syncGroups.length"><span class="chip warn" v-for="g in syncGroups" :key="g[0]">{{ g[0] }} {{ g[1] }}</span></div>
+    <ul class="small" style="margin:10px 0 0;padding-left:18px;max-height:180px;overflow:auto" v-if="syncN"><li v-for="x in sync.items.slice(0, 30)" :key="x.key">{{ x.label }}<span class="muted">・{{ x.gone ? '已刪除・' : '' }}{{ Q.fmtDT(x.at) }}</span></li><li v-if="syncN > 30" class="muted">…另有 {{ syncN - 30 }} 筆</li></ul>
+    <div class="alert warn mt" v-if="syncN && !online">目前離線，資料安全存在本機；連上網路後會自動上傳。上傳完成前請勿清除瀏覽資料或移除這個 App。</div>
+    <button class="btn block mt" :disabled="!syncN || !online || sync.busy" @click="flushSync">{{ sync.busy ? '上傳中…' : '立即上傳' }}</button>
+    <div class="small muted mt">雛型沒有後端，「上傳」為模擬（逐筆約 0.25 秒）。</div></div>
   <div class="card mt" style="max-width:520px"><h4>離線準備 <span class="chip sm" :class="prepOk ? 'ok' : prepStale ? 'warn' : ''">{{ prepOk ? '已備妥' : prepStale ? '資料已更新，請重做' : '尚未準備' }}</span></h4>
     <div class="small muted">預計到沒有網路的地點作業前，先在有網路時按「開始離線準備」：更新程式快取、備齊標案、單元、表單範本、參考文件，並申請持久儲存。{{ prep.saved ? '上次備妥：' + Q.fmtFull(prep.saved.at) + '（' + me.title + (isSup ? '・' + dept : '') + '）' : '' }}</div>
     <div class="alert warn mt" v-if="prep.busy"><b>準備中…</b> {{ prep.step }}</div>
@@ -479,18 +486,19 @@
   <div class="small muted mt" v-if="!d.docs.some(x=>x.code===docShow)">找不到文件 {{ docShow }}。</div>
   <div class="foot"><button class="btn primary" @click="docShow=null">關閉</button></div></div></div>
 
-<div class="offline-bar" v-if="!online">目前離線：可繼續填寫，資料暫存在本機（本雛型尚未提供上傳）</div>
+<button class="sync-pill" v-if="loaded" :class="{warn: syncN && online, off: !online, busy: sync.busy}" @click="nav('me')" :title="sync.lastAt ? '上次同步 ' + Q.fmtFull(sync.lastAt) : ''">{{ !online ? '⚠ ' : syncN || sync.busy ? '⟳ ' : '✓ ' }}{{ syncText }}</button>
+<div class="offline-bar" v-if="!online">目前離線：可繼續填寫，資料暫存在本機，連線後自動上傳</div>
 <div class="toast" :class="{ng: toastNg}" v-if="toastMsg">{{ toastMsg }}</div>
 </div>
 <script src="lib/vue.global.prod.js"></script>
-<script src="js/drawer.js?v=20261127b"></script>
-<script src="js/sample-pdfs.js?v=20261127b"></script>
+<script src="js/drawer.js?v=20261127d"></script>
+<script src="js/sample-pdfs.js?v=20261127d"></script>
 <script src="lib/html2canvas.min.js"></script>
 <script src="lib/jspdf.umd.min.js"></script>
-<script src="js/aijudge.js?v=20261127b"></script>
-<script src="js/formpdf.js?v=20261127b"></script>
-<script src="js/db.js?v=20261127b"></script>
-<script src="js/field.js?v=20261127b"></script>
+<script src="js/aijudge.js?v=20261127d"></script>
+<script src="js/formpdf.js?v=20261127d"></script>
+<script src="js/db.js?v=20261127d"></script>
+<script src="js/field.js?v=20261127d"></script>
 <script>if ("serviceWorker" in navigator) window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js").catch(function (e) { console.warn("離線快取未啟用：", e.message); }); });</script>
 </body>
 </html>
