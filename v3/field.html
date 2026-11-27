@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="icon" href="images/logo.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#009cce">
+<link rel="apple-touch-icon" href="images/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <title>捷運施工查驗系統 - 現場作業 v3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/common.css?v=20261125a">
@@ -466,6 +470,7 @@
   <div class="small muted mt" v-if="!d.docs.some(x=>x.code===docShow)">找不到文件 {{ docShow }}。</div>
   <div class="foot"><button class="btn primary" @click="docShow=null">關閉</button></div></div></div>
 
+<div class="offline-bar" v-if="!online">目前離線：可繼續填寫，資料暫存在本機（本雛型尚未提供上傳）</div>
 <div class="toast" :class="{ng: toastNg}" v-if="toastMsg">{{ toastMsg }}</div>
 </div>
 <script src="lib/vue.global.prod.js"></script>
@@ -477,5 +482,6 @@
 <script src="js/formpdf.js?v=20261125a"></script>
 <script src="js/db.js?v=20261125a"></script>
 <script src="js/field.js?v=20261125a"></script>
+<script>if ("serviceWorker" in navigator) window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js").catch(function (e) { console.warn("離線快取未啟用：", e.message); }); });</script>
 </body>
 </html>

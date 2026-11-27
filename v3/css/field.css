@@ -141,3 +141,4 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
 .defitem { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-top: 8px; background: #fafcfd; }
 .defitem .photos { margin: 8px 0; }
 .steps span.on { font-weight: 700; color: var(--primary-d); }
+.offline-bar { position: fixed; left: 0; right: 0; top: 0; z-index: 200; background: #b45309; color: #fff; text-align: center; font-size: 13px; padding: 4px 8px; }
